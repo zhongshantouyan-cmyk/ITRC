@@ -8,6 +8,13 @@ const router = express.Router();
 const CONTENT_TABLES = ['sections', 'achievements', 'members', 'activities', 'experiences'];
 const MAX_SNAPSHOTS = 50; // Keep at most 50 snapshots
 
+// BigInt-safe JSON serializer (Turso returns integer columns as BigInt)
+function safeStringify(obj) {
+    return JSON.stringify(obj, (key, value) =>
+        typeof value === 'bigint' ? Number(value) : value
+    );
+}
+
 // ==================== Helper: Capture current state ====================
 async function captureSnapshot() {
     const data = {};
@@ -23,7 +30,7 @@ async function createSnapshot(description, createdBy = 'system', isAuto = false)
     const data = await captureSnapshot();
     const result = await db.execute({
         sql: 'INSERT INTO content_snapshots (snapshot_data, description, created_by, is_auto) VALUES (?, ?, ?, ?)',
-        args: [JSON.stringify(data), description, createdBy, isAuto ? 1 : 0]
+        args: [safeStringify(data), description, createdBy, isAuto ? 1 : 0]
     });
 
     // Auto-cleanup: keep only the latest MAX_SNAPSHOTS
@@ -158,20 +165,6 @@ router.post('/:id/restore', authMiddleware, async (req, res) => {
     } catch (err) {
         console.error('Restore error:', err);
         res.status(500).json({ error: '還原失敗: ' + err.message });
-    }
-});
-
-// DELETE /api/snapshots/:id - Delete a snapshot
-router.delete('/:id', authMiddleware, async (req, res) => {
-    try {
-        const result = await db.execute({
-            sql: 'DELETE FROM content_snapshots WHERE id = ?',
-            args: [req.params.id]
-        });
-        if (result.rowsAffected === 0) return res.status(404).json({ error: '找不到此快照' });
-        res.json({ message: '已刪除' });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
     }
 });
 

@@ -21,10 +21,10 @@ function ImageUploader({ value, onChange, label = '上傳圖片', disabled = fal
                 headers: { 'Content-Type': 'multipart/form-data' }
             });
             onChange(res.data.url);
-            setUploadMsg('✓ 圖片上傳成功');
+            setUploadMsg('圖片上傳成功');
         } catch (err) {
             console.error('Upload error:', err);
-            setUploadMsg('❌ 圖片上傳失敗: ' + (err.response?.data?.error || err.message));
+            setUploadMsg('圖片上傳失敗: ' + (err.response?.data?.error || err.message));
         } finally {
             setUploading(false);
             e.target.value = '';
@@ -116,7 +116,7 @@ function SectionsEditor() {
         setSaving(true);
         try {
             await api.put(`/sections/${editing.key}`, form);
-            setMsg('✓ 已儲存');
+            setMsg('已儲存');
             fetchSections();
             setTimeout(() => { setEditing(null); setMsg(''); }, 1000);
         } catch (err) {
@@ -191,10 +191,10 @@ function AchievementsEditor() {
         try {
             if (editingId) {
                 await api.put(`/achievements/${editingId}`, form);
-                setMsg('✓ 已更新');
+                setMsg('已更新');
             } else {
                 await api.post('/achievements', form);
-                setMsg('✓ 已新增');
+                setMsg('已新增');
             }
             setForm({ semester: '', title: '', category: '', description: '', link: '' });
             setEditingId(null);
@@ -592,11 +592,11 @@ function SnapshotsManager() {
         setMsg('');
         try {
             await api.post('/snapshots', { description: newDesc || '手動備份' });
-            setMsg('✓ 快照建立成功');
+            setMsg('快照建立成功');
             setNewDesc('');
             fetchSnapshots();
         } catch (err) {
-            setMsg('❌ 建立失敗: ' + (err.response?.data?.error || err.message));
+            setMsg('建立失敗: ' + (err.response?.data?.error || err.message));
         } finally {
             setCreating(false);
         }
@@ -611,25 +611,15 @@ function SnapshotsManager() {
         setMsg('');
         try {
             const res = await api.post(`/snapshots/${id}/restore`);
-            setMsg('✓ ' + res.data.message);
+            setMsg(res.data.message);
             fetchSnapshots();
         } catch (err) {
-            setMsg('❌ 還原失敗: ' + (err.response?.data?.error || err.message));
+            setMsg('還原失敗: ' + (err.response?.data?.error || err.message));
         } finally {
             setRestoring(null);
         }
     };
 
-    const handleDelete = async (id) => {
-        if (!window.confirm('確定要刪除此快照嗎？刪除後無法恢復。')) return;
-        try {
-            await api.delete(`/snapshots/${id}`);
-            fetchSnapshots();
-            if (previewId === id) { setPreviewId(null); setPreviewData(null); }
-        } catch (err) {
-            setMsg('❌ 刪除失敗');
-        }
-    };
 
     const handlePreview = async (id) => {
         if (previewId === id) { setPreviewId(null); setPreviewData(null); return; }
@@ -638,7 +628,7 @@ function SnapshotsManager() {
             setPreviewId(id);
             setPreviewData(res.data.snapshot_data);
         } catch (err) {
-            setMsg('❌ 無法載入預覽');
+            setMsg('無法載入預覽');
         }
     };
 
@@ -664,7 +654,7 @@ function SnapshotsManager() {
 
             {/* Manual snapshot creation */}
             <div className="card mb-4" style={{ maxWidth: 700, padding: 20 }}>
-                <h3 className="mb-2" style={{ fontSize: '1rem' }}>📸 手動建立備份</h3>
+                <h3 className="mb-2" style={{ fontSize: '1rem' }}>手動建立備份</h3>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                     <input
                         placeholder="備份描述（選填，例如：學期初完整版）"
@@ -724,7 +714,6 @@ function SnapshotsManager() {
                                 >
                                     {restoring === snap.id ? '還原中...' : '還原'}
                                 </button>
-                                <button className="btn btn-danger btn-sm" onClick={() => handleDelete(snap.id)}>刪除</button>
                             </div>
                         </div>
 
@@ -738,7 +727,7 @@ function SnapshotsManager() {
                                 padding: 16,
                                 marginBottom: 8,
                             }}>
-                                <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: 8 }}>📋 快照內容摘要</div>
+                                <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: 8 }}>快照內容摘要</div>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8 }}>
                                     {Object.entries(previewData).map(([table, rows]) => (
                                         <div key={table} style={{
