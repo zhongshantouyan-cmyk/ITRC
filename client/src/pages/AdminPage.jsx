@@ -49,7 +49,7 @@ const TABS = [
     { key: 'plans', label: '活動規劃' },
     { key: 'records', label: '活動紀錄' },
     { key: 'experiences', label: '參與心得' },
-    { key: 'snapshots', label: '🔄 版本管理' },
+    { key: 'snapshots', label: '版本管理' },
 ];
 
 export default function AdminPage() {
