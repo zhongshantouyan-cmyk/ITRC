@@ -66,6 +66,15 @@ async function initDB() {
         content text NOT NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
+
+      CREATE TABLE IF NOT EXISTS content_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        snapshot_data TEXT NOT NULL,
+        description TEXT,
+        created_by TEXT DEFAULT 'system',
+        is_auto INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
     `);
 
     // Migration: add speaker column if missing (for existing local DBs)

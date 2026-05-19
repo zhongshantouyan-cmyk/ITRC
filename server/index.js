@@ -14,12 +14,17 @@ app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Routes
+const { autoSnapshotMiddleware } = require('./routes/snapshots');
+
 app.use('/api/auth', require('./routes/auth'));
-app.use('/api/sections', require('./routes/sections'));
-app.use('/api/achievements', require('./routes/achievements'));
-app.use('/api/members', require('./routes/members'));
-app.use('/api/activities', require('./routes/activities'));
-app.use('/api/experiences', require('./routes/experiences'));
+app.use('/api/snapshots', require('./routes/snapshots'));
+
+// Content routes — attach auto-snapshot middleware for write operations
+app.use('/api/sections', autoSnapshotMiddleware, require('./routes/sections'));
+app.use('/api/achievements', autoSnapshotMiddleware, require('./routes/achievements'));
+app.use('/api/members', autoSnapshotMiddleware, require('./routes/members'));
+app.use('/api/activities', autoSnapshotMiddleware, require('./routes/activities'));
+app.use('/api/experiences', autoSnapshotMiddleware, require('./routes/experiences'));
 app.use('/api/search', require('./routes/search'));
 
 // Upload route (Cloudinary)

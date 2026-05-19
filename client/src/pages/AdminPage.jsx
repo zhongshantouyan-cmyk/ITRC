@@ -49,6 +49,7 @@ const TABS = [
     { key: 'plans', label: '活動規劃' },
     { key: 'records', label: '活動紀錄' },
     { key: 'experiences', label: '參與心得' },
+    { key: 'snapshots', label: '🔄 版本管理' },
 ];
 
 export default function AdminPage() {
@@ -82,6 +83,7 @@ export default function AdminPage() {
                     {activeTab === 'plans' && <SingleTypeActivitiesEditor activityType="plan" title="活動規劃管理" subtitle="管理未來預計舉辦的活動" />}
                     {activeTab === 'records' && <SingleTypeActivitiesEditor activityType="record" title="活動紀錄管理" subtitle="管理已完成的活動記錄與照片" />}
                     {activeTab === 'experiences' && <ExperiencesEditor />}
+                    {activeTab === 'snapshots' && <SnapshotsManager />}
                 </div>
             </div>
             <Footer />
@@ -546,6 +548,212 @@ function ExperiencesEditor() {
                             <button className="btn btn-outline btn-sm" onClick={() => handleEdit(item)}>編輯</button>
                             <button className="btn btn-danger btn-sm" onClick={() => handleDelete(item.id)}>刪除</button>
                         </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+// ===================== Snapshots Manager (Version Control) =====================
+const TABLE_LABELS = {
+    sections: '頁面內容',
+    achievements: '成果發表',
+    members: '社團成員',
+    activities: '活動 (規劃+紀錄)',
+    experiences: '參與心得',
+};
+
+function SnapshotsManager() {
+    const [snapshots, setSnapshots] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [msg, setMsg] = useState('');
+    const [creating, setCreating] = useState(false);
+    const [newDesc, setNewDesc] = useState('');
+    const [restoring, setRestoring] = useState(null);
+    const [previewId, setPreviewId] = useState(null);
+    const [previewData, setPreviewData] = useState(null);
+
+    const fetchSnapshots = useCallback(async () => {
+        try {
+            const res = await api.get('/snapshots');
+            setSnapshots(res.data);
+        } catch (err) {
+            console.error('Failed to fetch snapshots:', err);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => { fetchSnapshots(); }, [fetchSnapshots]);
+
+    const handleCreate = async () => {
+        setCreating(true);
+        setMsg('');
+        try {
+            await api.post('/snapshots', { description: newDesc || '手動備份' });
+            setMsg('✓ 快照建立成功');
+            setNewDesc('');
+            fetchSnapshots();
+        } catch (err) {
+            setMsg('❌ 建立失敗: ' + (err.response?.data?.error || err.message));
+        } finally {
+            setCreating(false);
+        }
+    };
+
+    const handleRestore = async (id) => {
+        const snapshot = snapshots.find(s => s.id === id);
+        const timeStr = new Date(snapshot.created_at).toLocaleString('zh-TW');
+        if (!window.confirm(`確定要還原到「${snapshot.description}」(${timeStr}) 嗎？\n\n⚠️ 所有目前的內容將被覆蓋！\n（系統會在還原前自動建立備份）`)) return;
+
+        setRestoring(id);
+        setMsg('');
+        try {
+            const res = await api.post(`/snapshots/${id}/restore`);
+            setMsg('✓ ' + res.data.message);
+            fetchSnapshots();
+        } catch (err) {
+            setMsg('❌ 還原失敗: ' + (err.response?.data?.error || err.message));
+        } finally {
+            setRestoring(null);
+        }
+    };
+
+    const handleDelete = async (id) => {
+        if (!window.confirm('確定要刪除此快照嗎？刪除後無法恢復。')) return;
+        try {
+            await api.delete(`/snapshots/${id}`);
+            fetchSnapshots();
+            if (previewId === id) { setPreviewId(null); setPreviewData(null); }
+        } catch (err) {
+            setMsg('❌ 刪除失敗');
+        }
+    };
+
+    const handlePreview = async (id) => {
+        if (previewId === id) { setPreviewId(null); setPreviewData(null); return; }
+        try {
+            const res = await api.get(`/snapshots/${id}`);
+            setPreviewId(id);
+            setPreviewData(res.data.snapshot_data);
+        } catch (err) {
+            setMsg('❌ 無法載入預覽');
+        }
+    };
+
+    const formatTime = (dateStr) => {
+        const d = new Date(dateStr);
+        const now = new Date();
+        const diff = now - d;
+        if (diff < 60000) return '剛剛';
+        if (diff < 3600000) return `${Math.floor(diff / 60000)} 分鐘前`;
+        if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小時前`;
+        if (diff < 604800000) return `${Math.floor(diff / 86400000)} 天前`;
+        return d.toLocaleString('zh-TW');
+    };
+
+    if (loading) return <div style={{ padding: 40, textAlign: 'center' }}>載入中...</div>;
+
+    return (
+        <div>
+            <h2 className="mb-3">版本管理</h2>
+            <p className="text-secondary mb-3">
+                系統會在每次修改內容時自動建立備份。如果內容被誤改，可以一鍵還原到任何歷史版本。
+            </p>
+
+            {/* Manual snapshot creation */}
+            <div className="card mb-4" style={{ maxWidth: 700, padding: 20 }}>
+                <h3 className="mb-2" style={{ fontSize: '1rem' }}>📸 手動建立備份</h3>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <input
+                        placeholder="備份描述（選填，例如：學期初完整版）"
+                        value={newDesc}
+                        onChange={e => setNewDesc(e.target.value)}
+                        style={{ flex: 1 }}
+                    />
+                    <button className="btn btn-primary btn-sm" onClick={handleCreate} disabled={creating}>
+                        {creating ? '建立中...' : '建立備份'}
+                    </button>
+                </div>
+                {msg && <div className="text-accent" style={{ marginTop: 8, fontSize: '0.85rem' }}>{msg}</div>}
+            </div>
+
+            {/* Snapshots list */}
+            <div style={{ marginBottom: 8, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                共 {snapshots.length} 個備份
+            </div>
+
+            <div className="admin-item-list">
+                {snapshots.length === 0 && (
+                    <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-secondary)' }}>
+                        目前沒有任何備份。修改內容後會自動建立，或點擊上方按鈕手動建立。
+                    </div>
+                )}
+
+                {snapshots.map(snap => (
+                    <div key={snap.id} style={{ marginBottom: previewId === snap.id ? 0 : undefined }}>
+                        <div className="admin-item">
+                            <div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                    <span style={{
+                                        display: 'inline-block',
+                                        padding: '2px 8px',
+                                        borderRadius: 4,
+                                        fontSize: '0.7rem',
+                                        fontWeight: 600,
+                                        background: snap.is_auto ? 'var(--bg-tertiary)' : 'var(--accent)',
+                                        color: snap.is_auto ? 'var(--text-secondary)' : '#fff',
+                                    }}>
+                                        {snap.is_auto ? '自動' : '手動'}
+                                    </span>
+                                    <strong style={{ fontSize: '0.9rem' }}>{snap.description}</strong>
+                                </div>
+                                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: 4 }}>
+                                    {formatTime(snap.created_at)} · 由 {snap.created_by} 建立 · #{snap.id}
+                                </div>
+                            </div>
+                            <div className="admin-item-actions" style={{ flexShrink: 0 }}>
+                                <button className="btn btn-outline btn-sm" onClick={() => handlePreview(snap.id)}>
+                                    {previewId === snap.id ? '收起' : '預覽'}
+                                </button>
+                                <button
+                                    className="btn btn-primary btn-sm"
+                                    onClick={() => handleRestore(snap.id)}
+                                    disabled={restoring === snap.id}
+                                >
+                                    {restoring === snap.id ? '還原中...' : '還原'}
+                                </button>
+                                <button className="btn btn-danger btn-sm" onClick={() => handleDelete(snap.id)}>刪除</button>
+                            </div>
+                        </div>
+
+                        {/* Preview panel */}
+                        {previewId === snap.id && previewData && (
+                            <div style={{
+                                background: 'var(--bg-secondary)',
+                                border: '1px solid var(--border)',
+                                borderTop: 'none',
+                                borderRadius: '0 0 8px 8px',
+                                padding: 16,
+                                marginBottom: 8,
+                            }}>
+                                <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: 8 }}>📋 快照內容摘要</div>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8 }}>
+                                    {Object.entries(previewData).map(([table, rows]) => (
+                                        <div key={table} style={{
+                                            background: 'var(--bg-primary)',
+                                            border: '1px solid var(--border)',
+                                            borderRadius: 6,
+                                            padding: '8px 12px',
+                                        }}>
+                                            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{TABLE_LABELS[table] || table}</div>
+                                            <div style={{ fontSize: '1.2rem', fontWeight: 700 }}>{Array.isArray(rows) ? rows.length : 0} <span style={{ fontSize: '0.75rem', fontWeight: 400 }}>筆</span></div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 ))}
             </div>
