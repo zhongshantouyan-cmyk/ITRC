@@ -8,13 +8,53 @@ function getYouTubeId(url) {
     if (!url) return null;
     const patterns = [
         /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
-        /^([a-zA-Z0-9_-]{11})$/
     ];
     for (const pattern of patterns) {
         const match = url.match(pattern);
         if (match) return match[1];
     }
     return null;
+}
+
+// Parse markdown-style description to extract YouTube links, presentation links, and plain text
+function parseDescription(description) {
+    if (!description) return { text: '', youtubeLinks: [], slideLinks: [], otherLinks: [] };
+
+    // Match markdown links: [label](url)
+    const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
+    const youtubeLinks = [];
+    const slideLinks = [];
+    const otherLinks = [];
+    let match;
+
+    while ((match = linkRegex.exec(description)) !== null) {
+        const label = match[1];
+        const url = match[2];
+        const ytId = getYouTubeId(url);
+
+        if (ytId) {
+            youtubeLinks.push({ label, url, videoId: ytId });
+        } else if (
+            label.includes('簡報') ||
+            label.includes('企劃書') ||
+            label.includes('投影片') ||
+            label.includes('PPT') ||
+            label.includes('slides')
+        ) {
+            slideLinks.push({ label, url });
+        } else {
+            otherLinks.push({ label, url });
+        }
+    }
+
+    // Remove all markdown links from text to get the plain description
+    const plainText = description
+        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '')
+        .replace(/\s*\|\s*/g, '')  // remove pipe separators
+        .replace(/\n{2,}/g, '\n')
+        .trim();
+
+    return { text: plainText, youtubeLinks, slideLinks, otherLinks };
 }
 
 export default function ActivityRecordsPage() {
@@ -47,7 +87,7 @@ export default function ActivityRecordsPage() {
 
     const semesterLabel = (sem) => {
         const [year, part] = sem.split('-');
-        return `${year} 學年度 第${part === '1' ? '上' : '下'}學期`;
+        return `${year} 學年度 第${part === '1' ? '一' : '二'}學期`;
     };
 
     return (
@@ -101,38 +141,95 @@ export default function ActivityRecordsPage() {
                             transition={{ duration: 0.3 }}
                         >
                             <div className="timeline">
-                                {activities.map((activity, idx) => (
-                                    <motion.div
-                                        key={activity.id}
-                                        className="timeline-item"
-                                        initial={{ opacity: 0, x: -30 }}
-                                        animate={{ opacity: 1, x: 0 }}
-                                        transition={{ delay: 0.1 * idx }}
-                                    >
-                                        <div className="timeline-dot" />
-                                        {activity.date && <div className="timeline-date">{activity.date}</div>}
-                                        <div className="timeline-content">
-                                            <h3>{activity.title}</h3>
-                                            {activity.description && <p>{activity.description}</p>}
-                                            {activity.image_url && (
-                                                <img src={activity.image_url} alt={activity.title}
-                                                    style={{ width: '100%', borderRadius: 8, marginTop: 12, maxHeight: 300, objectFit: 'cover' }} />
-                                            )}
-                                            {/* YouTube Video Embed */}
-                                            {activity.video_url && getYouTubeId(activity.video_url) && (
-                                                <div className="video-embed">
-                                                    <iframe
-                                                        src={`https://www.youtube.com/embed/${getYouTubeId(activity.video_url)}`}
-                                                        title={activity.title}
-                                                        frameBorder="0"
-                                                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                                                        allowFullScreen
-                                                    />
-                                                </div>
-                                            )}
-                                        </div>
-                                    </motion.div>
-                                ))}
+                                {activities.map((activity, idx) => {
+                                    const parsed = parseDescription(activity.description);
+                                    // Also check the dedicated video_url field
+                                    const dedicatedVideoId = getYouTubeId(activity.video_url);
+
+                                    return (
+                                        <motion.div
+                                            key={activity.id}
+                                            className="timeline-item"
+                                            initial={{ opacity: 0, x: -30 }}
+                                            animate={{ opacity: 1, x: 0 }}
+                                            transition={{ delay: 0.1 * idx }}
+                                        >
+                                            <div className="timeline-dot" />
+                                            {activity.date && <div className="timeline-date">{activity.date}</div>}
+                                            <div className="timeline-content">
+                                                <h3>{activity.title}</h3>
+
+                                                {/* Plain text description */}
+                                                {parsed.text && <p>{parsed.text}</p>}
+
+                                                {/* Action buttons row: slides + other links */}
+                                                {(parsed.slideLinks.length > 0 || parsed.otherLinks.length > 0) && (
+                                                    <div className="activity-links">
+                                                        {parsed.slideLinks.map((link, i) => (
+                                                            <a
+                                                                key={`slide-${i}`}
+                                                                href={link.url}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="btn btn-slide"
+                                                            >
+                                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                                    <path d="M2 3h20v14H2z" />
+                                                                    <path d="M12 17v4" />
+                                                                    <path d="M8 21h8" />
+                                                                </svg>
+                                                                簡報
+                                                            </a>
+                                                        ))}
+                                                        {parsed.otherLinks.map((link, i) => (
+                                                            <a
+                                                                key={`other-${i}`}
+                                                                href={link.url}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="btn btn-link-outline"
+                                                            >
+                                                                {link.label}
+                                                            </a>
+                                                        ))}
+                                                    </div>
+                                                )}
+
+                                                {/* Activity image */}
+                                                {activity.image_url && (
+                                                    <img src={activity.image_url} alt={activity.title}
+                                                        style={{ width: '100%', borderRadius: 8, marginTop: 12, maxHeight: 300, objectFit: 'cover' }} />
+                                                )}
+
+                                                {/* YouTube Video Embeds from description */}
+                                                {parsed.youtubeLinks.map((yt, i) => (
+                                                    <div key={`yt-${i}`} className="video-embed">
+                                                        <iframe
+                                                            src={`https://www.youtube.com/embed/${yt.videoId}`}
+                                                            title={yt.label || activity.title}
+                                                            frameBorder="0"
+                                                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                                            allowFullScreen
+                                                        />
+                                                    </div>
+                                                ))}
+
+                                                {/* Dedicated video_url embed (if not already shown from description) */}
+                                                {dedicatedVideoId && !parsed.youtubeLinks.some(yt => yt.videoId === dedicatedVideoId) && (
+                                                    <div className="video-embed">
+                                                        <iframe
+                                                            src={`https://www.youtube.com/embed/${dedicatedVideoId}`}
+                                                            title={activity.title}
+                                                            frameBorder="0"
+                                                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                                            allowFullScreen
+                                                        />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </motion.div>
+                                    );
+                                })}
                             </div>
                         </motion.div>
                     </AnimatePresence>

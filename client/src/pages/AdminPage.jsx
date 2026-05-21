@@ -435,7 +435,7 @@ function SingleTypeActivitiesEditor({ activityType, title, subtitle }) {
 
     const semesterLabel = (sem) => {
         const [year, part] = sem.split('-');
-        return `${year}-${part === '1' ? '上' : '下'}`;
+        return `${year}-${part === '1' ? '一' : '二'}`;
     };
 
     return (

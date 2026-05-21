@@ -1077,6 +1077,62 @@ h6 {
   font-size: 0.95rem;
 }
 
+/* Activity Action Links (slides, other links) */
+.activity-links {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+.btn-slide {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 20px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #fff;
+  background: var(--gradient-accent);
+  text-decoration: none;
+  transition: var(--transition);
+  box-shadow: 0 2px 8px rgba(77, 126, 168, 0.25);
+  letter-spacing: 0.5px;
+}
+
+.btn-slide:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(77, 126, 168, 0.35);
+  color: #fff;
+}
+
+.btn-slide svg {
+  flex-shrink: 0;
+}
+
+.btn-link-outline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 20px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--accent);
+  background: transparent;
+  border: 1.5px solid var(--accent);
+  text-decoration: none;
+  transition: var(--transition);
+}
+
+.btn-link-outline:hover {
+  background: rgba(77, 126, 168, 0.06);
+  transform: translateY(-2px);
+  color: var(--accent);
+  box-shadow: var(--shadow-sm);
+}
+
 /* ==========================================
    Activity Plans Table
    ========================================== */

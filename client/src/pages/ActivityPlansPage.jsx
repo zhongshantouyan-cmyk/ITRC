@@ -47,7 +47,7 @@ export default function ActivityPlansPage() {
 
     const semesterLabel = (sem) => {
         const [year, part] = sem.split('-');
-        return `${year} 學年度 第${part === '1' ? '上' : '下'}學期`;
+        return `${year} 學年度 第${part === '1' ? '一' : '二'}學期`;
     };
 
     return (
