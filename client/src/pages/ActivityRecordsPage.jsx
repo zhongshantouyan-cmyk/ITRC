@@ -57,6 +57,52 @@ function parseDescription(description) {
     return { text: plainText, youtubeLinks, slideLinks, otherLinks };
 }
 
+// Image Slideshow Component
+function ImageSlideshow({ images, altPrefix }) {
+    const [currentIndex, setCurrentIndex] = useState(0);
+
+    if (!images || images.length === 0) return null;
+    if (images.length === 1) {
+        return (
+            <img src={images[0]} alt={altPrefix}
+                style={{ width: '100%', borderRadius: 8, marginTop: 16, maxHeight: 400, objectFit: 'cover', display: 'block' }} />
+        );
+    }
+
+    const nextSlide = () => setCurrentIndex((prev) => (prev + 1) % images.length);
+    const prevSlide = () => setCurrentIndex((prev) => (prev - 1 + images.length) % images.length);
+
+    return (
+        <div className="image-slideshow">
+            <AnimatePresence mode="wait">
+                <motion.img
+                    key={currentIndex}
+                    src={images[currentIndex]}
+                    alt={`${altPrefix} 照片 ${currentIndex + 1}`}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.3 }}
+                    className="slideshow-image"
+                />
+            </AnimatePresence>
+            
+            <button className="slideshow-btn prev" onClick={prevSlide}>❮</button>
+            <button className="slideshow-btn next" onClick={nextSlide}>❯</button>
+            
+            <div className="slideshow-indicators">
+                {images.map((_, i) => (
+                    <div 
+                        key={i} 
+                        className={`indicator ${i === currentIndex ? 'active' : ''}`}
+                        onClick={() => setCurrentIndex(i)}
+                    />
+                ))}
+            </div>
+        </div>
+    );
+}
+
 export default function ActivityRecordsPage() {
     const [activities, setActivities] = useState([]);
     const [semesters, setSemesters] = useState([]);
@@ -206,22 +252,7 @@ export default function ActivityRecordsPage() {
                                                         images = [activity.image_url];
                                                     }
                                                     
-                                                    if (images.length === 0) return null;
-                                                    
-                                                    if (images.length === 1) {
-                                                        return (
-                                                            <img src={images[0]} alt={activity.title}
-                                                                style={{ width: '100%', borderRadius: 8, marginTop: 16, maxHeight: 300, objectFit: 'cover', display: 'block' }} />
-                                                        );
-                                                    }
-                                                    
-                                                    return (
-                                                        <div className="activity-photo-grid">
-                                                            {images.map((img, i) => (
-                                                                <img key={i} src={img} alt={`${activity.title} 照片 ${i + 1}`} />
-                                                            ))}
-                                                        </div>
-                                                    );
+                                                    return <ImageSlideshow images={images} altPrefix={activity.title} />;
                                                 })()}
 
                                                 {/* YouTube Video Embeds from description */}

@@ -1077,26 +1077,81 @@ h6 {
   font-size: 0.95rem;
 }
 
-/* Activity Photo Grid */
-.activity-photo-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 12px;
-  margin-top: 16px;
-}
-
-.activity-photo-grid img {
+/* Image Slideshow */
+.image-slideshow {
+  position: relative;
   width: 100%;
-  aspect-ratio: 4 / 3;
-  object-fit: cover;
+  margin-top: 16px;
   border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-card);
   box-shadow: var(--shadow-sm);
-  transition: var(--transition);
 }
 
-.activity-photo-grid img:hover {
-  transform: scale(1.02);
-  box-shadow: var(--shadow-md);
+.slideshow-image {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: contain;
+  background: rgba(0, 0, 0, 0.03);
+  display: block;
+}
+
+.slideshow-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(0, 0, 0, 0.3);
+  color: #fff;
+  border: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition);
+  opacity: 0;
+}
+
+.image-slideshow:hover .slideshow-btn {
+  opacity: 1;
+}
+
+.slideshow-btn:hover {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.slideshow-btn.prev {
+  left: 10px;
+}
+
+.slideshow-btn.next {
+  right: 10px;
+}
+
+.slideshow-indicators {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+}
+
+.slideshow-indicators .indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+  transition: var(--transition);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.slideshow-indicators .indicator.active {
+  background: #fff;
+  transform: scale(1.2);
 }
 
 /* Activity Action Links (slides, other links) */
