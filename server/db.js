@@ -51,11 +51,13 @@ async function initDB() {
       CREATE TABLE IF NOT EXISTS activities (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         type text NOT NULL CHECK(type IN ('record', 'plan')),
+        semester text NOT NULL DEFAULT '114-1',
         title text NOT NULL,
         date text,
         description text,
         speaker text,
         image_url text,
+        video_url text,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
 
@@ -80,6 +82,20 @@ async function initDB() {
     // Migration: add speaker column if missing (for existing local DBs)
     try {
       await db.execute('ALTER TABLE activities ADD COLUMN speaker text');
+    } catch (e) {
+      // Column already exists or other error, ignore
+    }
+
+    // Migration: add semester column if missing
+    try {
+      await db.execute("ALTER TABLE activities ADD COLUMN semester text NOT NULL DEFAULT '114-1'");
+    } catch (e) {
+      // Column already exists or other error, ignore
+    }
+
+    // Migration: add video_url column if missing
+    try {
+      await db.execute('ALTER TABLE activities ADD COLUMN video_url text');
     } catch (e) {
       // Column already exists or other error, ignore
     }

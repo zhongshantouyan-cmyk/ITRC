@@ -369,16 +369,28 @@ function MembersEditor() {
 // ===================== Single Type Activities Editor (reusable for plans & records) =====================
 function SingleTypeActivitiesEditor({ activityType, title, subtitle }) {
     const [items, setItems] = useState([]);
-    const emptyForm = { type: activityType, title: '', date: '', description: '', speaker: '', image_url: '' };
+    const [semesters, setSemesters] = useState(['114-1']);
+    const [filterSemester, setFilterSemester] = useState('');
+    const emptyForm = { type: activityType, semester: '114-1', title: '', date: '', description: '', speaker: '', image_url: '', video_url: '' };
     const [form, setForm] = useState(emptyForm);
     const [editingId, setEditingId] = useState(null);
     const [msg, setMsg] = useState('');
 
-    const fetchData = useCallback(async () => {
-        const res = await api.get(`/activities?type=${activityType}`);
-        setItems(res.data);
+    const fetchSemesters = useCallback(async () => {
+        try {
+            const res = await api.get(`/activities/semesters?type=${activityType}`);
+            if (res.data.length > 0) setSemesters(res.data);
+        } catch (e) { /* ignore */ }
     }, [activityType]);
 
+    const fetchData = useCallback(async () => {
+        const params = { type: activityType };
+        if (filterSemester) params.semester = filterSemester;
+        const res = await api.get('/activities', { params });
+        setItems(res.data);
+    }, [activityType, filterSemester]);
+
+    useEffect(() => { fetchSemesters(); }, [fetchSemesters]);
     useEffect(() => { fetchData(); }, [fetchData]);
 
     const handleSubmit = async (e) => {
@@ -394,6 +406,7 @@ function SingleTypeActivitiesEditor({ activityType, title, subtitle }) {
             setForm(emptyForm);
             setEditingId(null);
             fetchData();
+            fetchSemesters();
         } catch (err) {
             setMsg('錯誤: ' + (err.response?.data?.error || err.message));
         }
@@ -401,21 +414,59 @@ function SingleTypeActivitiesEditor({ activityType, title, subtitle }) {
 
     const handleEdit = (item) => {
         setEditingId(item.id);
-        setForm({ type: activityType, title: item.title, date: item.date || '', description: item.description || '', speaker: item.speaker || '', image_url: item.image_url || '' });
+        setForm({
+            type: activityType,
+            semester: item.semester || '114-1',
+            title: item.title,
+            date: item.date || '',
+            description: item.description || '',
+            speaker: item.speaker || '',
+            image_url: item.image_url || '',
+            video_url: item.video_url || ''
+        });
     };
 
     const handleDelete = async (id) => {
         if (!window.confirm('確定要刪除嗎？')) return;
         await api.delete(`/activities/${id}`);
         fetchData();
+        fetchSemesters();
+    };
+
+    const semesterLabel = (sem) => {
+        const [year, part] = sem.split('-');
+        return `${year}-${part === '1' ? '上' : '下'}`;
     };
 
     return (
         <div>
             <h2 className="mb-3">{title}</h2>
             {subtitle && <p className="text-secondary mb-3">{subtitle}</p>}
+
+            {/* Semester filter */}
+            <div style={{ marginBottom: 16, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>篩選學期：</span>
+                <button
+                    className={`btn btn-sm ${!filterSemester ? 'btn-primary' : 'btn-outline'}`}
+                    onClick={() => setFilterSemester('')}
+                    style={{ padding: '4px 12px', fontSize: '0.8rem' }}
+                >全部</button>
+                {semesters.map(sem => (
+                    <button
+                        key={sem}
+                        className={`btn btn-sm ${filterSemester === sem ? 'btn-primary' : 'btn-outline'}`}
+                        onClick={() => setFilterSemester(sem)}
+                        style={{ padding: '4px 12px', fontSize: '0.8rem' }}
+                    >{semesterLabel(sem)}</button>
+                ))}
+            </div>
+
             <form className="admin-form card mb-4" onSubmit={handleSubmit} style={{ maxWidth: 700, padding: 24 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+                    <div className="form-group">
+                        <label>學期</label>
+                        <input placeholder="例: 114-1" value={form.semester} onChange={e => setForm({ ...form, semester: e.target.value })} required />
+                    </div>
                     <div className="form-group">
                         <label>日期</label>
                         <input placeholder="例: 114年09月26日(五)" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} />
@@ -428,6 +479,13 @@ function SingleTypeActivitiesEditor({ activityType, title, subtitle }) {
                 <div className="form-group">
                     <label>主題</label>
                     <input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} required />
+                </div>
+                <div className="form-group">
+                    <label>YouTube 影片網址</label>
+                    <input placeholder="例: https://www.youtube.com/watch?v=xxxxx" value={form.video_url} onChange={e => setForm({ ...form, video_url: e.target.value })} />
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 4, display: 'block' }}>
+                        支援 YouTube 連結，將自動嵌入為 iframe 播放器
+                    </span>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'start' }}>
                     <div className="form-group">
@@ -453,9 +511,11 @@ function SingleTypeActivitiesEditor({ activityType, title, subtitle }) {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                             {item.image_url && <img src={item.image_url} alt={item.title} style={{ width: 48, height: 36, borderRadius: 4, objectFit: 'cover' }} />}
                             <div>
+                                <span className="semester-badge" style={{ fontSize: '0.65rem', padding: '2px 8px', marginRight: 8 }}>{item.semester || '114-1'}</span>
                                 <strong>{item.title}</strong>
                                 {item.speaker && <span className="text-secondary" style={{ marginLeft: 8, fontSize: '0.85rem' }}>| {item.speaker}</span>}
                                 {item.date && <span className="text-secondary" style={{ marginLeft: 8, fontSize: '0.85rem' }}>{item.date}</span>}
+                                {item.video_url && <span style={{ marginLeft: 8, fontSize: '0.75rem', color: 'var(--accent)' }}>🎬 影片</span>}
                             </div>
                         </div>
                         <div className="admin-item-actions">

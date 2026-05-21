@@ -103,25 +103,25 @@ async function seed() {
 
         // Activity Plans (from screenshot)
         const activityPlans = [
-            { type: 'plan', date: '114年09月26日(五)', title: '社課介紹+破冰遊戲', speaker: '張大恒 社長' },
-            { type: 'plan', date: '114年10月03日(五)', title: '投資與交易的本質', speaker: '張大恒 社長' },
-            { type: 'plan', date: '114年10月10日 (五)', title: '國慶放假', speaker: '', description: '國慶放假' },
-            { type: 'plan', date: '114年10月17日(五)', title: '總體經濟指標', speaker: '黃泓睿 學長' },
-            { type: 'plan', date: '114年10月24日(五)', title: '產業分析入門與實務', speaker: '黃鑠恩 講師' },
-            { type: 'plan', date: '114年10月31日(五)', title: '財務報表分析入門與實務', speaker: '張大恒 社長' },
-            { type: 'plan', date: '114年11月07日(五)', title: '期中考週停課一次', speaker: '', description: '期中考週' },
-            { type: 'plan', date: '114年11月14日(五)', title: '技術分析入門與實務', speaker: '林家佑 學長' },
-            { type: 'plan', date: '114年11月21日(五)', title: '期末報告準備', speaker: '全體幹部' },
-            { type: 'plan', date: '114年11月28日(五)', title: '期末報告發表暨結業式', speaker: '全體幹部' },
-            { type: 'plan', date: '114年12月05日(五)', title: '企業參訪', speaker: '群益金鼎證券' }
+            { type: 'plan', semester: '114-1', date: '114年09月26日(五)', title: '社課介紹+破冰遊戲', speaker: '張大恒 社長' },
+            { type: 'plan', semester: '114-1', date: '114年10月03日(五)', title: '投資與交易的本質', speaker: '張大恒 社長' },
+            { type: 'plan', semester: '114-1', date: '114年10月10日 (五)', title: '國慶放假', speaker: '', description: '國慶放假' },
+            { type: 'plan', semester: '114-1', date: '114年10月17日(五)', title: '總體經濟指標', speaker: '黃泓睿 學長' },
+            { type: 'plan', semester: '114-1', date: '114年10月24日(五)', title: '產業分析入門與實務', speaker: '黃鑠恩 講師' },
+            { type: 'plan', semester: '114-1', date: '114年10月31日(五)', title: '財務報表分析入門與實務', speaker: '張大恒 社長' },
+            { type: 'plan', semester: '114-1', date: '114年11月07日(五)', title: '期中考週停課一次', speaker: '', description: '期中考週' },
+            { type: 'plan', semester: '114-1', date: '114年11月14日(五)', title: '技術分析入門與實務', speaker: '林家佑 學長' },
+            { type: 'plan', semester: '114-1', date: '114年11月21日(五)', title: '期末報告準備', speaker: '全體幹部' },
+            { type: 'plan', semester: '114-1', date: '114年11月28日(五)', title: '期末報告發表暨結業式', speaker: '全體幹部' },
+            { type: 'plan', semester: '114-1', date: '114年12月05日(五)', title: '企業參訪', speaker: '群益金鼎證券' }
         ];
 
         const existingActivities = await db.execute('SELECT COUNT(*) as count FROM activities');
         if (existingActivities.rows[0].count === 0) {
             for (const a of activityPlans) {
                 await db.execute({
-                    sql: 'INSERT INTO activities (type, date, title, speaker, description) VALUES (?, ?, ?, ?, ?)',
-                    args: [a.type, a.date, a.title, a.speaker || null, a.description || null]
+                    sql: 'INSERT INTO activities (type, semester, date, title, speaker, description) VALUES (?, ?, ?, ?, ?, ?)',
+                    args: [a.type, a.semester, a.date, a.title, a.speaker || null, a.description || null]
                 });
             }
             console.log('✓ Activity plans seeded');
