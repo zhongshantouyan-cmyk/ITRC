@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import api from '../api';
 import Footer from '../components/Footer';
 
-// ===================== Shared Image Uploader Helper =====================
+// ===================== Shared Image Uploader Helper (single image) =====================
 function ImageUploader({ value, onChange, label = '上傳圖片', disabled = false }) {
     const [uploading, setUploading] = useState(false);
     const [uploadMsg, setUploadMsg] = useState('');
@@ -38,6 +38,122 @@ function ImageUploader({ value, onChange, label = '上傳圖片', disabled = fal
             <input placeholder="或直接貼上圖片網址" value={value || ''} onChange={e => onChange(e.target.value)} />
             {uploadMsg && <span className="text-accent" style={{ fontSize: '0.8rem', display: 'block', marginTop: 4 }}>{uploadMsg}</span>}
             {value && <img src={value} alt="預覽" style={{ marginTop: 10, maxHeight: 80, borderRadius: 5, objectFit: 'cover' }} />}
+        </div>
+    );
+}
+
+// ===================== Multi Image Uploader (batch upload to Cloudinary) =====================
+function MultiImageUploader({ images, onChange, label = '活動照片', disabled = false }) {
+    const [uploading, setUploading] = useState(false);
+    const [uploadMsg, setUploadMsg] = useState('');
+    const [progress, setProgress] = useState('');
+
+    const handleBatchUpload = async (e) => {
+        const files = Array.from(e.target.files);
+        if (files.length === 0) return;
+
+        setUploading(true);
+        setProgress(`0/${files.length}`);
+        setUploadMsg(`正在上傳 ${files.length} 張圖片...`);
+
+        const formData = new FormData();
+        files.forEach(f => formData.append('files', f));
+
+        try {
+            const res = await api.post('/upload/batch', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            const newUrls = res.data.files.map(f => f.url);
+            onChange([...images, ...newUrls]);
+            setUploadMsg(`✓ 成功上傳 ${newUrls.length} 張圖片`);
+            setProgress('');
+        } catch (err) {
+            console.error('Batch upload error:', err);
+            setUploadMsg('上傳失敗: ' + (err.response?.data?.error || err.message));
+            setProgress('');
+        } finally {
+            setUploading(false);
+            e.target.value = '';
+        }
+    };
+
+    const removeImage = (index) => {
+        const updated = images.filter((_, i) => i !== index);
+        onChange(updated);
+    };
+
+    const handlePasteUrl = () => {
+        const url = window.prompt('請輸入圖片網址：');
+        if (url && url.trim()) {
+            onChange([...images, url.trim()]);
+        }
+    };
+
+    return (
+        <div className="form-group">
+            <label>{label} (支援批量上傳)</label>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+                <label className="btn btn-outline btn-sm" style={{
+                    cursor: uploading || disabled ? 'not-allowed' : 'pointer',
+                    opacity: uploading || disabled ? 0.5 : 1,
+                    display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', fontSize: '0.8rem'
+                }}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="17 8 12 3 7 8" />
+                        <line x1="12" y1="3" x2="12" y2="15" />
+                    </svg>
+                    {uploading ? '上傳中...' : '選擇圖片'}
+                    <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={handleBatchUpload}
+                        disabled={disabled || uploading}
+                        style={{ display: 'none' }}
+                    />
+                </label>
+                <button type="button" className="btn btn-outline btn-sm" onClick={handlePasteUrl}
+                    style={{ padding: '6px 14px', fontSize: '0.8rem' }} disabled={disabled}>
+                    + 貼上網址
+                </button>
+                {progress && <span style={{ fontSize: '0.8rem', color: 'var(--accent)' }}>{progress}</span>}
+            </div>
+            {uploadMsg && <div className="text-accent" style={{ fontSize: '0.8rem', marginBottom: 8 }}>{uploadMsg}</div>}
+
+            {/* Image preview grid */}
+            {images.length > 0 && (
+                <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))',
+                    gap: 8,
+                    marginTop: 4
+                }}>
+                    {images.map((url, i) => (
+                        <div key={i} style={{ position: 'relative', paddingBottom: '100%', borderRadius: 6, overflow: 'hidden', border: '1px solid var(--border-subtle)' }}>
+                            <img src={url} alt={`照片 ${i + 1}`} style={{
+                                position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover'
+                            }} />
+                            <button
+                                type="button"
+                                onClick={() => removeImage(i)}
+                                style={{
+                                    position: 'absolute', top: 3, right: 3,
+                                    width: 20, height: 20, borderRadius: '50%',
+                                    background: 'rgba(0,0,0,0.6)', color: '#fff',
+                                    border: 'none', cursor: 'pointer',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    fontSize: '0.7rem', lineHeight: 1, padding: 0
+                                }}
+                                title="移除此圖片"
+                            >✕</button>
+                        </div>
+                    ))}
+                </div>
+            )}
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 6 }}>
+                已選 {images.length} 張照片，可一次選取多張圖片批量上傳
+            </div>
         </div>
     );
 }
@@ -371,7 +487,7 @@ function SingleTypeActivitiesEditor({ activityType, title, subtitle }) {
     const [items, setItems] = useState([]);
     const [semesters, setSemesters] = useState(['114-1']);
     const [filterSemester, setFilterSemester] = useState('');
-    const emptyForm = { type: activityType, semester: '114-1', title: '', date: '', description: '', speaker: '', image_url: '', video_url: '' };
+    const emptyForm = { type: activityType, semester: '114-1', title: '', date: '', description: '', speaker: '', image_url: [], video_url: '' };
     const [form, setForm] = useState(emptyForm);
     const [editingId, setEditingId] = useState(null);
     const [msg, setMsg] = useState('');
@@ -396,11 +512,16 @@ function SingleTypeActivitiesEditor({ activityType, title, subtitle }) {
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
+            const submitData = {
+                ...form,
+                image_url: form.image_url.length > 0 ? JSON.stringify(form.image_url) : ''
+            };
+
             if (editingId) {
-                await api.put(`/activities/${editingId}`, form);
+                await api.put(`/activities/${editingId}`, submitData);
                 setMsg('✓ 已更新');
             } else {
-                await api.post('/activities', form);
+                await api.post('/activities', submitData);
                 setMsg('✓ 已新增');
             }
             setForm(emptyForm);
@@ -414,6 +535,17 @@ function SingleTypeActivitiesEditor({ activityType, title, subtitle }) {
 
     const handleEdit = (item) => {
         setEditingId(item.id);
+
+        let parsedImages = [];
+        if (item.image_url) {
+            try {
+                parsedImages = JSON.parse(item.image_url);
+                if (!Array.isArray(parsedImages)) parsedImages = [item.image_url];
+            } catch (e) {
+                parsedImages = [item.image_url];
+            }
+        }
+
         setForm({
             type: activityType,
             semester: item.semester || '114-1',
@@ -421,7 +553,7 @@ function SingleTypeActivitiesEditor({ activityType, title, subtitle }) {
             date: item.date || '',
             description: item.description || '',
             speaker: item.speaker || '',
-            image_url: item.image_url || '',
+            image_url: parsedImages,
             video_url: item.video_url || ''
         });
     };
@@ -492,9 +624,9 @@ function SingleTypeActivitiesEditor({ activityType, title, subtitle }) {
                         <label>備註/其他連結</label>
                         <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={4} placeholder="支援 Markdown 語法 (如: [顯示名稱](網址))" />
                     </div>
-                    <ImageUploader
-                        value={form.image_url}
-                        onChange={(url) => setForm(prev => ({ ...prev, image_url: url }))}
+                    <MultiImageUploader
+                        images={form.image_url}
+                        onChange={(urls) => setForm(prev => ({ ...prev, image_url: urls }))}
                         label="活動照片"
                     />
                 </div>
@@ -506,24 +638,36 @@ function SingleTypeActivitiesEditor({ activityType, title, subtitle }) {
             </form>
 
             <div className="admin-item-list">
-                {items.map(item => (
-                    <div key={item.id} className="admin-item">
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            {item.image_url && <img src={item.image_url} alt={item.title} style={{ width: 48, height: 36, borderRadius: 4, objectFit: 'cover' }} />}
-                            <div>
-                                <span className="semester-badge" style={{ fontSize: '0.65rem', padding: '2px 8px', marginRight: 8 }}>{item.semester || '114-1'}</span>
-                                <strong>{item.title}</strong>
-                                {item.speaker && <span className="text-secondary" style={{ marginLeft: 8, fontSize: '0.85rem' }}>| {item.speaker}</span>}
-                                {item.date && <span className="text-secondary" style={{ marginLeft: 8, fontSize: '0.85rem' }}>{item.date}</span>}
-                                {item.video_url && <span style={{ marginLeft: 8, fontSize: '0.75rem', color: 'var(--accent)' }}>🎬 影片</span>}
+                {items.map(item => {
+                    let firstImage = '';
+                    if (item.image_url) {
+                        try {
+                            const parsed = JSON.parse(item.image_url);
+                            firstImage = Array.isArray(parsed) && parsed.length > 0 ? parsed[0] : item.image_url;
+                        } catch (e) {
+                            firstImage = item.image_url;
+                        }
+                    }
+
+                    return (
+                        <div key={item.id} className="admin-item">
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                {firstImage && <img src={firstImage} alt={item.title} style={{ width: 48, height: 36, borderRadius: 4, objectFit: 'cover' }} />}
+                                <div>
+                                    <span className="semester-badge" style={{ fontSize: '0.65rem', padding: '2px 8px', marginRight: 8 }}>{item.semester || '114-1'}</span>
+                                    <strong>{item.title}</strong>
+                                    {item.speaker && <span className="text-secondary" style={{ marginLeft: 8, fontSize: '0.85rem' }}>| {item.speaker}</span>}
+                                    {item.date && <span className="text-secondary" style={{ marginLeft: 8, fontSize: '0.85rem' }}>{item.date}</span>}
+                                    {item.video_url && <span style={{ marginLeft: 8, fontSize: '0.75rem', color: 'var(--accent)' }}>🎬 影片</span>}
+                                </div>
+                            </div>
+                            <div className="admin-item-actions">
+                                <button className="btn btn-outline btn-sm" onClick={() => handleEdit(item)}>編輯</button>
+                                <button className="btn btn-danger btn-sm" onClick={() => handleDelete(item.id)}>刪除</button>
                             </div>
                         </div>
-                        <div className="admin-item-actions">
-                            <button className="btn btn-outline btn-sm" onClick={() => handleEdit(item)}>編輯</button>
-                            <button className="btn btn-danger btn-sm" onClick={() => handleDelete(item.id)}>刪除</button>
-                        </div>
-                    </div>
-                ))}
+                    );
+                })}
             </div>
         </div>
     );

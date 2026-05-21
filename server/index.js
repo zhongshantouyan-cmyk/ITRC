@@ -86,6 +86,63 @@ app.post('/api/upload', authMiddleware, upload.single('file'), async (req, res) 
     }
 });
 
+// Batch upload route (multiple files to Cloudinary)
+const uploadMultiple = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB per file
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype.startsWith('image/')) {
+            cb(null, true);
+        } else {
+            cb(new Error('只能上傳圖片檔案'), false);
+        }
+    }
+}).array('files', 20); // max 20 files at once
+
+app.post('/api/upload/batch', authMiddleware, (req, res) => {
+    uploadMultiple(req, res, async (multerErr) => {
+        if (multerErr) {
+            return res.status(400).json({ error: multerErr.message });
+        }
+        if (!req.files || req.files.length === 0) {
+            return res.status(400).json({ error: '未選擇檔案' });
+        }
+
+        try {
+            // Upload all files to Cloudinary in parallel
+            const uploadPromises = req.files.map(file => {
+                return new Promise((resolve, reject) => {
+                    const stream = cloudinary.uploader.upload_stream(
+                        {
+                            folder: 'itrc',
+                            resource_type: 'image',
+                            transformation: [
+                                { quality: 'auto', fetch_format: 'auto' }
+                            ]
+                        },
+                        (error, result) => {
+                            if (error) reject(error);
+                            else resolve({
+                                url: result.secure_url,
+                                public_id: result.public_id,
+                                width: result.width,
+                                height: result.height,
+                            });
+                        }
+                    );
+                    stream.end(file.buffer);
+                });
+            });
+
+            const results = await Promise.all(uploadPromises);
+            res.json({ files: results });
+        } catch (err) {
+            console.error('Batch Cloudinary upload error:', err);
+            res.status(500).json({ error: '批次上傳失敗: ' + err.message });
+        }
+    });
+});
+
 // Health check
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', time: new Date().toISOString() });

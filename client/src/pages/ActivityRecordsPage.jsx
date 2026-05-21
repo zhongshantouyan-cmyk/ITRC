@@ -195,11 +195,34 @@ export default function ActivityRecordsPage() {
                                                     </div>
                                                 )}
 
-                                                {/* Activity image */}
-                                                {activity.image_url && (
-                                                    <img src={activity.image_url} alt={activity.title}
-                                                        style={{ width: '100%', borderRadius: 8, marginTop: 12, maxHeight: 300, objectFit: 'cover' }} />
-                                                )}
+                                                {/* Activity image(s) */}
+                                                {(() => {
+                                                    if (!activity.image_url) return null;
+                                                    let images = [];
+                                                    try {
+                                                        const parsed = JSON.parse(activity.image_url);
+                                                        images = Array.isArray(parsed) ? parsed : [activity.image_url];
+                                                    } catch (e) {
+                                                        images = [activity.image_url];
+                                                    }
+                                                    
+                                                    if (images.length === 0) return null;
+                                                    
+                                                    if (images.length === 1) {
+                                                        return (
+                                                            <img src={images[0]} alt={activity.title}
+                                                                style={{ width: '100%', borderRadius: 8, marginTop: 16, maxHeight: 300, objectFit: 'cover', display: 'block' }} />
+                                                        );
+                                                    }
+                                                    
+                                                    return (
+                                                        <div className="activity-photo-grid">
+                                                            {images.map((img, i) => (
+                                                                <img key={i} src={img} alt={`${activity.title} 照片 ${i + 1}`} />
+                                                            ))}
+                                                        </div>
+                                                    );
+                                                })()}
 
                                                 {/* YouTube Video Embeds from description */}
                                                 {parsed.youtubeLinks.map((yt, i) => (
