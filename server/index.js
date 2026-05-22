@@ -25,6 +25,7 @@ app.use('/api/achievements', autoSnapshotMiddleware, require('./routes/achieveme
 app.use('/api/members', autoSnapshotMiddleware, require('./routes/members'));
 app.use('/api/activities', autoSnapshotMiddleware, require('./routes/activities'));
 app.use('/api/experiences', autoSnapshotMiddleware, require('./routes/experiences'));
+app.use('/api/resources', autoSnapshotMiddleware, require('./routes/resources'));
 app.use('/api/search', require('./routes/search'));
 
 // Upload route (Cloudinary)

@@ -77,6 +77,29 @@ async function initDB() {
         is_auto INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
+
+      CREATE TABLE IF NOT EXISTS online_resources (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name text NOT NULL,
+        name_en text,
+        url text NOT NULL,
+        description text,
+        icon text,
+        color text,
+        order_num INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS offline_resources (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title text NOT NULL,
+        title_en text,
+        author text,
+        cover_url text,
+        description text,
+        order_num INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
     `);
 
     // Migration: add speaker column if missing (for existing local DBs)

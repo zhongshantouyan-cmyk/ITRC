@@ -1,4 +1,6 @@
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import api from '../api';
 
 /* SVG icon components for online resources */
 const IconChart = () => (
@@ -29,86 +31,13 @@ const IconFileText = () => (
     </svg>
 );
 
-const onlineResources = [
-    {
-        name: '公開資訊觀測站',
-        nameEn: 'Market Observation Post System',
-        url: 'https://mops.twse.com.tw/mops/#/web/home',
-        description: '臺灣證券市場公開資訊查詢系統，提供上市櫃公司財務報表、重大訊息及股東會資訊。',
-        icon: IconChart,
-        color: '#4d7ea8'
-    },
-    {
-        name: 'FRED',
-        nameEn: 'Federal Reserve Economic Data',
-        url: 'https://fred.stlouisfed.org/',
-        description: '美國聯邦儲備銀行聖路易分行經濟數據庫，提供超過 80 萬筆經濟時間序列資料。',
-        icon: IconTrendUp,
-        color: '#2e7d32'
-    },
-    {
-        name: 'IMF eLibrary',
-        nameEn: 'International Monetary Fund',
-        url: 'https://www.elibrary.imf.org/',
-        description: '國際貨幣基金組織電子圖書館，涵蓋全球經濟研究、政策分析與統計數據。',
-        icon: IconGlobe,
-        color: '#1565c0'
-    },
-    {
-        name: 'CFA Institute',
-        nameEn: 'Chartered Financial Analyst',
-        url: 'https://www.cfainstitute.org/',
-        description: '全球金融分析師認證機構，提供投資管理與財務分析的專業學習資源。',
-        icon: IconAward,
-        color: '#6a1b9a'
-    },
-    {
-        name: 'JY 價值筆記',
-        nameEn: 'JY Value Notes',
-        url: 'https://jyvalue.com/',
-        description: '台灣金融證照考古題下載與學習筆記平台，適合準備各類金融證照考試。',
-        icon: IconFileText,
-        color: '#e65100'
-    }
-];
-
-const offlineResources = [
-    {
-        title: '原則',
-        titleEn: 'Principles',
-        author: 'Ray Dalio（瑞・達利歐）',
-        cover: '/images/books/principles.jpg',
-        description: '全球最大避險基金橋水基金創辦人的生活與工作原則，闡述系統化決策的思維框架。'
-    },
-    {
-        title: '持續買進',
-        titleEn: 'Just Keep Buying',
-        author: 'Nick Maggiulli（尼克・馬朱利）',
-        cover: '/images/books/just-keep-buying.jpg',
-        description: '以數據驅動的方法證明，持續投入市場是累積財富最有效的策略。'
-    },
-    {
-        title: '投資金律',
-        titleEn: 'The Four Pillars of Investing',
-        author: 'William J. Bernstein（威廉・乔恩斯坦）',
-        cover: '/images/books/four-pillars.jpg',
-        description: '從投資理論、歷史、心理與產業四大支柱，建構完整的投資知識體系。'
-    },
-    {
-        title: '漫步華爾街',
-        titleEn: 'A Random Walk Down Wall Street',
-        author: 'Burton G. Malkiel（乔頓・墨基爾）',
-        cover: '/images/books/random-walk.jpg',
-        description: '投資經典之作，以隨機漫步理論闡述市場效率與指數投資的優勢。'
-    },
-    {
-        title: '金錢心理學',
-        titleEn: 'Dollars and Sense',
-        author: 'Dan Ariely & Jeff Kreisler',
-        cover: '/images/books/dollars-and-sense.jpg',
-        description: '行為經濟學大師揭示人們在金錢決策中的非理性行為與心理偏誤。'
-    }
-];
+const ICON_MAP = {
+    IconChart,
+    IconTrendUp,
+    IconGlobe,
+    IconAward,
+    IconFileText
+};
 
 const containerVariants = {
     hidden: { opacity: 0 },
@@ -124,6 +53,32 @@ const itemVariants = {
 };
 
 export default function ResourcesPage() {
+    const [onlineResources, setOnlineResources] = useState([]);
+    const [offlineResources, setOfflineResources] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchResources = async () => {
+            try {
+                const res = await api.get('/resources');
+                setOnlineResources(res.data.online || []);
+                setOfflineResources(res.data.offline || []);
+            } catch (err) {
+                console.error('Failed to fetch resources:', err);
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchResources();
+    }, []);
+
+    if (loading) {
+        return (
+            <div className="loading-spinner" style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}></div>
+        );
+    }
+
+
     return (
         <>
             {/* Hero Banner */}
@@ -161,9 +116,11 @@ export default function ResourcesPage() {
                     whileInView="visible"
                     viewport={{ once: true }}
                 >
-                    {onlineResources.map((resource, idx) => (
+                    {onlineResources.map((resource, idx) => {
+                        const IconComponent = ICON_MAP[resource.icon] || IconGlobe;
+                        return (
                         <motion.a
-                            key={idx}
+                            key={resource.id || idx}
                             href={resource.url}
                             target="_blank"
                             rel="noopener noreferrer"
@@ -171,12 +128,12 @@ export default function ResourcesPage() {
                             variants={itemVariants}
                             whileHover={{ y: -6, boxShadow: '0 12px 40px rgba(0,0,0,0.12)' }}
                         >
-                            <div className="online-resource-icon" style={{ background: resource.color + '15', color: resource.color }}>
-                                <resource.icon />
+                            <div className="online-resource-icon" style={{ background: (resource.color || '#1565c0') + '15', color: resource.color || '#1565c0' }}>
+                                <IconComponent />
                             </div>
                             <div className="online-resource-body">
                                 <h3>{resource.name}</h3>
-                                <span className="online-resource-en">{resource.nameEn}</span>
+                                <span className="online-resource-en">{resource.name_en || resource.nameEn}</span>
                                 <p>{resource.description}</p>
                             </div>
                             <div className="online-resource-arrow">
@@ -185,7 +142,8 @@ export default function ResourcesPage() {
                                 </svg>
                             </div>
                         </motion.a>
-                    ))}
+                        );
+                    })}
                 </motion.div>
             </section>
 
@@ -212,23 +170,27 @@ export default function ResourcesPage() {
                 >
                     {offlineResources.map((book, idx) => (
                         <motion.div
-                            key={idx}
+                            key={book.id || idx}
                             className="book-card"
                             variants={itemVariants}
                             whileHover={{ y: -8 }}
                         >
                             <div className="book-cover-wrapper">
                                 <div className="book-cover-shadow" />
-                                <img
-                                    src={book.cover}
-                                    alt={book.title}
-                                    className="book-cover-img"
-                                    onError={(e) => {
-                                        e.target.style.display = 'none';
-                                        e.target.nextSibling.style.display = 'flex';
-                                    }}
-                                />
-                                <div className="book-cover-fallback" style={{ display: 'none' }}>
+                                {book.cover_url ? (
+                                    <img
+                                        src={book.cover_url}
+                                        alt={book.title}
+                                        className="book-cover-img"
+                                        onError={(e) => {
+                                            e.target.style.display = 'none';
+                                            e.target.nextSibling.style.display = 'flex';
+                                        }}
+                                    />
+                                ) : (
+                                    <img src="" style={{display:'none'}} alt="" />
+                                )}
+                                <div className="book-cover-fallback" style={{ display: book.cover_url ? 'none' : 'flex' }}>
                                     <svg className="book-cover-fallback-icon" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                                         <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
                                     </svg>
@@ -237,7 +199,7 @@ export default function ResourcesPage() {
                             </div>
                             <div className="book-info">
                                 <h3 className="book-title">{book.title}</h3>
-                                <span className="book-title-en">{book.titleEn}</span>
+                                <span className="book-title-en">{book.title_en || book.titleEn}</span>
                                 <span className="book-author">{book.author}</span>
                                 <p className="book-desc">{book.description}</p>
                             </div>

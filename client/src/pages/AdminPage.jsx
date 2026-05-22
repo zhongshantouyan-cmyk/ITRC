@@ -165,6 +165,7 @@ const TABS = [
     { key: 'plans', label: '活動規劃' },
     { key: 'records', label: '活動紀錄' },
     { key: 'experiences', label: '參與心得' },
+    { key: 'resources', label: '學習資源' },
     { key: 'snapshots', label: '版本管理' },
 ];
 
@@ -198,8 +199,9 @@ export default function AdminPage() {
                     {activeTab === 'members' && <MembersEditor />}
                     {activeTab === 'plans' && <SingleTypeActivitiesEditor activityType="plan" title="活動規劃管理" subtitle="管理未來預計舉辦的活動" />}
                     {activeTab === 'records' && <SingleTypeActivitiesEditor activityType="record" title="活動紀錄管理" subtitle="管理已完成的活動記錄與照片" />}
-                    {activeTab === 'experiences' && <ExperiencesEditor />}
-                    {activeTab === 'snapshots' && <SnapshotsManager />}
+                    { activeTab === 'experiences' && <ExperiencesEditor /> }
+                    { activeTab === 'resources' && <ResourcesEditor /> }
+                    { activeTab === 'snapshots' && <SnapshotsManager /> }
                 </div>
             </div>
             <Footer />
@@ -950,6 +952,218 @@ function SnapshotsManager() {
                     </div>
                 ))}
             </div>
+        </div>
+    );
+}
+
+// ===================== Resources Editor =====================
+function ResourcesEditor() {
+    const [onlineResources, setOnlineResources] = useState([]);
+    const [offlineResources, setOfflineResources] = useState([]);
+    const [activeSubTab, setActiveSubTab] = useState('online');
+
+    const [onlineForm, setOnlineForm] = useState({ name: '', name_en: '', url: '', description: '', icon: '', color: '', order_num: 0 });
+    const [offlineForm, setOfflineForm] = useState({ title: '', title_en: '', author: '', cover_url: '', description: '', order_num: 0 });
+    const [editingId, setEditingId] = useState(null);
+    const [msg, setMsg] = useState('');
+
+    const fetchData = useCallback(async () => {
+        try {
+            const res = await api.get('/resources');
+            setOnlineResources(res.data.online || []);
+            setOfflineResources(res.data.offline || []);
+        } catch (err) {
+            console.error('Failed to fetch resources:', err);
+        }
+    }, []);
+
+    useEffect(() => { fetchData(); }, [fetchData]);
+
+    const handleOnlineSubmit = async (e) => {
+        e.preventDefault();
+        try {
+            if (editingId) {
+                await api.put(`/resources/online/${editingId}`, onlineForm);
+                setMsg('✓ 線上資源已更新');
+            } else {
+                await api.post('/resources/online', onlineForm);
+                setMsg('✓ 線上資源已新增');
+            }
+            setOnlineForm({ name: '', name_en: '', url: '', description: '', icon: '', color: '', order_num: 0 });
+            setEditingId(null);
+            fetchData();
+        } catch (err) {
+            setMsg('錯誤: ' + (err.response?.data?.error || err.message));
+        }
+    };
+
+    const handleOfflineSubmit = async (e) => {
+        e.preventDefault();
+        try {
+            if (editingId) {
+                await api.put(`/resources/offline/${editingId}`, offlineForm);
+                setMsg('✓ 線下資源已更新');
+            } else {
+                await api.post('/resources/offline', offlineForm);
+                setMsg('✓ 線下資源已新增');
+            }
+            setOfflineForm({ title: '', title_en: '', author: '', cover_url: '', description: '', order_num: 0 });
+            setEditingId(null);
+            fetchData();
+        } catch (err) {
+            setMsg('錯誤: ' + (err.response?.data?.error || err.message));
+        }
+    };
+
+    const handleEditOnline = (item) => {
+        setEditingId(item.id);
+        setOnlineForm({ name: item.name, name_en: item.name_en || '', url: item.url, description: item.description || '', icon: item.icon || '', color: item.color || '', order_num: item.order_num || 0 });
+    };
+
+    const handleEditOffline = (item) => {
+        setEditingId(item.id);
+        setOfflineForm({ title: item.title, title_en: item.title_en || '', author: item.author || '', cover_url: item.cover_url || '', description: item.description || '', order_num: item.order_num || 0 });
+    };
+
+    const handleDeleteOnline = async (id) => {
+        if (!window.confirm('確定要刪除此線上資源嗎？')) return;
+        await api.delete(`/resources/online/${id}`);
+        fetchData();
+    };
+
+    const handleDeleteOffline = async (id) => {
+        if (!window.confirm('確定要刪除此線下資源嗎？')) return;
+        await api.delete(`/resources/offline/${id}`);
+        fetchData();
+    };
+
+    return (
+        <div>
+            <h2 className="mb-3">學習資源管理</h2>
+            <div style={{ marginBottom: 20, display: 'flex', gap: 10 }}>
+                <button 
+                    className={`btn btn-sm ${activeSubTab === 'online' ? 'btn-primary' : 'btn-outline'}`} 
+                    onClick={() => { setActiveSubTab('online'); setEditingId(null); setMsg(''); }}
+                >線上資源</button>
+                <button 
+                    className={`btn btn-sm ${activeSubTab === 'offline' ? 'btn-primary' : 'btn-outline'}`} 
+                    onClick={() => { setActiveSubTab('offline'); setEditingId(null); setMsg(''); }}
+                >線下資源 (書籍)</button>
+            </div>
+
+            {activeSubTab === 'online' && (
+                <>
+                    <form className="admin-form card mb-4" onSubmit={handleOnlineSubmit} style={{ maxWidth: 700, padding: 24 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                            <div className="form-group">
+                                <label>名稱</label>
+                                <input value={onlineForm.name} onChange={e => setOnlineForm({ ...onlineForm, name: e.target.value })} required />
+                            </div>
+                            <div className="form-group">
+                                <label>英文名稱</label>
+                                <input value={onlineForm.name_en} onChange={e => setOnlineForm({ ...onlineForm, name_en: e.target.value })} />
+                            </div>
+                            <div className="form-group">
+                                <label>URL 連結</label>
+                                <input type="url" value={onlineForm.url} onChange={e => setOnlineForm({ ...onlineForm, url: e.target.value })} required />
+                            </div>
+                            <div className="form-group">
+                                <label>排序 (數字小在前面)</label>
+                                <input type="number" value={onlineForm.order_num} onChange={e => setOnlineForm({ ...onlineForm, order_num: parseInt(e.target.value) || 0 })} />
+                            </div>
+                            <div className="form-group">
+                                <label>Icon 組件名稱 (如 IconChart)</label>
+                                <input value={onlineForm.icon} onChange={e => setOnlineForm({ ...onlineForm, icon: e.target.value })} />
+                            </div>
+                            <div className="form-group">
+                                <label>代表色 (如 #4d7ea8)</label>
+                                <input type="text" value={onlineForm.color} onChange={e => setOnlineForm({ ...onlineForm, color: e.target.value })} />
+                            </div>
+                        </div>
+                        <div className="form-group">
+                            <label>描述</label>
+                            <textarea value={onlineForm.description} onChange={e => setOnlineForm({ ...onlineForm, description: e.target.value })} rows={3} />
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <button type="submit" className="btn btn-primary btn-sm">{editingId ? '更新' : '新增線上資源'}</button>
+                            {editingId && <button type="button" className="btn btn-outline btn-sm" onClick={() => { setEditingId(null); setOnlineForm({ name: '', name_en: '', url: '', description: '', icon: '', color: '', order_num: 0 }); }}>取消</button>}
+                            {msg && <span className="text-accent" style={{ fontSize: '0.85rem' }}>{msg}</span>}
+                        </div>
+                    </form>
+
+                    <div className="admin-item-list">
+                        {onlineResources.map(item => (
+                            <div key={item.id} className="admin-item">
+                                <div>
+                                    <strong>{item.name}</strong> <span className="text-secondary" style={{fontSize: '0.8rem'}}>{item.name_en}</span>
+                                    <div className="text-secondary" style={{fontSize: '0.85rem', marginTop: 4}}>{item.url}</div>
+                                </div>
+                                <div className="admin-item-actions">
+                                    <button className="btn btn-outline btn-sm" onClick={() => handleEditOnline(item)}>編輯</button>
+                                    <button className="btn btn-danger btn-sm" onClick={() => handleDeleteOnline(item.id)}>刪除</button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </>
+            )}
+
+            {activeSubTab === 'offline' && (
+                <>
+                    <form className="admin-form card mb-4" onSubmit={handleOfflineSubmit} style={{ maxWidth: 700, padding: 24 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                            <div className="form-group">
+                                <label>書名</label>
+                                <input value={offlineForm.title} onChange={e => setOfflineForm({ ...offlineForm, title: e.target.value })} required />
+                            </div>
+                            <div className="form-group">
+                                <label>英文書名</label>
+                                <input value={offlineForm.title_en} onChange={e => setOfflineForm({ ...offlineForm, title_en: e.target.value })} />
+                            </div>
+                            <div className="form-group">
+                                <label>作者</label>
+                                <input value={offlineForm.author} onChange={e => setOfflineForm({ ...offlineForm, author: e.target.value })} />
+                            </div>
+                            <div className="form-group">
+                                <label>排序 (數字小在前面)</label>
+                                <input type="number" value={offlineForm.order_num} onChange={e => setOfflineForm({ ...offlineForm, order_num: parseInt(e.target.value) || 0 })} />
+                            </div>
+                        </div>
+                        <ImageUploader
+                            value={offlineForm.cover_url}
+                            onChange={(url) => setOfflineForm(prev => ({ ...prev, cover_url: url }))}
+                            label="書籍封面"
+                        />
+                        <div className="form-group mt-2">
+                            <label>簡介</label>
+                            <textarea value={offlineForm.description} onChange={e => setOfflineForm({ ...offlineForm, description: e.target.value })} rows={3} />
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <button type="submit" className="btn btn-primary btn-sm">{editingId ? '更新' : '新增書籍'}</button>
+                            {editingId && <button type="button" className="btn btn-outline btn-sm" onClick={() => { setEditingId(null); setOfflineForm({ title: '', title_en: '', author: '', cover_url: '', description: '', order_num: 0 }); }}>取消</button>}
+                            {msg && <span className="text-accent" style={{ fontSize: '0.85rem' }}>{msg}</span>}
+                        </div>
+                    </form>
+
+                    <div className="admin-item-list">
+                        {offlineResources.map(item => (
+                            <div key={item.id} className="admin-item">
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                    {item.cover_url && <img src={item.cover_url} alt={item.title} style={{ width: 40, height: 60, objectFit: 'cover', borderRadius: 4 }} />}
+                                    <div>
+                                        <strong>{item.title}</strong>
+                                        <div className="text-secondary" style={{fontSize: '0.85rem'}}>{item.author}</div>
+                                    </div>
+                                </div>
+                                <div className="admin-item-actions">
+                                    <button className="btn btn-outline btn-sm" onClick={() => handleEditOffline(item)}>編輯</button>
+                                    <button className="btn btn-danger btn-sm" onClick={() => handleDeleteOffline(item.id)}>刪除</button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </>
+            )}
         </div>
     );
 }
