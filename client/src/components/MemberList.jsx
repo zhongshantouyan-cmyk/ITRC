@@ -14,7 +14,7 @@ export default function MemberList({ members = [] }) {
                     transition={{ duration: 0.8 }}
                 >
                     <h2 className="section-title">
-                        <span className="section-title-accent">社團成員</span>
+                        <span className="section-title-accent">社團幹部</span>
                     </h2>
                     <div className="section-divider" />
                 </motion.div>
