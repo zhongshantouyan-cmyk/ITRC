@@ -339,12 +339,13 @@ h6 {
     right: 0;
     bottom: 0;
     flex-direction: column;
-    background: var(--bg-glass);
-    backdrop-filter: blur(20px);
+    background: var(--bg-white);
     padding: 24px;
     gap: 4px;
     transform: translateX(100%);
     transition: var(--transition);
+    overflow-y: auto;
+    box-shadow: -4px 0 15px rgba(0, 0, 0, 0.05);
   }
 
   .navbar-links.open {
@@ -357,6 +358,18 @@ h6 {
     padding: 14px 20px;
     width: 100%;
     text-align: left;
+    color: var(--text-primary);
+  }
+
+  .navbar-links a:hover,
+  .navbar-links button:hover {
+    background: var(--bg-muted);
+    color: var(--accent);
+  }
+
+  .navbar-links a.active {
+    background: rgba(77, 126, 168, 0.06);
+    color: var(--accent);
   }
 }
 
