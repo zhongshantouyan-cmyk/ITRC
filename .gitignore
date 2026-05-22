@@ -61,4 +61,4 @@ build/
 .vscode/
 *.swp
 *.swo
-rm.md
+rm.mdparsed_text.txt
