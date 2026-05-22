@@ -2225,8 +2225,10 @@ h6 {
   z-index: 1;
 }
 
-.book-cover-emoji {
-  font-size: 2.5rem;
+.book-cover-fallback-icon {
+  width: 40px;
+  height: 40px;
+  opacity: 0.5;
 }
 
 .book-cover-title {
