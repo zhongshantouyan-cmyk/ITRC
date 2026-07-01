@@ -1,4 +1,3 @@
-const bcrypt = require('bcryptjs');
 const db = require('./db');
 
 console.log('Seeding database...');
@@ -9,19 +8,6 @@ async function seed() {
 
     try {
         console.log('Starting seed process...');
-
-        // Admin User
-        const existingUsers = await db.execute('SELECT COUNT(*) as count FROM users');
-        if (existingUsers.rows[0].count === 0) {
-            const hash = bcrypt.hashSync('itrc2025', 10);
-            await db.execute({
-                sql: "INSERT INTO users (username, password_hash, role) VALUES ('admin', ?, 'admin')",
-                args: [hash]
-            });
-            console.log('✓ Default admin user created (admin / itrc2025)');
-        } else {
-            console.log('⊘ Admin user already exists');
-        }
 
         // Default Sections
         const existingSections = await db.execute('SELECT COUNT(*) as count FROM sections');

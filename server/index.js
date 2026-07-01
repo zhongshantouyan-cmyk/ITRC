@@ -25,7 +25,6 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // Routes
 const { autoSnapshotMiddleware } = require('./routes/snapshots');
 
-app.use('/api/auth', require('./routes/auth'));
 app.use('/api/snapshots', require('./routes/snapshots'));
 
 // Content routes — attach auto-snapshot middleware for write operations
