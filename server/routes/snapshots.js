@@ -112,7 +112,7 @@ router.post('/', authMiddleware, async (req, res) => {
     try {
         const id = await createSnapshot(
             description || '手動備份',
-            req.user?.username || 'admin',
+            req.user?.email || req.user?.username || 'admin',
             false
         );
         res.status(201).json({ id, message: '快照建立成功' });
@@ -136,7 +136,7 @@ router.post('/:id/restore', authMiddleware, async (req, res) => {
         // 2. Create a "before restore" backup first
         await createSnapshot(
             `還原前自動備份 (還原至快照 #${req.params.id})`,
-            req.user?.username || 'admin',
+            req.user?.email || req.user?.username || 'admin',
             true
         );
 

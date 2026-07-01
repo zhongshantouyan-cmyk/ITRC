@@ -5,6 +5,15 @@ const path = require('path');
 // Initialize database (creates tables)
 require('./db');
 
+// Initialize Firebase Admin (verify Google ID tokens + load roles allowlist).
+// No-op if FIREBASE_SERVICE_ACCOUNT is unset — backend then accepts legacy JWT only.
+const _firebaseOk = require('./firebase').initFirebase();
+// 自鎖守衛：若舊 JWT 已關閉（cutover）但 Firebase 沒初始化成功，
+// 則此刻沒有任何可用的登入路徑 —— 大聲示警，避免無聲把後台鎖死。
+if (!_firebaseOk && String(process.env.ALLOW_LEGACY_JWT ?? '').trim().toLowerCase() === 'false') {
+    console.error('[FATAL] ALLOW_LEGACY_JWT=false 但 Firebase 未初始化 — 目前沒有任何登入路徑可用！請設定 FIREBASE_SERVICE_ACCOUNT 或暫時重新開啟舊 JWT。');
+}
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 

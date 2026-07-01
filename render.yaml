@@ -12,6 +12,12 @@ services:
         sync: false
       - key: JWT_SECRET
         generateValue: true
+      # Firebase 服務帳號 JSON（登入合併用）；未設定時後端自動退回舊 JWT 登入
+      - key: FIREBASE_SERVICE_ACCOUNT
+        sync: false
+      # 過渡期設 'true' 或留空（接受舊密碼 JWT）；cutover 後設 'false' 關閉舊登入
+      - key: ALLOW_LEGACY_JWT
+        sync: false
       - key: CLOUDINARY_CLOUD_NAME
         sync: false
       - key: CLOUDINARY_API_KEY
