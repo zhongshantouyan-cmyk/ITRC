@@ -1,6 +1,5 @@
 const express = require('express');
 const cors = require('cors');
-const path = require('path');
 
 // Initialize database (creates tables)
 require('./db');
@@ -20,7 +19,6 @@ const PORT = process.env.PORT || 3001;
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Routes
 const { autoSnapshotMiddleware } = require('./routes/snapshots');
@@ -157,6 +155,12 @@ app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
-app.listen(PORT, () => {
-    console.log(`ITRC Server running on http://localhost:${PORT}`);
-});
+// 本機開發才真的 listen；在 Vercel serverless 上則由 api/index.js 匯入這個 app
+// 當作 handler，不需要（也不能）自己 listen。
+if (require.main === module) {
+    app.listen(PORT, () => {
+        console.log(`ITRC Server running on http://localhost:${PORT}`);
+    });
+}
+
+module.exports = app;

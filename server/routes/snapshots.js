@@ -49,7 +49,7 @@ async function createSnapshot(description, createdBy = 'system', isAuto = false)
 let lastAutoSnapshotTime = 0;
 const AUTO_SNAPSHOT_COOLDOWN = 2 * 60 * 1000; // 2 minutes cooldown
 
-function autoSnapshotMiddleware(req, res, next) {
+async function autoSnapshotMiddleware(req, res, next) {
     // Only trigger on write operations
     if (!['POST', 'PUT', 'DELETE'].includes(req.method)) {
         return next();
@@ -63,14 +63,17 @@ function autoSnapshotMiddleware(req, res, next) {
 
     lastAutoSnapshotTime = now;
 
-    // Create snapshot in background (don't block the request)
+    // Await the snapshot before proceeding. On serverless, a fire-and-forget
+    // promise can be cut off when the function freezes after the response is
+    // sent — awaiting guarantees the backup completes. A failure here must not
+    // block the actual write, so we swallow the error (logged only).
     const username = req.user?.username || 'system';
     const routePath = req.baseUrl + req.path;
-    createSnapshot(
-        `自動備份 (${req.method} ${routePath})`,
-        username,
-        true
-    ).catch(err => console.error('Auto-snapshot failed:', err));
+    try {
+        await createSnapshot(`自動備份 (${req.method} ${routePath})`, username, true);
+    } catch (err) {
+        console.error('Auto-snapshot failed:', err);
+    }
 
     next();
 }

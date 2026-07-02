@@ -17,7 +17,7 @@ async function authMiddleware(req, res, next) {
     try {
         const decoded = await verifyFirebaseToken(token);
         const email = decoded.email || '';
-        const role = resolveRole(email);
+        const role = await resolveRole(email);
         if (!role) {
             return res.status(403).json({ error: '此帳號尚未被授權存取管理後台', email });
         }
