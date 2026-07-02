@@ -2,8 +2,14 @@ const { createClient } = require('@libsql/client');
 require('dotenv').config({ path: '../.env' }); // Load from root dir
 
 // 優先使用環境變數中的連線資訊，如果沒有則使用本地端 SQLite (fallback for local development if not provided)
+// 防呆：正式環境（Vercel 會設 NODE_ENV=production）一定要有 Turso 連線；否則會 fallback 去開本地 SQLite 檔，
+// 但 serverless 檔案系統唯讀，會讓所有 DB API 靜默 500。寧可在啟動時大聲崩。本地開發（非 production）仍沿用檔案 fallback。
+const TURSO_URL = process.env.TURSO_DATABASE_URL;
+if (!TURSO_URL && process.env.NODE_ENV === 'production') {
+  throw new Error('[FATAL] TURSO_DATABASE_URL is required in production. The local file fallback cannot work on a read-only serverless filesystem — set TURSO_DATABASE_URL (and TURSO_AUTH_TOKEN).');
+}
 const db = createClient({
-  url: process.env.TURSO_DATABASE_URL || 'file:./itrc.db',
+  url: TURSO_URL || 'file:./itrc.db',
   authToken: process.env.TURSO_AUTH_TOKEN,
 });
 
