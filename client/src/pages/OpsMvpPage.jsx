@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import './OpsMvpPage.css';
 
 const ACTIVITIES = [
   { id:'A08', name:'深度研究－交易策略組', status:'高風險', priority:'最高', owner:'待定', deadline:'2026-10-03', next:'確認教室與錄影', blocker:'目前兩項皆無明確接手人' },
@@ -23,99 +24,282 @@ const PREFLIGHT = [
 
 const PEOPLE = ['梓芸','依宸','大恒','品言','妤萱','嘉瑩','羽蓉','彥綸','緯承','至維','浩原','沁彤'];
 
-const styles = {
-  page:{ minHeight:'100vh', background:'#f5f7fb', padding:'88px 18px 48px' },
-  shell:{ maxWidth:1120, margin:'0 auto' },
-  hero:{ display:'flex', justifyContent:'space-between', gap:16, alignItems:'flex-start', marginBottom:18, flexWrap:'wrap' },
-  title:{ margin:0, fontSize:'clamp(26px,4vw,40px)', letterSpacing:'-.02em' },
-  sub:{ color:'#68707d', marginTop:8, lineHeight:1.6 },
-  badge:{ background:'#fff3cd', color:'#6d5200', padding:'8px 12px', borderRadius:999, fontSize:13, fontWeight:700, border:'1px solid #f0d878' },
-  nav:{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))', gap:10, margin:'18px 0 22px' },
-  navBtn:{ border:'1px solid #dfe3e8', background:'#fff', borderRadius:14, padding:'13px 14px', fontWeight:800, cursor:'pointer' },
-  card:{ background:'#fff', border:'1px solid #e4e7eb', borderRadius:18, padding:18, boxShadow:'0 5px 18px rgba(0,0,0,.035)' },
-  grid:{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(210px,1fr))', gap:12 },
-  metric:{ fontSize:30, fontWeight:900, marginTop:5 },
-  muted:{ color:'#6b7280', fontSize:13 },
-  list:{ display:'grid', gap:10 },
-  item:{ background:'#fff', border:'1px solid #e5e7eb', borderRadius:15, padding:15 },
-  row:{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' },
-  tag:{ fontSize:12, fontWeight:800, background:'#eef1f4', padding:'4px 8px', borderRadius:999 },
-  input:{ width:'100%', border:'1px solid #cfd5dc', borderRadius:11, padding:'11px 12px', font:'inherit', background:'#fff' },
-  label:{ fontSize:13, fontWeight:800, display:'block', margin:'12px 0 6px' },
-  primary:{ width:'100%', marginTop:16, border:0, borderRadius:12, background:'#111827', color:'#fff', padding:'13px 16px', fontWeight:900, cursor:'pointer' },
-};
+const NAV = [
+  ['home','⌂','總覽'],
+  ['report','＋','回報'],
+  ['mine','◎','我的任務'],
+  ['check','✓','活動檢查'],
+  ['queue','≡','待審核'],
+];
 
-function urgencyColor(priority){ return priority==='最高' ? '#ffe3e3' : priority==='高' ? '#fff4cf' : '#edf2f7'; }
-function taskMatches(a, name){ if(!name) return false; return (a.owner||'').includes(name); }
+function readQueue() {
+  try { return JSON.parse(localStorage.getItem('itrc_ops_mvp_queue') || '[]'); }
+  catch { return []; }
+}
 
-export default function OpsMvpPage(){
-  const [tab,setTab]=useState('home');
-  const [name,setName]=useState('');
-  const [checkActivity,setCheckActivity]=useState('');
-  const [form,setForm]=useState({activity:'',reporter:'',update:'',date:'2026-09-30',source:''});
-  const [queue,setQueue]=useState(()=>{ try{return JSON.parse(localStorage.getItem('itrc_ops_mvp_queue')||'[]')}catch{return[]} });
+function priorityClass(priority) {
+  if (priority === '最高') return 'is-critical';
+  if (priority === '高') return 'is-warning';
+  return '';
+}
 
-  const high=ACTIVITIES.filter(a=>['最高','高'].includes(a.priority)).length;
-  const focus=ACTIVITIES.filter(a=>['最高','高'].includes(a.priority));
-  const blocking=PREFLIGHT.filter(x=>x.blocking && x.status!=='完成').length;
-  const myActivities=useMemo(()=>ACTIVITIES.filter(a=>taskMatches(a,name)),[name]);
-  const myPreflight=useMemo(()=>PREFLIGHT.filter(x=>(x.owner||'').includes(name)),[name]);
-  const checks=useMemo(()=>PREFLIGHT.filter(x=>!checkActivity||x.activity===checkActivity),[checkActivity]);
+function statusClass(status) {
+  if (status === '完成') return 'is-success';
+  if (status === '未分派' || status === '高風險') return 'is-critical';
+  if (status === '待確認' || status === '重排中' || status === '已提議') return 'is-warning';
+  return '';
+}
 
-  function submit(e){
-    e.preventDefault();
-    if(!form.activity||!form.reporter||!form.update||!form.date){ alert('四個必填欄位還沒填完'); return; }
-    const next=[{...form, id:Date.now(), status:'待審核'},...queue];
-    setQueue(next); localStorage.setItem('itrc_ops_mvp_queue',JSON.stringify(next));
-    setForm(v=>({...v,update:'',source:''}));
-    setTab('queue');
+function ActivityItem({ activity }) {
+  return (
+    <article className="ops-card ops-focus-item">
+      <div className="ops-focus-top">
+        <div className="ops-focus-title">{activity.name}</div>
+        <span className={'ops-chip ' + priorityClass(activity.priority)}>{activity.status}</span>
+      </div>
+      <div className="ops-next"><strong>下一步</strong><br />{activity.next}</div>
+      <div className="ops-chip-row">
+        <span className="ops-chip">負責 {activity.owner}</span>
+        <span className="ops-chip">期限 {activity.deadline}</span>
+      </div>
+      {activity.blocker && <div className="ops-blocker">卡點：{activity.blocker}</div>}
+    </article>
+  );
+}
+
+function PreflightItem({ task }) {
+  return (
+    <article className="ops-card ops-task-item">
+      <div className="ops-task-top">
+        <div className="ops-task-title">{task.item}</div>
+        <div className="ops-chip-row" style={{ marginTop: 0 }}>
+          <span className={'ops-chip ' + statusClass(task.status)}>{task.status}</span>
+          {task.blocking && <span className="ops-chip is-critical">會阻塞活動</span>}
+        </div>
+      </div>
+      <div className="ops-muted" style={{ marginTop: 9 }}>{task.activity}</div>
+      <div className="ops-chip-row">
+        <span className="ops-chip">負責 {task.owner}</span>
+        <span className="ops-chip">建議完成 {task.due}</span>
+      </div>
+    </article>
+  );
+}
+
+export default function OpsMvpPage() {
+  const [tab, setTab] = useState('home');
+  const [name, setName] = useState('');
+  const [checkActivity, setCheckActivity] = useState('');
+  const [submitted, setSubmitted] = useState(false);
+  const [form, setForm] = useState({ activity:'', reporter:'', update:'', date:'2026-09-30', source:'' });
+  const [queue, setQueue] = useState(readQueue);
+
+  const focus = useMemo(() => ACTIVITIES.filter(a => ['最高','高'].includes(a.priority)), []);
+  const blockingCount = useMemo(() => PREFLIGHT.filter(x => x.blocking && x.status !== '完成').length, []);
+  const myActivities = useMemo(() => name ? ACTIVITIES.filter(a => (a.owner || '').includes(name)) : [], [name]);
+  const myPreflight = useMemo(() => name ? PREFLIGHT.filter(x => (x.owner || '').includes(name)) : [], [name]);
+  const checks = useMemo(() => PREFLIGHT.filter(x => !checkActivity || x.activity === checkActivity), [checkActivity]);
+  const checkActivities = useMemo(() => [...new Set(PREFLIGHT.map(x => x.activity))], []);
+
+  function goto(next) {
+    setTab(next);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  const tabs=[['home','總覽'],['report','回報進度'],['mine','我的任務'],['check','活動前檢查'],['queue',`待審核 ${queue.length}`]];
+  function submit(e) {
+    e.preventDefault();
+    setSubmitted(false);
+    if (!form.activity || !form.reporter.trim() || !form.update.trim() || !form.date) {
+      alert('還有必填欄位沒完成');
+      return;
+    }
+    const next = [{ ...form, id: Date.now(), status:'待審核' }, ...queue];
+    setQueue(next);
+    localStorage.setItem('itrc_ops_mvp_queue', JSON.stringify(next));
+    setForm(v => ({ ...v, update:'', source:'' }));
+    setSubmitted(true);
+  }
 
-  return <main style={styles.page}><div style={styles.shell}>
-    <div style={styles.hero}>
-      <div><h1 style={styles.title}>ITRC 活動管理中心</h1><div style={styles.sub}>給一般幹部用的 MVP。先把「看狀況、回報、找自己的任務」做簡單。<br/>正式資料仍以 File OS 為準。</div></div>
-      <div style={styles.badge}>MVP Preview · snapshot 2026-09-29</div>
+  return (
+    <div className="ops-app">
+      <header className="ops-header">
+        <div className="ops-shell">
+          <div className="ops-header-row">
+            <div className="ops-brand">
+              <div className="ops-brand-mark">I</div>
+              <div>
+                <h1 className="ops-title">ITRC 活動管理中心</h1>
+                <div className="ops-kicker">幹部日常工作入口</div>
+              </div>
+            </div>
+            <div className="ops-snapshot">MVP · 9/29 snapshot</div>
+          </div>
+          <nav className="ops-desktop-nav" aria-label="活動管理導覽">
+            {NAV.map(([key,,label]) => (
+              <button key={key} className={'ops-nav-btn ' + (tab === key ? 'is-active' : '')} onClick={() => goto(key)}>
+                {label}{key === 'queue' && queue.length > 0 ? ` · ${queue.length}` : ''}
+              </button>
+            ))}
+          </nav>
+        </div>
+      </header>
+
+      <main className="ops-main">
+        <div className="ops-shell">
+          {tab === 'home' && (
+            <>
+              <section className="ops-hero-panel">
+                <div className="ops-card ops-priority-panel">
+                  <div className="ops-eyebrow">TODAY · 先處理這些</div>
+                  <h2>{focus.length} 個高優先活動需要注意</h2>
+                  <div className="ops-priority-copy">不用先理解整套系統。一般幹部只要知道：現在有什麼事、自己要做什麼、發生變更就回報。</div>
+                  <div className="ops-quick-actions">
+                    <button className="ops-primary-btn" onClick={() => goto('report')}>回報最新進度</button>
+                    <button className="ops-secondary-btn" onClick={() => goto('mine')}>看我的任務</button>
+                  </div>
+                </div>
+                <div className="ops-mini-metrics" aria-label="狀態摘要">
+                  <div className="ops-card ops-metric"><div className="ops-metric-label">活動</div><div className="ops-metric-value">{ACTIVITIES.length}</div><div className="ops-metric-note">目前納管</div></div>
+                  <div className="ops-card ops-metric"><div className="ops-metric-label">高優先</div><div className="ops-metric-value">{focus.length}</div><div className="ops-metric-note">先處理</div></div>
+                  <div className="ops-card ops-metric"><div className="ops-metric-label">阻塞事項</div><div className="ops-metric-value">{blockingCount}</div><div className="ops-metric-note">活動前必要</div></div>
+                  <div className="ops-card ops-metric"><div className="ops-metric-label">待審核</div><div className="ops-metric-value">{queue.length}</div><div className="ops-metric-note">MVP queue</div></div>
+                </div>
+              </section>
+
+              <section>
+                <div className="ops-section-head">
+                  <div><h2 className="ops-section-title">現在最需要注意</h2><div className="ops-section-subtitle">只列高優先／最高，不把所有活動一次塞給你。</div></div>
+                  <button className="ops-secondary-btn" onClick={() => goto('check')}>看活動前檢查</button>
+                </div>
+                <div className="ops-focus-list">{focus.map(a => <ActivityItem key={a.id} activity={a} />)}</div>
+              </section>
+            </>
+          )}
+
+          {tab === 'report' && (
+            <section className="ops-form-wrap">
+              <form className="ops-card ops-form" onSubmit={submit}>
+                <div className="ops-form-intro">
+                  <h2>回報這週進度</h2>
+                  <p>只要四個必填欄位。送出後先進待審核，不會直接改正式分工。</p>
+                </div>
+
+                <div className="ops-field">
+                  <label className="ops-field-label ops-required"><span className="ops-step">1</span>活動</label>
+                  <select className="ops-select" value={form.activity} onChange={e => setForm({ ...form, activity:e.target.value })}>
+                    <option value="">請選活動</option>
+                    {ACTIVITIES.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
+                  </select>
+                </div>
+
+                <div className="ops-form-grid">
+                  <div className="ops-field">
+                    <label className="ops-field-label ops-required"><span className="ops-step">2</span>你的名字</label>
+                    <input className="ops-input" value={form.reporter} onChange={e => setForm({ ...form, reporter:e.target.value })} placeholder="例如：嘉瑩" />
+                  </div>
+                  <div className="ops-field">
+                    <label className="ops-field-label ops-required"><span className="ops-step">3</span>消息日期</label>
+                    <input className="ops-input" type="date" value={form.date} onChange={e => setForm({ ...form, date:e.target.value })} />
+                  </div>
+                </div>
+
+                <div className="ops-field">
+                  <label className="ops-field-label ops-required"><span className="ops-step">4</span>這週發生什麼？</label>
+                  <textarea className="ops-textarea" value={form.update} onChange={e => setForm({ ...form, update:e.target.value })} placeholder="白話寫就好，例如：教室確定 CM203，品言會幫忙錄影。" />
+                  <div className="ops-form-help">不用判斷要改哪個欄位，AI／顧問後面會整理。</div>
+                </div>
+
+                <div className="ops-field">
+                  <label className="ops-field-label">在哪裡看到？</label>
+                  <input className="ops-input" value={form.source} onChange={e => setForm({ ...form, source:e.target.value })} placeholder="例如：活動組 LINE、講師私訊（可空白）" />
+                </div>
+
+                <button className="ops-primary-btn ops-submit" type="submit">送到待審核</button>
+                {submitted && <div className="ops-confirmation">已加入待審核。正式資料還沒有被修改。</div>}
+              </form>
+            </section>
+          )}
+
+          {tab === 'mine' && (
+            <>
+              <section className="ops-card ops-person-picker">
+                <h2>我的任務</h2>
+                <div className="ops-muted">先選名字，只看跟你有關的內容。</div>
+                <div className="ops-field">
+                  <select className="ops-select" value={name} onChange={e => setName(e.target.value)}>
+                    <option value="">請選你的名字</option>
+                    {PEOPLE.map(p => <option key={p}>{p}</option>)}
+                  </select>
+                </div>
+                {name && (
+                  <div className="ops-person-summary">
+                    <span className="ops-chip">{myActivities.length} 個活動</span>
+                    <span className="ops-chip">{myPreflight.length} 個活動前任務</span>
+                  </div>
+                )}
+              </section>
+
+              {!name ? <div className="ops-card ops-empty" style={{ marginTop: 14 }}>選名字後，這裡才會顯示你的事情。</div> : (
+                <>
+                  <section style={{ marginTop: 22 }}>
+                    <div className="ops-section-head"><div><h2 className="ops-section-title">你參與的活動</h2><div className="ops-section-subtitle">＊ 表示還沒正式確認承接。</div></div></div>
+                    <div className="ops-stack">{myActivities.length ? myActivities.map(a => <ActivityItem key={a.id} activity={a} />) : <div className="ops-card ops-empty">目前沒有找到你的活動。</div>}</div>
+                  </section>
+                  <section style={{ marginTop: 22 }}>
+                    <div className="ops-section-head"><div><h2 className="ops-section-title">你的活動前任務</h2><div className="ops-section-subtitle">只列有指派到你的檢查項目。</div></div></div>
+                    <div className="ops-stack">{myPreflight.length ? myPreflight.map((x,i) => <PreflightItem key={i} task={x} />) : <div className="ops-card ops-empty">目前沒有找到你的活動前任務。</div>}</div>
+                  </section>
+                </>
+              )}
+            </>
+          )}
+
+          {tab === 'check' && (
+            <>
+              <div className="ops-section-head">
+                <div><h2 className="ops-section-title">活動前檢查</h2><div className="ops-section-subtitle">先看會不會卡住活動，不把所有 checklist 當成同等重要。</div></div>
+              </div>
+              <div className="ops-filter-row" aria-label="活動篩選">
+                <button className={'ops-filter ' + (!checkActivity ? 'is-active' : '')} onClick={() => setCheckActivity('')}>全部</button>
+                {checkActivities.map(a => <button key={a} className={'ops-filter ' + (checkActivity === a ? 'is-active' : '')} onClick={() => setCheckActivity(a)}>{a.replace('深度研究－','')}</button>)}
+              </div>
+              <div className="ops-stack" style={{ marginTop: 14 }}>{checks.map((x,i) => <PreflightItem key={i} task={x} />)}</div>
+            </>
+          )}
+
+          {tab === 'queue' && (
+            <>
+              <div className="ops-queue-banner">
+                <div>ⓘ</div>
+                <div><strong>這是 MVP 示範 queue</strong><span>目前只存在這台裝置的瀏覽器。後端接好後才會變成全社共用。</span></div>
+              </div>
+              <div className="ops-section-head">
+                <div><h2 className="ops-section-title">待審核更新</h2><div className="ops-section-subtitle">正式資料不會因為有人回報就直接被改掉。</div></div>
+                {queue.length > 0 && <span className="ops-chip is-warning">{queue.length} 筆</span>}
+              </div>
+              <div className="ops-stack">
+                {queue.length ? queue.map(q => (
+                  <article className="ops-card ops-task-item" key={q.id}>
+                    <div className="ops-task-top"><div className="ops-task-title">{q.activity}</div><span className="ops-chip is-warning">{q.status}</span></div>
+                    <div className="ops-next">{q.update}</div>
+                    <div className="ops-chip-row"><span className="ops-chip">{q.reporter}</span><span className="ops-chip">{q.date}</span>{q.source && <span className="ops-chip">{q.source}</span>}</div>
+                  </article>
+                )) : <div className="ops-card ops-empty">目前沒有待審核更新。</div>}
+              </div>
+            </>
+          )}
+
+          <div className="ops-safe-note">MVP 安全邊界：不直接修改正式分工、活動狀態或 Firebase RTDB。</div>
+        </div>
+      </main>
+
+      <nav className="ops-mobile-nav" aria-label="手機導覽">
+        {NAV.map(([key,icon,label]) => (
+          <button key={key} className={tab === key ? 'is-active' : ''} onClick={() => goto(key)}>
+            <span aria-hidden="true">{icon}</span>{label}{key === 'queue' && queue.length > 0 ? ` ${queue.length}` : ''}
+          </button>
+        ))}
+      </nav>
     </div>
-
-    <div style={styles.nav}>{tabs.map(([k,t])=><button key={k} style={{...styles.navBtn,...(tab===k?{background:'#111827',color:'#fff'}:{})}} onClick={()=>setTab(k)}>{t}</button>)}</div>
-
-    {tab==='home' && <>
-      <div style={styles.grid}>
-        {[
-          ['目前活動',ACTIVITIES.length,'納管工作線'],
-          ['高優先',high,'需要先處理'],
-          ['待審核',queue.length,'此 MVP 本機 queue'],
-          ['阻塞事項',blocking,'活動前必要事項'],
-        ].map(([a,b,c])=><div style={styles.card} key={a}><div style={styles.muted}>{a}</div><div style={styles.metric}>{b}</div><div style={styles.muted}>{c}</div></div>)}
-      </div>
-      <section style={{marginTop:22}}><h2>現在最需要注意</h2><div style={styles.list}>{focus.map(a=><div style={styles.item} key={a.id}><div style={styles.row}><strong>{a.name}</strong><span style={{...styles.tag,background:urgencyColor(a.priority)}}>{a.status}</span></div><p style={{margin:'10px 0 6px'}}><b>下一步：</b>{a.next}</p><div style={styles.muted}>負責：{a.owner} · 期限：{a.deadline}</div><div style={{marginTop:7,color:'#8a3131'}}>卡點：{a.blocker}</div></div>)}</div></section>
-    </>}
-
-    {tab==='report' && <form onSubmit={submit} style={{...styles.card,maxWidth:720}}>
-      <h2 style={{marginTop:0}}>回報這週進度</h2><div style={styles.muted}>只填四個必要欄位。這裡先示範待審核流程，不會改正式分工。</div>
-      <label style={styles.label}>① 活動＊</label><select style={styles.input} value={form.activity} onChange={e=>setForm({...form,activity:e.target.value})}><option value="">請選活動</option>{ACTIVITIES.map(a=><option key={a.id}>{a.name}</option>)}</select>
-      <label style={styles.label}>② 你的名字＊</label><input style={styles.input} value={form.reporter} onChange={e=>setForm({...form,reporter:e.target.value})} placeholder="例如：嘉瑩"/>
-      <label style={styles.label}>③ 這週發生什麼？＊</label><textarea style={{...styles.input,minHeight:110}} value={form.update} onChange={e=>setForm({...form,update:e.target.value})} placeholder="例如：教室確定 CM203，品言會幫忙錄影。"/>
-      <label style={styles.label}>④ 消息日期＊</label><input type="date" style={styles.input} value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/>
-      <label style={styles.label}>在哪裡看到？（可空白）</label><input style={styles.input} value={form.source} onChange={e=>setForm({...form,source:e.target.value})} placeholder="活動組 LINE／講師私訊"/>
-      <button style={styles.primary}>送到待審核</button>
-    </form>}
-
-    {tab==='mine' && <>
-      <div style={{...styles.card,maxWidth:520}}><h2 style={{marginTop:0}}>我的任務</h2><label style={styles.label}>選你的名字</label><select style={styles.input} value={name} onChange={e=>setName(e.target.value)}><option value="">請選名字</option>{PEOPLE.map(p=><option key={p}>{p}</option>)}</select><div style={{...styles.muted,marginTop:8}}>＊ 表示尚未正式確認承接。</div></div>
-      {name && <><section style={{marginTop:22}}><h2>你參與的活動</h2><div style={styles.list}>{myActivities.length?myActivities.map(a=><div style={styles.item} key={a.id}><div style={styles.row}><strong>{a.name}</strong><span style={styles.tag}>{a.status}</span></div><p>{a.next}</p><div style={styles.muted}>期限：{a.deadline} · {a.owner}</div></div>):<div style={styles.card}>目前沒有找到你的活動。</div>}</div></section>
-      <section style={{marginTop:22}}><h2>你的活動前任務</h2><div style={styles.list}>{myPreflight.length?myPreflight.map((x,i)=><div style={styles.item} key={i}><strong>{x.item}</strong><div style={styles.muted}>{x.activity} · 建議完成 {x.due} · {x.status}</div></div>):<div style={styles.card}>目前沒有找到你的活動前任務。</div>}</div></section></>}
-    </>}
-
-    {tab==='check' && <>
-      <div style={{...styles.card,maxWidth:620}}><h2 style={{marginTop:0}}>活動前檢查</h2><select style={styles.input} value={checkActivity} onChange={e=>setCheckActivity(e.target.value)}><option value="">全部活動</option>{[...new Set(PREFLIGHT.map(x=>x.activity))].map(x=><option key={x}>{x}</option>)}</select></div>
-      <div style={{...styles.list,marginTop:16}}>{checks.map((x,i)=><div style={styles.item} key={i}><div style={styles.row}><strong>{x.item}</strong><span style={{...styles.tag,background:x.status==='完成'?'#dff6e5':x.blocking?'#ffe3e3':'#fff4cf'}}>{x.status}</span>{x.blocking&&<span style={styles.tag}>阻塞</span>}</div><div style={{...styles.muted,marginTop:8}}>{x.activity} · 負責：{x.owner} · 建議完成：{x.due}</div></div>)}</div>
-    </>}
-
-    {tab==='queue' && <><div style={styles.card}><h2 style={{marginTop:0}}>待審核更新</h2><div style={styles.muted}>MVP 階段先存在你的瀏覽器，Vercel/後端接好後改成中央 queue。</div></div><div style={{...styles.list,marginTop:14}}>{queue.length?queue.map(q=><div style={styles.item} key={q.id}><div style={styles.row}><strong>{q.activity}</strong><span style={{...styles.tag,background:'#fff4cf'}}>{q.status}</span></div><p>{q.update}</p><div style={styles.muted}>{q.reporter} · {q.date} · {q.source||'未填來源'}</div></div>):<div style={styles.card}>目前沒有待審核更新。</div>}</div></>}
-
-    <div style={{...styles.muted,marginTop:30}}>MVP 安全邊界：不直接修改正式分工、活動狀態或 Firebase RTDB。</div>
-  </div></main>;
+  );
 }
