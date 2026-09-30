@@ -985,3 +985,22 @@
     text-align: center;
   }
 }
+
+
+.ops-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ops-all-activities {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--border-medium);
+}
+
+.ops-all-activities > .ops-section-subtitle {
+  margin-bottom: 10px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
