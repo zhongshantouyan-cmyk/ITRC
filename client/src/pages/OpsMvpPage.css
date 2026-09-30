@@ -840,3 +840,148 @@
     font-size: 1.75rem;
   }
 }
+
+
+.ops-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 13px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.ops-card-actions button,
+.ops-inline-ai {
+  appearance: none;
+  border: 1px solid var(--border-medium);
+  background: white;
+  color: var(--text-primary);
+  border-radius: 10px;
+  min-height: 34px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: .73rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.ops-card-actions button:hover,
+.ops-inline-ai:hover {
+  background: var(--bg-muted);
+}
+
+.ops-card-actions button.is-danger {
+  color: #8a3131;
+  border-color: #efcaca;
+  background: #fff6f6;
+}
+
+.ops-report-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.ops-report-types button {
+  appearance: none;
+  border: 1px solid var(--border-medium);
+  background: white;
+  color: var(--text-secondary);
+  border-radius: 999px;
+  min-height: 37px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: .76rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.ops-report-types button.is-active {
+  background: var(--primary-dark);
+  color: white;
+  border-color: var(--primary-dark);
+}
+
+.ops-inline-ai {
+  color: var(--accent);
+  border-color: rgba(77,126,168,.22);
+}
+
+.ops-recent-section {
+  margin-top: 24px;
+}
+
+.ops-change-list {
+  overflow: hidden;
+}
+
+.ops-change-item {
+  display: grid;
+  grid-template-columns: 58px 1fr;
+  gap: 12px;
+  padding: 14px 16px;
+  line-height: 1.55;
+  font-size: .86rem;
+}
+
+.ops-change-item + .ops-change-item {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.ops-change-date {
+  color: var(--text-secondary);
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+}
+
+.ops-change-item strong {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.ops-toast {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 200;
+  background: #25352a;
+  color: white;
+  border-radius: 999px;
+  padding: 10px 14px;
+  font-size: .8rem;
+  font-weight: 800;
+  box-shadow: 0 10px 35px rgba(0,0,0,.22);
+}
+
+@media (max-width: 600px) {
+  .ops-card-actions {
+    gap: 6px;
+  }
+
+  .ops-card-actions button {
+    flex: 1 1 auto;
+  }
+
+  .ops-change-item {
+    grid-template-columns: 48px 1fr;
+    padding: 13px;
+  }
+
+  .ops-report-types {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0,1fr));
+  }
+
+  .ops-report-types button {
+    width: 100%;
+  }
+
+  .ops-toast {
+    top: auto;
+    bottom: 82px;
+    width: calc(100% - 32px);
+    text-align: center;
+  }
+}
