@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import HomePage from './pages/HomePage';
 import AchievementsPage from './pages/AchievementsPage';
@@ -8,6 +8,7 @@ import ExperiencesPage from './pages/ExperiencesPage';
 import ResourcesPage from './pages/ResourcesPage';
 import LoginPage from './pages/LoginPage';
 import AdminPage from './pages/AdminPage';
+import OpsMvpPage from './pages/OpsMvpPage';
 import { useAuth } from './context/AuthContext';
 
 function ProtectedRoute({ children }) {
@@ -35,9 +36,12 @@ function ProtectedRoute({ children }) {
 }
 
 export default function App() {
+    const location = useLocation();
+    const isOpsMvp = location.pathname.startsWith('/ops-mvp');
+
     return (
         <>
-            <Navbar />
+            {!isOpsMvp && <Navbar />}
             <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route path="/achievements" element={<AchievementsPage />} />
@@ -45,6 +49,7 @@ export default function App() {
                 <Route path="/plans" element={<ActivityPlansPage />} />
                 <Route path="/experiences" element={<ExperiencesPage />} />
                 <Route path="/resources" element={<ResourcesPage />} />
+                <Route path="/ops-mvp" element={<OpsMvpPage />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/admin" element={<ProtectedRoute><AdminPage /></ProtectedRoute>} />
             </Routes>
