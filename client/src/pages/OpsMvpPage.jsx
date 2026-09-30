@@ -118,6 +118,7 @@ export default function OpsMvpPage() {
   const [name, setName] = useState(initialName);
   const [checkActivity, setCheckActivity] = useState('');
   const [blockingOnly, setBlockingOnly] = useState(false);
+  const [showAllActivities, setShowAllActivities] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [copyMessage, setCopyMessage] = useState('');
   const [form, setForm] = useState({ type:'進度更新', activity:'', reporter:initialName, update:'', date:todayLocal(), source:'' });
@@ -277,7 +278,10 @@ export default function OpsMvpPage() {
               <section>
                 <div className="ops-section-head">
                   <div><h2 className="ops-section-title">現在最需要注意</h2><div className="ops-section-subtitle">只列高優先／最高，不把所有活動一次塞給你。</div></div>
-                  <button className="ops-secondary-btn" onClick={() => goto('check')}>看活動前檢查</button>
+                  <div className="ops-head-actions">
+                    <button className="ops-secondary-btn" onClick={() => setShowAllActivities(v => !v)}>{showAllActivities ? '收起全部活動' : '查看全部活動'}</button>
+                    <button className="ops-secondary-btn" onClick={() => goto('check')}>看活動前檢查</button>
+                  </div>
                 </div>
                 <div className="ops-focus-list">{focus.map(a => (
                   <ActivityItem
@@ -287,6 +291,21 @@ export default function OpsMvpPage() {
                     onCopy={(activity) => copyText(activityContext(activity))}
                   />
                 ))}</div>
+                {showAllActivities && (
+                  <div className="ops-all-activities">
+                    <div className="ops-section-subtitle">其他活動</div>
+                    <div className="ops-focus-list">
+                      {ACTIVITIES.filter(a => !['最高','高'].includes(a.priority)).map(a => (
+                        <ActivityItem
+                          key={a.id}
+                          activity={a}
+                          onReport={(activity) => startReport(activity)}
+                          onCopy={(activity) => copyText(activityContext(activity))}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
               </section>
 
               <section className="ops-recent-section">
