@@ -24,6 +24,14 @@ const PREFLIGHT = [
 
 const PEOPLE = ['梓芸','依宸','大恒','品言','妤萱','嘉瑩','羽蓉','彥綸','緯承','至維','浩原','沁彤'];
 
+const REPORT_TYPES = ['進度更新','卡點／需要協助','分工確認','日期／形式異動'];
+
+const RECENT_CHANGES = [
+  { date:'9/29', activity:'MaiCoin 課程＋交易競賽', text:'合作方希望延至 10 月底／11 月初，原 10/5、10/11、10/17 排程不再沿用。' },
+  { date:'9/29', activity:'期末／學期競賽', text:'嘉瑩是否正式承接仍待本人確認，不能視為已完成交接。' },
+  { date:'9/23', activity:'深度研究－交易策略組', text:'10/3 改實體，教室與錄影人員仍需補位。' },
+];
+
 const NAV = [
   ['home','⌂','總覽'],
   ['report','＋','回報'],
@@ -61,7 +69,7 @@ function statusClass(status) {
   return '';
 }
 
-function ActivityItem({ activity }) {
+function ActivityItem({ activity, onReport, onBlocked, onCopy, actionMode = 'normal' }) {
   return (
     <article className="ops-card ops-focus-item">
       <div className="ops-focus-top">
@@ -74,6 +82,13 @@ function ActivityItem({ activity }) {
         <span className="ops-chip">期限 {activity.deadline}</span>
       </div>
       {activity.blocker && <div className="ops-blocker">卡點：{activity.blocker}</div>}
+      {(onReport || onCopy) && (
+        <div className="ops-card-actions">
+          {onReport && <button onClick={() => onReport(activity)}>{actionMode === 'mine' ? '回報進度' : '回報'}</button>}
+          {actionMode === 'mine' && onBlocked && <button className="is-danger" onClick={() => onBlocked(activity)}>我卡住了</button>}
+          {onCopy && <button onClick={() => onCopy(activity)}>複製給 AI</button>}
+        </div>
+      )}
     </article>
   );
 }
@@ -104,7 +119,8 @@ export default function OpsMvpPage() {
   const [checkActivity, setCheckActivity] = useState('');
   const [blockingOnly, setBlockingOnly] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const [form, setForm] = useState({ activity:'', reporter:initialName, update:'', date:todayLocal(), source:'' });
+  const [copyMessage, setCopyMessage] = useState('');
+  const [form, setForm] = useState({ type:'進度更新', activity:'', reporter:initialName, update:'', date:todayLocal(), source:'' });
   const [queue, setQueue] = useState(readQueue);
 
   const focus = useMemo(() => ACTIVITIES.filter(a => ['最高','高'].includes(a.priority)), []);
@@ -137,6 +153,57 @@ export default function OpsMvpPage() {
     localStorage.setItem('itrc_ops_mvp_queue', JSON.stringify(next));
   }
 
+  function startReport(activity, type = '進度更新', preset = '') {
+    setSubmitted(false);
+    setForm(v => ({
+      ...v,
+      type,
+      activity: activity?.name || v.activity,
+      reporter: name || v.reporter,
+      update: preset,
+      date: todayLocal(),
+    }));
+    goto('report');
+  }
+
+  async function copyText(text, message = '已複製，可直接貼給你的 AI') {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyMessage(message);
+      setTimeout(() => setCopyMessage(''), 2200);
+    } catch {
+      window.prompt('複製下面這段文字：', text);
+    }
+  }
+
+  function activityContext(activity) {
+    return [
+      '# ITRC 活動脈絡',
+      `活動：${activity.name}`,
+      `狀態：${activity.status}`,
+      `負責人：${activity.owner}`,
+      `期限：${activity.deadline}`,
+      `下一步：${activity.next}`,
+      activity.blocker ? `卡點：${activity.blocker}` : '',
+      '',
+      '請以這些資料為準協助我，不要自行假設未確認事項已完成。',
+    ].filter(Boolean).join('\n');
+  }
+
+  function myContext() {
+    return [
+      `# ITRC｜${name || '幹部'}的工作脈絡`,
+      '',
+      '## 參與活動',
+      ...myActivities.map(a => `- ${a.name}｜${a.status}｜下一步：${a.next}｜期限：${a.deadline}`),
+      '',
+      '## 活動前任務',
+      ...myPreflight.map(t => `- ${t.activity}｜${t.item}｜${t.status}｜建議完成：${t.due}`),
+      '',
+      '＊ 表示尚未正式確認承接。請不要把提議或待交接視為已確認。',
+    ].join('\n');
+  }
+
   function submit(e) {
     e.preventDefault();
     setSubmitted(false);
@@ -151,7 +218,7 @@ export default function OpsMvpPage() {
       try { localStorage.setItem('itrc_ops_name', form.reporter.trim()); } catch {}
       setName(form.reporter.trim());
     }
-    setForm(v => ({ ...v, update:'', source:'' }));
+    setForm(v => ({ ...v, type:'進度更新', update:'', source:'' }));
     setSubmitted(true);
   }
 
@@ -182,6 +249,7 @@ export default function OpsMvpPage() {
         </div>
       </header>
 
+      {copyMessage && <div className="ops-toast" role="status">{copyMessage}</div>}
       <main className="ops-main">
         <div className="ops-shell">
           {tab === 'home' && (
@@ -190,10 +258,12 @@ export default function OpsMvpPage() {
                 <div className="ops-card ops-priority-panel">
                   <div className="ops-eyebrow">先處理這些</div>
                   <h2>{focus.length} 個高優先活動需要注意</h2>
-                  <div className="ops-priority-copy">不用先理解整套系統。一般幹部只要知道：現在有什麼事、自己要做什麼、發生變更就回報。</div>
+                  <div className="ops-priority-copy">
+                    {name ? `${name}，你目前參與 ${myActivities.length} 個活動、${myPreflight.length} 個活動前任務。` : '不用先理解整套系統。先設定「我是誰」，就只看跟你有關的事情。'}
+                  </div>
                   <div className="ops-quick-actions">
                     <button className="ops-primary-btn" onClick={() => goto('report')}>回報最新進度</button>
-                    <button className="ops-secondary-btn" onClick={() => goto('mine')}>看我的任務</button>
+                    <button className="ops-secondary-btn" onClick={() => goto('mine')}>{name ? '看我的任務' : '設定我是誰'}</button>
                   </div>
                 </div>
                 <div className="ops-mini-metrics" aria-label="狀態摘要">
@@ -209,7 +279,28 @@ export default function OpsMvpPage() {
                   <div><h2 className="ops-section-title">現在最需要注意</h2><div className="ops-section-subtitle">只列高優先／最高，不把所有活動一次塞給你。</div></div>
                   <button className="ops-secondary-btn" onClick={() => goto('check')}>看活動前檢查</button>
                 </div>
-                <div className="ops-focus-list">{focus.map(a => <ActivityItem key={a.id} activity={a} />)}</div>
+                <div className="ops-focus-list">{focus.map(a => (
+                  <ActivityItem
+                    key={a.id}
+                    activity={a}
+                    onReport={(activity) => startReport(activity)}
+                    onCopy={(activity) => copyText(activityContext(activity))}
+                  />
+                ))}</div>
+              </section>
+
+              <section className="ops-recent-section">
+                <div className="ops-section-head">
+                  <div><h2 className="ops-section-title">最近有什麼改變</h2><div className="ops-section-subtitle">把被取代的舊安排直接標出來，避免大家拿舊資訊繼續做。</div></div>
+                </div>
+                <div className="ops-card ops-change-list">
+                  {RECENT_CHANGES.map((item, i) => (
+                    <div className="ops-change-item" key={i}>
+                      <div className="ops-change-date">{item.date}</div>
+                      <div><strong>{item.activity}</strong><div>{item.text}</div></div>
+                    </div>
+                  ))}
+                </div>
               </section>
             </>
           )}
@@ -219,7 +310,16 @@ export default function OpsMvpPage() {
               <form className="ops-card ops-form" onSubmit={submit}>
                 <div className="ops-form-intro">
                   <h2>回報這週進度</h2>
-                  <p>只要四個必填欄位。送出後先進待審核，不會直接改正式分工。</p>
+                  <p>只要把你知道的事實寫下來。送出後先進待審核，不會直接改正式分工。</p>
+                </div>
+
+                <div className="ops-field">
+                  <label className="ops-field-label">這次要回報什麼？</label>
+                  <div className="ops-report-types">
+                    {REPORT_TYPES.map(type => (
+                      <button type="button" key={type} className={form.type === type ? 'is-active' : ''} onClick={() => setForm({ ...form, type })}>{type}</button>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="ops-field">
@@ -289,6 +389,7 @@ export default function OpsMvpPage() {
                   <div className="ops-person-summary">
                     <span className="ops-chip">{myActivities.length} 個活動</span>
                     <span className="ops-chip">{myPreflight.length} 個活動前任務</span>
+                    <button className="ops-inline-ai" onClick={() => copyText(myContext(), '你的工作脈絡已複製')}>複製我的工作給 AI</button>
                   </div>
                 )}
               </section>
@@ -297,7 +398,16 @@ export default function OpsMvpPage() {
                 <>
                   <section style={{ marginTop: 22 }}>
                     <div className="ops-section-head"><div><h2 className="ops-section-title">你參與的活動</h2><div className="ops-section-subtitle">＊ 表示還沒正式確認承接。</div></div></div>
-                    <div className="ops-stack">{myActivities.length ? myActivities.map(a => <ActivityItem key={a.id} activity={a} />) : <div className="ops-card ops-empty">目前沒有找到你的活動。</div>}</div>
+                    <div className="ops-stack">{myActivities.length ? myActivities.map(a => (
+                      <ActivityItem
+                        key={a.id}
+                        activity={a}
+                        actionMode="mine"
+                        onReport={(activity) => startReport(activity)}
+                        onBlocked={(activity) => startReport(activity, '卡點／需要協助', '目前卡住：')}
+                        onCopy={(activity) => copyText(activityContext(activity))}
+                      />
+                    )) : <div className="ops-card ops-empty">目前沒有找到你的活動。</div>}</div>
                   </section>
                   <section style={{ marginTop: 22 }}>
                     <div className="ops-section-head"><div><h2 className="ops-section-title">你的活動前任務</h2><div className="ops-section-subtitle">只列有指派到你的檢查項目。</div></div></div>
@@ -335,7 +445,7 @@ export default function OpsMvpPage() {
               <div className="ops-stack">
                 {queue.length ? queue.map(q => (
                   <article className="ops-card ops-task-item" key={q.id}>
-                    <div className="ops-task-top"><div className="ops-task-title">{q.activity}</div><span className="ops-chip is-warning">{q.status}</span></div>
+                    <div className="ops-task-top"><div className="ops-task-title">{q.activity}</div><div className="ops-chip-row" style={{ marginTop: 0 }}><span className="ops-chip">{q.type || '進度更新'}</span><span className="ops-chip is-warning">{q.status}</span></div></div>
                     <div className="ops-next">{q.update}</div>
                     <div className="ops-queue-meta">
                       <div className="ops-chip-row"><span className="ops-chip">{q.reporter}</span><span className="ops-chip">{q.date}</span>{q.source && <span className="ops-chip">{q.source}</span>}</div>
