@@ -264,6 +264,10 @@
   gap: 10px;
 }
 
+.ops-focus-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .ops-focus-item,
 .ops-task-item {
   padding: 16px;
@@ -552,13 +556,15 @@
   }
 
   .ops-mini-metrics {
-    grid-template-columns: repeat(4,minmax(0,1fr));
-    overflow-x: auto;
-    padding-bottom: 4px;
+    grid-template-columns: repeat(2,minmax(0,1fr));
   }
 
   .ops-metric {
-    min-width: 125px;
+    min-width: 0;
+  }
+
+  .ops-focus-list {
+    grid-template-columns: 1fr;
   }
 
   .ops-main {
@@ -744,5 +750,93 @@
   .ops-queue-meta {
     align-items: flex-start;
     flex-direction: column;
+  }
+}
+
+
+.ops-app button:focus-visible,
+.ops-app input:focus-visible,
+.ops-app select:focus-visible,
+.ops-app textarea:focus-visible {
+  outline: 3px solid rgba(77,126,168,.28);
+  outline-offset: 2px;
+}
+
+.ops-card,
+.ops-nav-btn,
+.ops-primary-btn,
+.ops-secondary-btn,
+.ops-filter,
+.ops-profile-chip {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ops-focus-item,
+.ops-task-item {
+  overflow-wrap: anywhere;
+}
+
+@media (hover: hover) {
+  .ops-focus-item,
+  .ops-task-item {
+    transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+  }
+
+  .ops-focus-item:hover,
+  .ops-task-item:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-md);
+    border-color: rgba(77,126,168,.18);
+  }
+}
+
+@media (max-width: 420px) {
+  .ops-shell {
+    width: calc(100% - 18px);
+  }
+
+  .ops-title {
+    font-size: 1.1rem;
+  }
+
+  .ops-kicker {
+    font-size: .72rem;
+  }
+
+  .ops-snapshot {
+    font-size: .66rem;
+    padding: 6px 8px;
+  }
+
+  .ops-mobile-nav {
+    left: 6px;
+    right: 6px;
+    bottom: max(6px, env(safe-area-inset-bottom));
+    padding: 5px;
+  }
+
+  .ops-mobile-nav button {
+    font-size: .61rem;
+  }
+
+  .ops-mobile-nav button span {
+    font-size: .98rem;
+  }
+
+  .ops-priority-copy {
+    font-size: .9rem;
+  }
+
+  .ops-mini-metrics {
+    gap: 7px;
+  }
+
+  .ops-metric {
+    min-height: 96px;
+    padding: 13px;
+  }
+
+  .ops-metric-value {
+    font-size: 1.75rem;
   }
 }
