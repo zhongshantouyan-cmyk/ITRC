@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import HomePage from './pages/HomePage';
 import AchievementsPage from './pages/AchievementsPage';
@@ -36,9 +36,12 @@ function ProtectedRoute({ children }) {
 }
 
 export default function App() {
+    const location = useLocation();
+    const isOpsMvp = location.pathname.startsWith('/ops-mvp');
+
     return (
         <>
-            <Navbar />
+            {!isOpsMvp && <Navbar />}
             <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route path="/achievements" element={<AchievementsPage />} />
