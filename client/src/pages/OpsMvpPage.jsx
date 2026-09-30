@@ -42,6 +42,12 @@ function readName() {
   catch { return ''; }
 }
 
+function todayLocal() {
+  const now = new Date();
+  const offset = now.getTimezoneOffset() * 60000;
+  return new Date(now - offset).toISOString().slice(0, 10);
+}
+
 function priorityClass(priority) {
   if (priority === '最高') return 'is-critical';
   if (priority === '高') return 'is-warning';
@@ -98,7 +104,7 @@ export default function OpsMvpPage() {
   const [checkActivity, setCheckActivity] = useState('');
   const [blockingOnly, setBlockingOnly] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const [form, setForm] = useState({ activity:'', reporter:initialName, update:'', date:'2026-09-30', source:'' });
+  const [form, setForm] = useState({ activity:'', reporter:initialName, update:'', date:todayLocal(), source:'' });
   const [queue, setQueue] = useState(readQueue);
 
   const focus = useMemo(() => ACTIVITIES.filter(a => ['最高','高'].includes(a.priority)), []);
@@ -163,7 +169,7 @@ export default function OpsMvpPage() {
             </div>
             <div className="ops-header-tools">
               {name && <button className="ops-profile-chip" onClick={() => goto('mine')}>◎ {name}</button>}
-              <div className="ops-snapshot">MVP · 9/29 snapshot</div>
+              <div className="ops-snapshot">資料更新至 9/29</div>
             </div>
           </div>
           <nav className="ops-desktop-nav" aria-label="活動管理導覽">
@@ -182,7 +188,7 @@ export default function OpsMvpPage() {
             <>
               <section className="ops-hero-panel">
                 <div className="ops-card ops-priority-panel">
-                  <div className="ops-eyebrow">TODAY · 先處理這些</div>
+                  <div className="ops-eyebrow">先處理這些</div>
                   <h2>{focus.length} 個高優先活動需要注意</h2>
                   <div className="ops-priority-copy">不用先理解整套系統。一般幹部只要知道：現在有什麼事、自己要做什麼、發生變更就回報。</div>
                   <div className="ops-quick-actions">
@@ -194,7 +200,7 @@ export default function OpsMvpPage() {
                   <div className="ops-card ops-metric"><div className="ops-metric-label">活動</div><div className="ops-metric-value">{ACTIVITIES.length}</div><div className="ops-metric-note">目前納管</div></div>
                   <div className="ops-card ops-metric"><div className="ops-metric-label">高優先</div><div className="ops-metric-value">{focus.length}</div><div className="ops-metric-note">先處理</div></div>
                   <div className="ops-card ops-metric"><div className="ops-metric-label">阻塞事項</div><div className="ops-metric-value">{blockingCount}</div><div className="ops-metric-note">活動前必要</div></div>
-                  <div className="ops-card ops-metric"><div className="ops-metric-label">待審核</div><div className="ops-metric-value">{queue.length}</div><div className="ops-metric-note">MVP queue</div></div>
+                  <div className="ops-card ops-metric"><div className="ops-metric-label">待審核</div><div className="ops-metric-value">{queue.length}</div><div className="ops-metric-note">你送出的回報</div></div>
                 </div>
               </section>
 
@@ -218,7 +224,7 @@ export default function OpsMvpPage() {
 
                 <div className="ops-field">
                   <label className="ops-field-label ops-required"><span className="ops-step">1</span>活動</label>
-                  <select className="ops-select" value={form.activity} onChange={e => setForm({ ...form, activity:e.target.value })}>
+                  <select className="ops-select" required value={form.activity} onChange={e => setForm({ ...form, activity:e.target.value })}>
                     <option value="">請選活動</option>
                     {ACTIVITIES.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
                   </select>
@@ -227,23 +233,34 @@ export default function OpsMvpPage() {
                 <div className="ops-form-grid">
                   <div className="ops-field">
                     <label className="ops-field-label ops-required"><span className="ops-step">2</span>你的名字</label>
-                    <input className="ops-input" value={form.reporter} onChange={e => setForm({ ...form, reporter:e.target.value })} placeholder="例如：嘉瑩" />
+                    <select className="ops-select" required value={form.reporter} onChange={e => setForm({ ...form, reporter:e.target.value })}>
+                      <option value="">請選名字</option>
+                      {PEOPLE.map(p => <option key={p}>{p}</option>)}
+                    </select>
                   </div>
                   <div className="ops-field">
                     <label className="ops-field-label ops-required"><span className="ops-step">3</span>消息日期</label>
-                    <input className="ops-input" type="date" value={form.date} onChange={e => setForm({ ...form, date:e.target.value })} />
+                    <input className="ops-input" required type="date" value={form.date} onChange={e => setForm({ ...form, date:e.target.value })} />
                   </div>
                 </div>
 
                 <div className="ops-field">
                   <label className="ops-field-label ops-required"><span className="ops-step">4</span>這週發生什麼？</label>
-                  <textarea className="ops-textarea" value={form.update} onChange={e => setForm({ ...form, update:e.target.value })} placeholder="白話寫就好，例如：教室確定 CM203，品言會幫忙錄影。" />
-                  <div className="ops-form-help">不用判斷要改哪個欄位，AI／顧問後面會整理。</div>
+                  <textarea className="ops-textarea" required value={form.update} onChange={e => setForm({ ...form, update:e.target.value })} placeholder="白話寫就好，例如：教室確定 CM203，品言會幫忙錄影。" />
+                  <div className="ops-form-help">照你知道的事實寫就好，不用自己判斷要改哪個欄位。</div>
                 </div>
 
                 <div className="ops-field">
                   <label className="ops-field-label">在哪裡看到？</label>
-                  <input className="ops-input" value={form.source} onChange={e => setForm({ ...form, source:e.target.value })} placeholder="例如：活動組 LINE、講師私訊（可空白）" />
+                  <input className="ops-input" list="ops-source-list" value={form.source} onChange={e => setForm({ ...form, source:e.target.value })} placeholder="例如：活動組 LINE（可空白）" />
+                  <datalist id="ops-source-list">
+                    <option value="活動組 LINE" />
+                    <option value="社長部 LINE" />
+                    <option value="行銷群組 LINE" />
+                    <option value="講師私訊" />
+                    <option value="Email" />
+                    <option value="會議" />
+                  </datalist>
                 </div>
 
                 <button className="ops-primary-btn ops-submit" type="submit">送到待審核</button>
@@ -309,7 +326,7 @@ export default function OpsMvpPage() {
             <>
               <div className="ops-queue-banner">
                 <div>ⓘ</div>
-                <div><strong>這是 MVP 示範 queue</strong><span>目前只存在這台裝置的瀏覽器。後端接好後才會變成全社共用。</span></div>
+                <div><strong>目前是測試版</strong><span>這些回報暫時只存在這台裝置，還沒有送進正式社團資料。</span></div>
               </div>
               <div className="ops-section-head">
                 <div><h2 className="ops-section-title">待審核更新</h2><div className="ops-section-subtitle">正式資料不會因為有人回報就直接被改掉。</div></div>
@@ -330,7 +347,7 @@ export default function OpsMvpPage() {
             </>
           )}
 
-          <div className="ops-safe-note">MVP 安全邊界：不直接修改正式分工、活動狀態或 Firebase RTDB。</div>
+          <div className="ops-safe-note">測試版不會直接修改正式分工或活動狀態。</div>
         </div>
       </main>
 
