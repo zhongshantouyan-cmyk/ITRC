@@ -1004,3 +1004,69 @@
   font-weight: 800;
   color: var(--text-primary);
 }
+
+
+.ops-action-chip {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 11px !important;
+  border-radius: 999px !important;
+  font: inherit !important;
+  font-size: .73rem !important;
+  font-weight: 800 !important;
+  line-height: 1 !important;
+  cursor: pointer;
+  box-shadow: none !important;
+  transition: background .18s ease, border-color .18s ease, transform .18s ease;
+}
+
+.ops-action-chip span {
+  font-size: .78rem;
+  opacity: .8;
+}
+
+.ops-action-chip--accent {
+  color: #426f96 !important;
+  background: rgba(77,126,168,.08) !important;
+  border: 1px solid rgba(77,126,168,.22) !important;
+}
+
+.ops-action-chip--quiet {
+  color: #666b70 !important;
+  background: #f7f5f2 !important;
+  border: 1px solid rgba(0,0,0,.07) !important;
+}
+
+.ops-action-chip--danger {
+  color: #8a3e3e !important;
+  background: #fff4f4 !important;
+  border: 1px solid #efd0d0 !important;
+}
+
+.ops-action-chip:hover {
+  transform: translateY(-1px);
+}
+
+.ops-action-chip--accent:hover {
+  background: rgba(77,126,168,.14) !important;
+}
+
+.ops-action-chip--quiet:hover {
+  background: #efebe6 !important;
+}
+
+.ops-action-chip--danger:hover {
+  background: #ffeaea !important;
+}
+
+@media (max-width: 600px) {
+  .ops-card-actions .ops-action-chip {
+    flex: 0 0 auto;
+    min-height: 36px;
+  }
+}
