@@ -84,9 +84,9 @@ function ActivityItem({ activity, onReport, onBlocked, onCopy, actionMode = 'nor
       {activity.blocker && <div className="ops-blocker">卡點：{activity.blocker}</div>}
       {(onReport || onCopy) && (
         <div className="ops-card-actions">
-          {onReport && <button onClick={() => onReport(activity)}>{actionMode === 'mine' ? '回報進度' : '回報'}</button>}
-          {actionMode === 'mine' && onBlocked && <button className="is-danger" onClick={() => onBlocked(activity)}>我卡住了</button>}
-          {onCopy && <button onClick={() => onCopy(activity)}>複製給 AI</button>}
+          {onReport && <button className="ops-action-chip ops-action-chip--accent" onClick={() => onReport(activity)}><span>↗</span>{actionMode === 'mine' ? '回報進度' : '回報'}</button>}
+          {actionMode === 'mine' && onBlocked && <button className="ops-action-chip ops-action-chip--danger" onClick={() => onBlocked(activity)}><span>!</span>我卡住了</button>}
+          {onCopy && <button className="ops-action-chip ops-action-chip--quiet" onClick={() => onCopy(activity)}><span>⌘</span>給 AI</button>}
         </div>
       )}
     </article>
