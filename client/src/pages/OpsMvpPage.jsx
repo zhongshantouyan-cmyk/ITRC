@@ -37,6 +37,11 @@ function readQueue() {
   catch { return []; }
 }
 
+function readName() {
+  try { return localStorage.getItem('itrc_ops_name') || ''; }
+  catch { return ''; }
+}
+
 function priorityClass(priority) {
   if (priority === '最高') return 'is-critical';
   if (priority === '高') return 'is-warning';
@@ -87,23 +92,43 @@ function PreflightItem({ task }) {
 }
 
 export default function OpsMvpPage() {
+  const initialName = readName();
   const [tab, setTab] = useState('home');
-  const [name, setName] = useState('');
+  const [name, setName] = useState(initialName);
   const [checkActivity, setCheckActivity] = useState('');
+  const [blockingOnly, setBlockingOnly] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const [form, setForm] = useState({ activity:'', reporter:'', update:'', date:'2026-09-30', source:'' });
+  const [form, setForm] = useState({ activity:'', reporter:initialName, update:'', date:'2026-09-30', source:'' });
   const [queue, setQueue] = useState(readQueue);
 
   const focus = useMemo(() => ACTIVITIES.filter(a => ['最高','高'].includes(a.priority)), []);
   const blockingCount = useMemo(() => PREFLIGHT.filter(x => x.blocking && x.status !== '完成').length, []);
   const myActivities = useMemo(() => name ? ACTIVITIES.filter(a => (a.owner || '').includes(name)) : [], [name]);
   const myPreflight = useMemo(() => name ? PREFLIGHT.filter(x => (x.owner || '').includes(name)) : [], [name]);
-  const checks = useMemo(() => PREFLIGHT.filter(x => !checkActivity || x.activity === checkActivity), [checkActivity]);
+  const checks = useMemo(
+    () => PREFLIGHT.filter(x => (!checkActivity || x.activity === checkActivity) && (!blockingOnly || x.blocking)),
+    [checkActivity, blockingOnly]
+  );
   const checkActivities = useMemo(() => [...new Set(PREFLIGHT.map(x => x.activity))], []);
 
   function goto(next) {
     setTab(next);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function setProfileName(nextName) {
+    setName(nextName);
+    setForm(v => ({ ...v, reporter: nextName || v.reporter }));
+    try {
+      if (nextName) localStorage.setItem('itrc_ops_name', nextName);
+      else localStorage.removeItem('itrc_ops_name');
+    } catch {}
+  }
+
+  function removeQueueItem(id) {
+    const next = queue.filter(item => item.id !== id);
+    setQueue(next);
+    localStorage.setItem('itrc_ops_mvp_queue', JSON.stringify(next));
   }
 
   function submit(e) {
@@ -116,6 +141,10 @@ export default function OpsMvpPage() {
     const next = [{ ...form, id: Date.now(), status:'待審核' }, ...queue];
     setQueue(next);
     localStorage.setItem('itrc_ops_mvp_queue', JSON.stringify(next));
+    if (form.reporter.trim()) {
+      try { localStorage.setItem('itrc_ops_name', form.reporter.trim()); } catch {}
+      setName(form.reporter.trim());
+    }
     setForm(v => ({ ...v, update:'', source:'' }));
     setSubmitted(true);
   }
@@ -132,7 +161,10 @@ export default function OpsMvpPage() {
                 <div className="ops-kicker">幹部日常工作入口</div>
               </div>
             </div>
-            <div className="ops-snapshot">MVP · 9/29 snapshot</div>
+            <div className="ops-header-tools">
+              {name && <button className="ops-profile-chip" onClick={() => goto('mine')}>◎ {name}</button>}
+              <div className="ops-snapshot">MVP · 9/29 snapshot</div>
+            </div>
           </div>
           <nav className="ops-desktop-nav" aria-label="活動管理導覽">
             {NAV.map(([key,,label]) => (
@@ -215,7 +247,12 @@ export default function OpsMvpPage() {
                 </div>
 
                 <button className="ops-primary-btn ops-submit" type="submit">送到待審核</button>
-                {submitted && <div className="ops-confirmation">已加入待審核。正式資料還沒有被修改。</div>}
+                {submitted && (
+                  <div className="ops-confirmation">
+                    <span>已加入待審核。正式資料還沒有被修改。</span>
+                    <button type="button" onClick={() => goto('queue')}>查看</button>
+                  </div>
+                )}
               </form>
             </section>
           )}
@@ -226,7 +263,7 @@ export default function OpsMvpPage() {
                 <h2>我的任務</h2>
                 <div className="ops-muted">先選名字，只看跟你有關的內容。</div>
                 <div className="ops-field">
-                  <select className="ops-select" value={name} onChange={e => setName(e.target.value)}>
+                  <select className="ops-select" value={name} onChange={e => setProfileName(e.target.value)}>
                     <option value="">請選你的名字</option>
                     {PEOPLE.map(p => <option key={p}>{p}</option>)}
                   </select>
@@ -262,6 +299,7 @@ export default function OpsMvpPage() {
               <div className="ops-filter-row" aria-label="活動篩選">
                 <button className={'ops-filter ' + (!checkActivity ? 'is-active' : '')} onClick={() => setCheckActivity('')}>全部</button>
                 {checkActivities.map(a => <button key={a} className={'ops-filter ' + (checkActivity === a ? 'is-active' : '')} onClick={() => setCheckActivity(a)}>{a.replace('深度研究－','')}</button>)}
+                <button className={'ops-filter ops-filter-alert ' + (blockingOnly ? 'is-active' : '')} onClick={() => setBlockingOnly(v => !v)}>只看阻塞</button>
               </div>
               <div className="ops-stack" style={{ marginTop: 14 }}>{checks.map((x,i) => <PreflightItem key={i} task={x} />)}</div>
             </>
@@ -282,7 +320,10 @@ export default function OpsMvpPage() {
                   <article className="ops-card ops-task-item" key={q.id}>
                     <div className="ops-task-top"><div className="ops-task-title">{q.activity}</div><span className="ops-chip is-warning">{q.status}</span></div>
                     <div className="ops-next">{q.update}</div>
-                    <div className="ops-chip-row"><span className="ops-chip">{q.reporter}</span><span className="ops-chip">{q.date}</span>{q.source && <span className="ops-chip">{q.source}</span>}</div>
+                    <div className="ops-queue-meta">
+                      <div className="ops-chip-row"><span className="ops-chip">{q.reporter}</span><span className="ops-chip">{q.date}</span>{q.source && <span className="ops-chip">{q.source}</span>}</div>
+                      <button className="ops-text-btn" onClick={() => removeQueueItem(q.id)}>撤回這筆</button>
+                    </div>
                   </article>
                 )) : <div className="ops-card ops-empty">目前沒有待審核更新。</div>}
               </div>
