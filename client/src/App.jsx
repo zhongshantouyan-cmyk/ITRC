@@ -8,6 +8,7 @@ import ExperiencesPage from './pages/ExperiencesPage';
 import ResourcesPage from './pages/ResourcesPage';
 import LoginPage from './pages/LoginPage';
 import AdminPage from './pages/AdminPage';
+import OpsMvpPage from './pages/OpsMvpPage';
 import { useAuth } from './context/AuthContext';
 
 function ProtectedRoute({ children }) {
@@ -45,6 +46,7 @@ export default function App() {
                 <Route path="/plans" element={<ActivityPlansPage />} />
                 <Route path="/experiences" element={<ExperiencesPage />} />
                 <Route path="/resources" element={<ResourcesPage />} />
+                <Route path="/ops-mvp" element={<OpsMvpPage />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/admin" element={<ProtectedRoute><AdminPage /></ProtectedRoute>} />
             </Routes>
