@@ -1289,6 +1289,7 @@ h6 {
 
 .plans-desc {
   display: block;
+  white-space: pre-line;
   font-size: 0.85rem;
   font-weight: 400;
   color: var(--text-secondary);

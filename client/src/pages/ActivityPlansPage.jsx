@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '../api';
 import Footer from '../components/Footer';
+import { sortActivitiesByDate } from '../utils/activityDates';
 
 // Helper: extract YouTube video ID from various URL formats
 function getYouTubeId(url) {
@@ -40,7 +41,7 @@ export default function ActivityPlansPage() {
         if (!activeSemester) return;
         setLoading(true);
         api.get('/activities', { params: { type: 'plan', semester: activeSemester } }).then(res => {
-            const sorted = res.data.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+            const sorted = sortActivitiesByDate(res.data);
             setActivities(sorted);
             setLoading(false);
         }).catch(() => setLoading(false));

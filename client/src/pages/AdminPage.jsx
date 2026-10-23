@@ -3,6 +3,7 @@ import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../api';
 import Footer from '../components/Footer';
+import { sortActivitiesByDate } from '../utils/activityDates';
 
 // ===================== Shared Image Uploader Helper (single image) =====================
 function ImageUploader({ value, onChange, label = '上傳圖片', disabled = false }) {
@@ -505,7 +506,7 @@ function SingleTypeActivitiesEditor({ activityType, title, subtitle }) {
         const params = { type: activityType };
         if (filterSemester) params.semester = filterSemester;
         const res = await api.get('/activities', { params });
-        setItems(res.data);
+        setItems(sortActivitiesByDate(res.data));
     }, [activityType, filterSemester]);
 
     useEffect(() => { fetchSemesters(); }, [fetchSemesters]);

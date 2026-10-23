@@ -151,6 +151,48 @@ async function seed() {
             console.warn('⊘ 115-1 11/04 課程有多筆符合，略過自動校正以避免誤改');
         }
 
+
+        // 115-1 週三三堂技術分析概論，依確認課表補缺、標示堂次；部署可重複執行。
+        const wangSessions = [
+            { day: '11', part: 'I', ordinal: '第一堂' },
+            { day: '18', part: 'II', ordinal: '第二堂' },
+            { day: '25', part: 'III', ordinal: '第三堂' }
+        ];
+        for (const session of wangSessions) {
+            const expectedDate = '2026年11月' + session.day + '日(三)';
+            const expectedTitle = '技術分析概論 ' + session.part;
+            const brief = '技術分析概論三堂系列｜' + session.ordinal + '。時間：16:00–18:00；地點：CM1037。';
+            const existing = await db.execute({
+                sql: 'SELECT id, date, title, speaker, description FROM activities ' +
+                     'WHERE type = ? AND semester = ? AND (date LIKE ? OR date LIKE ?)',
+                args: ['plan', '115-1', '2026年11月' + session.day + '日%', '115年11月' + session.day + '日%']
+            });
+            const wangRows = existing.rows.filter(row => String(row.speaker || '').includes('王昭文'));
+            if (wangRows.length === 0 && existing.rows.length === 0) {
+                await db.execute({
+                    sql: 'INSERT INTO activities (type, semester, date, title, speaker, description) VALUES (?, ?, ?, ?, ?, ?)',
+                    args: ['plan', '115-1', expectedDate, expectedTitle, '王昭文教授', brief]
+                });
+                console.log('✓ 已補上 ' + expectedDate + ' 王昭文教授課程');
+            } else if (wangRows.length === 1) {
+                const current = wangRows[0];
+                const previousTitle = String(current.title || '').trim();
+                const matchingSeriesTitle = /^技術分析概論(?:\s*(?:I|II|III|Ⅰ|Ⅱ|Ⅲ))?$/.test(previousTitle);
+                const revisedTitle = matchingSeriesTitle ? expectedTitle : current.title;
+                const revisedDescription = String(current.description || '').trim() ? current.description : brief;
+                if (current.date !== expectedDate || current.title !== revisedTitle || current.description !== revisedDescription) {
+                    await db.execute({
+                        sql: 'UPDATE activities SET date = ?, title = ?, description = ? ' +
+                             'WHERE id = ? AND type = ? AND semester = ? AND date = ? AND title = ?',
+                        args: [expectedDate, revisedTitle, revisedDescription, current.id, 'plan', '115-1', current.date, current.title]
+                    });
+                    console.log('✓ 已校正 ' + expectedDate + ' 王昭文教授課程');
+                }
+            } else {
+                console.warn('⊘ ' + expectedDate + ' 有重複或其他活動，略過自動修改以防誤改');
+            }
+        }
+
         console.log('--- Seed completed ---');
         process.exit(0);
     } catch (err) {
