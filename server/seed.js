@@ -115,6 +115,42 @@ async function seed() {
             console.log('⊘ Activities already exist');
         }
 
+        // 115-1 11/04 新百王講座：更正官網將星期三誤寫為星期五、缺少課程大綱的舊資料。
+        // 僅更新日期／標題吻合的單筆舊活動，不碰其他課程或已由管理員填寫的說明。
+        const nov4Title = '新百王證券合作講座：2026 年末台股展望 × 2027 投資布局';
+        const nov4Outline = [
+            'Part 1｜台股展望與投資布局：2026–2027 年總經趨勢、台積電 GAA／A16／CoWoS 先進封裝、GPU 與 ASIC 算力布局、實體 AI 與機器人、估值與風險管理。',
+            'Part 2｜進場策略與實際操作：以歷史股票案例解讀週線、日線訊號與支撐位，規劃進場與停損，並檢視成交明細。',
+            'Part 3｜「慧眼獨具」看盤小遊戲：手機掃 QR Code 觀察走勢並答題，前三名獎金依序為 1,500／1,000／500 元。',
+            '時間：11/04（三）16:00–18:00｜地點：CM1037。',
+            '社員免費；非社員校內 100 元／堂、校外 300 元／堂。'
+        ].join('\n');
+        const nov4Rows = await db.execute({
+            sql: `SELECT id, date, title, description FROM activities
+                  WHERE type = ? AND semester = ?
+                    AND title IN (?, ?)
+                    AND date IN (?, ?)`,
+            args: [
+                'plan', '115-1',
+                '台股展望與投資布局講座', nov4Title,
+                '2026年11月4日(五)', '2026年11月4日(三)'
+            ]
+        });
+        if (nov4Rows.rows.length === 1) {
+            const old = nov4Rows.rows[0];
+            const newDate = '2026年11月4日(三)';
+            const newDescription = String(old.description || '').trim() ? old.description : nov4Outline;
+            if (old.date !== newDate || old.title !== nov4Title || old.description !== newDescription) {
+                await db.execute({
+                    sql: 'UPDATE activities SET date = ?, title = ?, description = ? WHERE id = ? AND type = ? AND semester = ? AND date = ? AND title = ?',
+                    args: [newDate, nov4Title, newDescription, old.id, 'plan', '115-1', old.date, old.title]
+                });
+                console.log('✓ 已校正 115-1 11/04 課程日期與大綱');
+            }
+        } else if (nov4Rows.rows.length > 1) {
+            console.warn('⊘ 115-1 11/04 課程有多筆符合，略過自動校正以避免誤改');
+        }
+
         console.log('--- Seed completed ---');
         process.exit(0);
     } catch (err) {
