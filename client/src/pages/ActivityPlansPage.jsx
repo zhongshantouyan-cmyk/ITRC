@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import api from '../api';
 import Footer from '../components/Footer';
 import { sortActivitiesByDate } from '../utils/activityDates';
+import { reconcileConfirmed1151Plan } from '../utils/confirmed1151Plan';
 
 // Helper: extract YouTube video ID from various URL formats
 function getYouTubeId(url) {
@@ -41,7 +42,7 @@ export default function ActivityPlansPage() {
         if (!activeSemester) return;
         setLoading(true);
         api.get('/activities', { params: { type: 'plan', semester: activeSemester } }).then(res => {
-            const sorted = sortActivitiesByDate(res.data);
+            const sorted = sortActivitiesByDate(reconcileConfirmed1151Plan(res.data, activeSemester));
             setActivities(sorted);
             setLoading(false);
         }).catch(() => setLoading(false));
