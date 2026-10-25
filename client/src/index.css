@@ -297,7 +297,7 @@ h6 {
   background: rgba(77, 126, 168, 0.06);
 }
 
-/* The operations workspace uses a light background from the first viewport. */
+/* Workspace and login pages use a light background from the first viewport. */
 .navbar.navbar-ops .navbar-links a,
 .navbar.navbar-ops .navbar-links button {
   color: var(--text-primary);
