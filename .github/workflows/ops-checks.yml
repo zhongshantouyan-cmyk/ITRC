@@ -39,3 +39,5 @@ jobs:
         run: npm --prefix client run build
       - name: Verify CSV mapping and demonstration boundaries
         run: node --test client/src/ops/model.test.js
+      - name: Verify protected operations proxy boundaries
+        run: node --test --test-isolation=none client/server/ops-proxy.test.mjs

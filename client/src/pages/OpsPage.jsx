@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import api from '../api';
+import { opsApi as api } from '../api';
 import { ACTION_LABELS, CHANNELS, EVENT_STATES, JOB_STATES, STAGES, TABS, TASK_STATES, canOwn, dateText, exportPostsCsv, isAdviser, nextStep, parseImportText, safeLink } from '../ops/model';
 import { changeDemoActor, DEMO_ACTORS, loadDemo, performDemoAction, resetDemo } from '../ops/demo';
 import './ops.css';

@@ -67,7 +67,7 @@
 
 ## 4. 登入、資料庫與職責設定
 
-以下設定放在後端部署環境；前端只設定公開的 API 位置。真實憑證、信箱名單及來源識別碼不要提交到公開程式庫。
+以下表格標明設定所屬的部署環境。瀏覽器只讀公開 API 位置；前端專案的伺服器函式另外持有 gateway 目標及短期 OIDC 身分。真實憑證、信箱名單及來源識別碼不要提交到公開程式庫。
 
 | 設定 | 用途 |
 | --- | --- |
@@ -75,9 +75,19 @@
 | `TURSO_DATABASE_URL`、`TURSO_AUTH_TOKEN` | 後端持久化資料庫。未設定時會使用本機 SQLite；正式無狀態部署需使用持久化資料庫。 |
 | `OPS_APPROVER_EMAILS` | 最終文案審核者的登入信箱，逗號分隔；空白時無人可終審。 |
 | `OPS_DESIGNER_EMAILS` | 指定行銷／設計負責人的登入信箱，逗號分隔。社長／顧問也可執行設計交件與校對。 |
-| `VITE_API_URL`（前端） | 該環境的後端 API 基址，例如 `https://backend.example.org/api`；Vite 在建置時讀取。 |
+| `VITE_OPS_API_URL`（前端建置） | 工作台專用 API 基址；使用同網域 gateway 時設為 `/api`。未設定時才回退到 `VITE_API_URL`。Vite 變數在建置時讀取，改動後須重新部署。 |
+| `OPS_BACKEND_ORIGIN`（前端伺服器） | gateway 固定的後端 origin，例如 `https://backend-preview.vercel.app`；只接受單一 HTTPS `*.vercel.app` origin，不含 `/api`、query、帳密或非預設連接埠。不可加 `VITE_` 前綴。 |
+| `VITE_API_URL`（既有前端 CMS） | 保留原既有值；使用工作台專用基址時，不需為工作台改動其他 CMS 的 API 位置。 |
 
 角色與核准權限由伺服器核對，不接受瀏覽器傳來的角色或核准旗標。工作台只接受已驗證 Firebase 身分；既有官網若仍接受舊密碼 JWT，也不能用它進入工作台 API。示範頁的角色切換不會取得正式權限。
+
+### 受保護 Preview 的同網域 gateway
+
+本輪接線方式尚待部署與實際連通驗收：瀏覽器透過同網域 `/api/ops/*` 呼叫前端伺服器函式，再由函式呼叫固定後端。gateway 僅允許 `GET bootstrap`、`POST actions`、`GET connections/canva`、`POST connections/canva/start`；不代理 callback 或 cron，不跟隨上游重新導向，也不轉送 Cookie。
+
+函式使用 `@vercel/oidc@4.0.3` 的 `getVercelOidcToken()`，每次取得短期 OIDC 並放入 `x-vercel-trusted-oidc-idp-token`。前端專案的 Secure Backend Access with OIDC Federation 須開啟；後端 Trusted Sources 須允許相符的呼叫專案及環境。OIDC 處理部署保護，原本的 Firebase Bearer 仍交後端驗證身分與角色。參考 [Vercel Trusted Sources](https://vercel.com/docs/deployment-protection/methods-to-bypass-deployment-protection/trusted-sources)。
+
+截至 2026-10-25，後端仍是 Standard Protection／Require Log In 開啟、OPTIONS Allowlist 關閉、Trusted Sources 僅自身；`nsysu-itrc` Preview → `itrc` Preview 的規則僅準備，尚待使用者確認與提交。前端已完成 Firebase 授權網域及 Google 登入，但 API 仍出現 Network Error，不能視為已接通。最新證據見 [ops-validation.md](ops-validation.md)。
 
 ## 5. Canva：連線與分層母版
 
@@ -87,6 +97,8 @@
 2. 把該環境的回呼網址登錄為 `https://backend.example.org/api/ops/connections/canva/callback`，並將**完全相同**網址設為 `CANVA_REDIRECT_URI`。
 3. 後端設定 `CANVA_CLIENT_ID`、`CANVA_CLIENT_SECRET`、`CANVA_REDIRECT_URI`、`OPS_TOKEN_ENCRYPTION_KEY`；另以 `OPS_FRONTEND_ORIGIN` 指定返回的前端 origin，例如 `https://frontend.example.org`。
 4. 社長／顧問在工作台「系統連線」按 Canva 連線，登入持有母版權限的帳戶並授權。
+
+同網域 gateway 只處理連線狀態與啟動授權。Canva callback 仍直接返回上述後端網址，`OPS_FRONTEND_ORIGIN` 再決定返回哪個前端；兩者必須屬於同一套環境。後端部署保護是否允許此回跳須另行驗收，不能以 OIDC gateway 連通代替 OAuth 回跳測試。
 
 加密金鑰需為 **32 位元組的標準 Base64**。在可信任的本機終端執行以下命令，將輸出直接存入部署平台的秘密設定，不貼到聊天室、PR 或程式碼：
 
@@ -177,19 +189,23 @@ Authorization: Bearer <OPS_CRON_SECRET>
 
 ### 常駐 Node 主機
 
-可改用 `OPS_WORKER_ENABLED=true`，以及 `OPS_WORKER_INTERVAL_SECONDS`（30–3600 秒，預設 60 秒）。每輪最多 3 項工作。這個 `setInterval` 模式需要常駐程序，不適合依賴 Vercel 函式在請求結束後繼續執行。沒有排程時，社長／顧問仍可從工作台手動處理待辦工作。
+可改用 `OPS_WORKER_ENABLED=true`，以及 `OPS_WORKER_INTERVAL_SECONDS`（30–3600 秒，預設 60 秒）。每輪最多 3 項工作；啟動程序後可能自動執行既有工作，不需要另按操作按鈕。這個 `setInterval` 模式需要常駐程序，不適合依賴 Vercel 函式在請求結束後繼續執行。沒有排程時，社長／顧問仍可從工作台手動處理待辦工作。
 
 ## 8. 部署與驗收順序
 
 此程式庫目前可觀察到前端 `client` 與後端 `server` 的 Vercel 部署設定／檢查，另保留歷史 `render.yaml`；請以實際主機設定確認目前部署位置，不要只依舊設定檔判斷。
 
-1. **先建立 Preview。** 前端與後端必須都包含同一版程式。Preview 指向測試資料庫；正式環境才使用既有正式資料庫，避免測試記錄進入正式流程。
-2. **設定該環境的 API 與身分。** 前端 `VITE_API_URL` 指向對應後端 `/api`；後端配置 Firebase 與 Turso。確認 Preview 網域能完成 Google 登入；若 Firebase 擋住網域，於 Firebase Authentication 設定授權網域。
+2026-10-25 實際 UI 顯示後端 Production Branch 為 `feat/vercel-serverless-migration`，本輪未變更。**合併 `main` 不等於後端正式部署**；正式發布前，須核對前後端各自的 Production Branch、部署提交及環境配對。
+
+首次啟動伺服器可能建立／遷移資料表；`OPS_WORKER_ENABLED=true` 也可能啟動工作處理。因此即使只呼叫 `/api/health`，也不能把整個程序啟動宣稱為完全零寫入。測試前確認資料庫及工作執行設定；本輪未匯入真實業務資料。
+
+1. **先建立 Preview。** 前端與後端必須包含相容且已核對的程式版本，並確認各自部署分支。Preview 指向測試資料庫；正式環境才使用既有正式資料庫，避免測試記錄進入正式流程。
+2. **設定該環境的 API 與身分。** 使用 gateway 時，前端設 `VITE_OPS_API_URL=/api`，前端伺服器的 `OPS_BACKEND_ORIGIN` 指向對應後端 origin，保留其他 CMS 的 `VITE_API_URL`。核對所需的 Trusted Sources 環境規則；後端配置 Firebase 與 Turso。確認穩定 Preview 網域已列入 Firebase 授權網域，並分別驗收 Google 登入與後端角色。
 3. **設定責任人。** 寫入終審與設計登入信箱名單。實測一般幹部不能冒用終審者，指定終審者可核准當前版本。
 4. **先驗收內部流程。** 用虛構活動匯入、產生草稿、送單位確認、終審、人工附上 Canva 連結與成果證據。重新載入後資料應仍存在；修改活動或文案後應要求重新審核。
 5. **再接外部服務。** 設定 Canva OAuth、資料欄位與母版，完成一次實際套版，核對圖層仍可編輯；需要 AI 或 Sheets 時再啟用對應設定。來源表分享與外部帳戶權限也須驗收。
 6. **驗收排程。** 設定 tick URL 與秘密，以已核准的測試工作確認「處理中」最終轉為設計交件。失敗與未知結果應留在工作紀錄，不應冒充完成。
-7. **正式啟用。** 核對 Production 的資料庫、前端 API、OAuth redirect、秘密、責任人名單與排程 URL。正式資料移轉仍需預覽及確認，不把 Preview 測試資料直接當成正式資料。
+7. **正式啟用。** 核對前後端 Production Branch／部署版本、資料庫、工作台 API 與 gateway 目標、信任規則、OAuth redirect／返回 origin、秘密、責任人名單與排程 URL；Preview → Preview 授權不包含 Production。正式資料移轉仍需預覽及確認，不把 Preview 測試資料直接當成正式資料。
 
 部署新版時保留資料庫與加密金鑰；復原程式版本前先確認 `ops_*` 資料仍可讀取。連線問題看「系統連線」，工作問題看工作紀錄；`blocked_configuration` 先補設定，`failed` 修正後可重試，`needs_reconciliation` 先核對外部結果。
 
@@ -202,10 +218,11 @@ npm --prefix server ci --ignore-scripts --no-audit --no-fund
 npm --prefix server test
 npm --prefix client ci --ignore-scripts --no-audit --no-fund
 node --test client/src/ops/model.test.js
+node --test --test-isolation=none client/server/ops-proxy.test.mjs
 npm --prefix client run build
 ```
 
-後端測試使用隔離的測試資料庫與模擬供應服務，不需真實服務憑證；包括身分、版本、匯入、審核、保存、重試、OAuth 與排程邊界。部分受限執行環境需允許測試綁定本機連接埠。實際通過結果以 CI／測試輸出為準。
+後端測試使用隔離的測試資料庫與模擬供應服務，不需真實服務憑證；包括身分、版本、匯入、審核、保存、重試、OAuth 與排程邊界。gateway 測試另使用模擬上游，驗證路由、固定目標、憑證／header 邊界及失敗不重試。部分受限執行環境需允許測試綁定本機連接埠。實際通過結果以 CI／測試輸出為準。
 
 本機啟動可分別執行 `npm --prefix server start` 與 `npm --prefix client run dev`。只看 `/ops-demo` 時可單獨啟動前端；正式 `/ops` 仍需有效身分及後端設定。
 
