@@ -1,0 +1,51 @@
+name: Process approved operations jobs
+
+# Scheduled workflows run only from the default branch after review/merge.
+# No endpoint is contacted until both the repository variable and secret exist.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+
+permissions: {}
+
+concurrency:
+  group: operations-queue
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    if: ${{ vars.OPS_WORKER_URL != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Process already approved jobs
+        env:
+          OPS_WORKER_URL: ${{ vars.OPS_WORKER_URL }}
+          OPS_CRON_SECRET: ${{ secrets.OPS_CRON_SECRET }}
+        shell: bash
+        run: |
+          node <<'NODE'
+          const endpoint = new URL(process.env.OPS_WORKER_URL);
+          const secret = process.env.OPS_CRON_SECRET || '';
+          if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password || endpoint.hash || endpoint.search || endpoint.pathname !== '/api/ops/jobs/tick') {
+            throw new Error('OPS_WORKER_URL must be the HTTPS operations tick endpoint.');
+          }
+          if (!/^[^\s]{32,512}$/.test(secret)) {
+            throw new Error('Set the dedicated OPS_CRON_SECRET repository secret before enabling the scheduler.');
+          }
+          fetch(endpoint, {
+            method: 'POST',
+            redirect: 'error',
+            headers: {Authorization: 'Bearer ' + secret},
+            signal: AbortSignal.timeout(90000),
+          }).then(async response => {
+            if (!response.ok) throw new Error('Operations endpoint returned HTTP ' + response.status);
+            const result = await response.json();
+            if (result.ok !== true || !Number.isInteger(result.processed) || result.processed < 0 || result.processed > 3) throw new Error('Unexpected operations response.');
+            console.log('Processed approved jobs:', result.processed);
+          }).catch(() => {
+            console.error('Queue check did not complete. Inspect the workspace job states before retrying.');
+            process.exitCode = 1;
+          });
+          NODE

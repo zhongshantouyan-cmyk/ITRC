@@ -3,7 +3,7 @@ const cors = require('cors');
 const path = require('path');
 
 // Initialize database (creates tables)
-require('./db');
+const db = require('./db');
 
 // Initialize Firebase Admin (verify Google ID tokens + load roles allowlist).
 // No-op if FIREBASE_SERVICE_ACCOUNT is unset — backend then accepts legacy JWT only.
@@ -19,7 +19,13 @@ const PORT = process.env.PORT || 3001;
 
 // Middleware
 app.use(cors());
+app.use('/api/ops', express.json({ limit: '256kb' }));
 app.use(express.json());
+app.use('/api/ops', (error, _req, res, next) => {
+    if (error.type === 'entity.too.large') return res.status(413).json({ code: 'PAYLOAD_TOO_LARGE', error: '一次傳入的資料超過 256 KB，請分批匯入。' });
+    if (error instanceof SyntaxError && error.status === 400) return res.status(400).json({ code: 'INVALID_JSON', error: 'JSON 格式不正確。' });
+    return next(error);
+});
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Routes
@@ -35,6 +41,17 @@ app.use('/api/activities', autoSnapshotMiddleware, require('./routes/activities'
 app.use('/api/experiences', autoSnapshotMiddleware, require('./routes/experiences'));
 app.use('/api/resources', autoSnapshotMiddleware, require('./routes/resources'));
 app.use('/api/search', require('./routes/search'));
+
+// Operations uses separate durable tables and Firebase-only authorization.
+const { createOpsRouter } = require('./ops');
+const { createCanvaConnection, createConnectionRouter, withCanvaConnection } = require('./ops-connection');
+const canvaConnection = createCanvaConnection({ db });
+app.use('/api/ops/connections/canva', createConnectionRouter({ manager: canvaConnection }));
+const opsProviders = withCanvaConnection(require('./ops/providers'), canvaConnection);
+const opsRouter = createOpsRouter({ db, providers: opsProviders });
+app.use('/api/ops/jobs', require('./ops-cron').createOpsCronRouter(opsRouter.service));
+app.use('/api/ops', opsRouter);
+require('./ops-worker').startOpsWorker(opsRouter.service);
 
 // Upload route (Cloudinary)
 const multer = require('multer');

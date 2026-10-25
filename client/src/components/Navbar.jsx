@@ -59,6 +59,7 @@ export default function Navbar() {
                         <li><Link to="/experiences" className={isActive('/experiences')}>參與心得</Link></li>
                         {isAdmin && (
                             <>
+                                <li><Link to="/ops" className={isActive('/ops')}>營運工作台</Link></li>
                                 <li><Link to="/admin" className={isActive('/admin')}>管理後台</Link></li>
                                 <li><button onClick={logout} style={{ color: '#fc8181' }}>登出</button></li>
                             </>

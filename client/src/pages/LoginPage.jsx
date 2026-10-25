@@ -1,14 +1,18 @@
 import { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 export default function LoginPage() {
     const { user, isAdmin, loading, login, logout } = useAuth();
     const navigate = useNavigate();
+    const location = useLocation();
+    const requestedPath = location.state?.from;
+    const destination = typeof requestedPath === 'string' && /^\/(ops|admin)(\?|$)/.test(requestedPath)
+        ? requestedPath : '/admin';
 
     useEffect(() => {
-        if (!loading && user && isAdmin) navigate('/admin');
-    }, [loading, user, isAdmin, navigate]);
+        if (!loading && user && isAdmin) navigate(destination, { replace: true });
+    }, [loading, user, isAdmin, navigate, destination]);
 
     return (
         <div className="login-page">
