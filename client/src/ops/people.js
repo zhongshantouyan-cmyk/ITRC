@@ -1,6 +1,6 @@
 import { isAdviser } from './model.js';
 
-export const PERSON_STATES = { active: '在任', inactive: '非現任', pending: '待確認' };
+export const PERSON_STATES = { active: '在任', inactive: '非當期名單', pending: '待確認' };
 export const personById = (people = [], id) => people.find(person => person.personId === id);
 export const LEGACY_ASSIGNEE = '__keep_legacy_email__';
 export const assignmentFormValue = record => record?.ownerPersonId || (record?.ownerEmail ? LEGACY_ASSIGNEE : '');
@@ -13,7 +13,7 @@ export function assignmentOptions(people, record) {
 export const personLabel = person => person ? [person.name, person.title || person.group].filter(Boolean).join(' · ') : '';
 export function personOptions(people = [], currentId = '') {
   return people.filter(person => person.status !== 'inactive' || person.personId === currentId)
-    .map(person => ({ value: person.personId, label: `${personLabel(person)}${person.status === 'inactive' ? '（非現任，保留歷史）' : person.status === 'pending' ? '（待確認）' : ''}` }));
+    .map(person => ({ value: person.personId, label: `${personLabel(person)}${person.status === 'inactive' ? '（非當期名單，保留歷史）' : person.status === 'pending' ? '（待確認）' : ''}` }));
 }
 export function ownerLabel(record, people = []) {
   const person = personById(people, record?.ownerPersonId);
