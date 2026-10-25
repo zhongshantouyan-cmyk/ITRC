@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ITRC 財務站｜收支表 · 核銷簽核</title>
+<link rel="stylesheet" href="itrc.css">
+<script src="itrc.js" defer></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<script src="itrc-auth.js"></script>
+<style>
+  .container{max-width:1000px}
+  .who{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:13px;color:#cdd6e8}
+  .who .role{background:var(--gold);color:var(--navy);font-weight:700;padding:2px 9px;border-radius:var(--pill);font-size:12px}
+  /* gate / 尚未授權 */
+  .gate{max-width:460px;margin:60px auto;text-align:center;background:var(--card);border:1px solid var(--line);
+    border-radius:var(--r-lg);padding:34px 28px;box-shadow:var(--sh-2)}
+  .gate h2{margin:0 0 8px;color:var(--navy);font-size:19px}
+  .gate p{color:var(--muted);font-size:13.5px;margin:6px 0 18px;line-height:1.7}
+  /* tabs */
+  .tabs{display:flex;gap:6px;margin:18px 0 16px;flex-wrap:wrap}
+  .tabs button{background:#fff;border:1px solid var(--line);border-radius:var(--pill);padding:8px 16px;
+    font-weight:700;font-size:13.5px;color:var(--ink-2);cursor:pointer;transition:var(--ease)}
+  .tabs button:hover{border-color:#c7d0e0}
+  .tabs button.active{background:var(--navy);color:#fff;border-color:var(--navy)}
+  .none{display:none}
+  /* summary cards */
+  .sum{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px}
+  .sum .c{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;box-shadow:var(--sh-1)}
+  .sum .c .k{font-size:12px;color:var(--muted);font-weight:700}
+  .sum .c .v{font-size:24px;font-weight:800;margin-top:3px;font-variant-numeric:tabular-nums}
+  .sum .in .v{color:var(--ok)} .sum .out .v{color:var(--bad)} .sum .bal .v{color:var(--navy)}
+  /* table */
+  table{width:100%;border-collapse:collapse;font-size:13px;background:var(--card);border-radius:var(--r);overflow:hidden}
+  th,td{padding:8px 10px;border-bottom:1px solid var(--line-2);text-align:left;vertical-align:top}
+  th{background:var(--bg-2);color:var(--ink-2);font-size:12px;font-weight:700}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  tr:last-child td{border-bottom:none}
+  .pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 9px;border-radius:var(--pill);white-space:nowrap}
+  .s-submitted{color:var(--info);background:var(--info-bg)}
+  .s-approved{color:var(--warn);background:var(--warn-bg)}
+  .s-rejected{color:var(--bad);background:var(--bad-bg)}
+  .s-posted{color:var(--ok);background:var(--ok-bg)}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+  .receipt{max-width:60px;max-height:46px;border-radius:6px;border:1px solid var(--line);cursor:pointer;vertical-align:middle}
+  .muted{color:var(--muted);font-size:12.5px}
+  .empty{text-align:center;color:var(--muted);padding:26px;font-size:13px}
+  @media(max-width:640px){.sum{grid-template-columns:1fr}.row2,.row3{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header class="apphead">
+  <h1><svg class="svgic"><use href="#i-checklist"></use></svg>財務站</h1>
+  <span class="sub">收支表 · 核銷簽核</span>
+  <div class="who" id="who"></div>
+</header>
+
+<div class="container" id="app"></div>
+
+<!-- 工作區（登入且有角色才顯示） -->
+<template id="tpl-app">
+  <div class="tabs" id="tabs"></div>
+
+  <!-- 申請核銷 -->
+  <section id="tab-apply" class="none">
+    <div class="surface" style="margin-bottom:16px">
+      <h3 style="margin:0 0 12px;color:var(--navy);font-size:15px">填寫核銷申請</h3>
+      <div class="row3">
+        <div><label>金額（元）</label><input id="ap_amount" type="number" min="0" step="1" placeholder="0"></div>
+        <div><label>類別</label><input id="ap_cat" list="catlist" placeholder="例：場地 / 餐飲 / 文具"></div>
+        <div><label>日期</label><input id="ap_date" type="date"></div>
+      </div>
+      <label style="margin-top:12px">項目／用途</label>
+      <input id="ap_item" placeholder="例：第3週社課租借麥克風">
+      <div class="row2" style="margin-top:12px">
+        <div><label>付款方式</label><select id="ap_pay" onchange="togglePay()"><option value="transfer">匯款（轉帳給我）</option><option value="cash">現金（已當場支付）</option></select></div>
+        <div id="ap_acctwrap"><label>收款帳戶（戶名／銀行代碼／帳號）</label><input id="ap_acct" placeholder="例：王小明／822 中信／0001234567890"></div>
+      </div>
+      <label style="margin-top:12px">備註（選填）</label>
+      <input id="ap_note" placeholder="補充說明">
+      <label style="margin-top:12px">發票／收據佐證（選填，圖片）</label>
+      <input id="ap_file" type="file" accept="image/*">
+      <div class="muted" id="ap_fileinfo"></div>
+      <div style="margin-top:16px"><button class="btn gold" onclick="submitReimb()">送出申請</button></div>
+    </div>
+    <h3 style="margin:0 0 8px;color:var(--navy);font-size:15px">我的核銷紀錄</h3>
+    <div id="myList"></div>
+  </section>
+
+  <!-- 簽核 -->
+  <section id="tab-review" class="none">
+    <h3 style="margin:0 0 8px;color:var(--navy);font-size:15px">待簽核</h3>
+    <div id="reviewList"></div>
+  </section>
+
+  <!-- 收支表 -->
+  <section id="tab-ledger" class="none">
+    <div class="sum">
+      <div class="c in"><div class="k">總收入</div><div class="v" id="s_in">$0</div></div>
+      <div class="c out"><div class="k">總支出</div><div class="v" id="s_out">$0</div></div>
+      <div class="c bal"><div class="k">結餘</div><div class="v" id="s_bal">$0</div></div>
+    </div>
+    <div class="surface" id="ledgerAdd" style="margin-bottom:16px">
+      <h3 style="margin:0 0 12px;color:var(--navy);font-size:15px">手動新增一筆</h3>
+      <div class="row3">
+        <div><label>類型</label><select id="ld_type"><option value="in">收入</option><option value="out">支出</option></select></div>
+        <div><label>金額</label><input id="ld_amount" type="number" min="0" step="1" placeholder="0"></div>
+        <div><label>日期</label><input id="ld_date" type="date"></div>
+      </div>
+      <div class="row2" style="margin-top:12px">
+        <div><label>類別</label><input id="ld_cat" list="catlist" placeholder="例：社費 / 場地"></div>
+        <div><label>項目</label><input id="ld_item" placeholder="說明"></div>
+      </div>
+      <div style="margin-top:14px"><button class="btn" onclick="addLedger()">加入收支表</button></div>
+    </div>
+    <div id="pendingPost"></div>
+    <div style="display:flex;align-items:center;gap:10px;margin:18px 0 8px">
+      <h3 style="margin:0;color:var(--navy);font-size:15px">收支明細</h3>
+      <button class="btn ghost sm" style="margin-left:auto" onclick="exportCSV()">匯出 CSV</button>
+    </div>
+    <div id="ledgerList"></div>
+    <div id="finAdmin" style="margin-top:18px"></div>
+  </section>
+</template>
+
+<datalist id="catlist">
+  <option value="場地"><option value="餐飲"><option value="文具"><option value="講師"><option value="行銷印刷">
+  <option value="交通"><option value="社費"><option value="贊助收入"><option value="雜支">
+</datalist>
+
+<script>
+/* FINANCE_LIVE：Google 登入啟用後改成 true，財務站才正式開放（需登入）。
+   false＝顯示「即將開放」；本機 ?dev=1 / localhost 仍可用測試模式試跑流程。 */
+var FINANCE_LIVE = true;
+var LEDGER=[], REIMB=[], fbLedger=null, fbReimb=null, ACTIVE='', seeded=false;
+var ME=function(){return ITRCAuth.user||{};};
+function $(id){return document.getElementById(id);}
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(m){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]);});}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
+function arr(v){return Array.isArray(v)?v.filter(Boolean):(v?Object.values(v).filter(Boolean):[]);}
+function money(n){return '$'+(Number(n)||0).toLocaleString('en-US');}
+function today(){var d=new Date();return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);} // 取台灣當地日期（避免 UTC 凌晨少一天）
+var STATUS_LABEL={submitted:'已送出（待簽核）',approved:'已核准（待入帳）',rejected:'已退回',posted:'已入帳'};
+
+/* 正式收支明細只從已授權資料庫讀取；不在公開程式內預置。 */
+var SEED_LEDGER=[]; // Historical entries remain only in the authorized database.
+
+/* ───── 啟動 ───── */
+ITRCAuth.init({onChange:onAuth});
+function onAuth(user){ renderWho(); renderGate(); }
+
+function renderWho(){
+  var u=ITRCAuth.user, el=$('who');
+  if(!u){ el.innerHTML=''; return; }
+  if(!u.role){ el.innerHTML='<span>'+esc(u.name)+'</span>'+(ITRCAuth.isDev()?'':'<button class="btn ghost sm" onclick="ITRCAuth.signOut()">登出</button>'); return; }
+  el.innerHTML='<span class="role">'+esc(ITRCAuth.ROLE_LABEL[u.role])+'</span><span>'+esc(u.name)+'</span>'
+    +(ITRCAuth.isDev()?'':'<button class="btn ghost sm" onclick="ITRCAuth.signOut()">登出</button>');
+}
+
+function renderGate(){
+  var u=ITRCAuth.user, app=$('app');
+  if(!FINANCE_LIVE && !ITRCAuth.isDev()){
+    app.innerHTML='<div class="gate"><h2>財務站即將開放</h2><p>等社團啟用 Google 登入後正式上線。<br>現在可先到「幹部與權限」把每位幹部的 Google 信箱與角色設定好。</p></div>';
+    return;
+  }
+  if(!u){ // 未登入（正式模式）
+    app.innerHTML='<div class="gate"><h2>請先登入</h2><p>財務站僅供已授權幹部使用，請用社團 Google 帳號登入。</p>'
+      +'<button class="btn gold" onclick="ITRCAuth.signIn()">用 Google 登入</button></div>';
+    return;
+  }
+  if(!u.role){ // 已登入、白名單未授權
+    app.innerHTML='<div class="gate"><h2>尚未授權</h2><p>你的帳號（'+esc(u.email||u.name)+'）還沒有被指派財務站角色。<br>請聯絡財務長或社長把你加進名單。</p></div>';
+    return;
+  }
+  mountApp();
+}
+
+/* ───── 掛載工作區 ───── */
+function mountApp(){
+  if(!$('tabs')){ $('app').innerHTML=''; $('app').appendChild($('tpl-app').content.cloneNode(true)); buildTabs(); initData(); }
+  else { buildTabs(); renderAll(); }
+}
+function buildTabs(){
+  var tabs=[];
+  tabs.push(['apply','申請核銷']);                              // 人人可幫自己申請
+  if(ITRCAuth.can('approve')) tabs.push(['review','簽核']);     // 限正副社長
+  if(ITRCAuth.can('ledger'))  tabs.push(['ledger','收支表']);   // 所有幹部可看（財務長可編）
+  var box=$('tabs'); box.innerHTML='';
+  tabs.forEach(function(t){
+    var b=document.createElement('button'); b.textContent=t[1]; b.onclick=function(){go(t[0]);};
+    b.setAttribute('data-tab',t[0]); box.appendChild(b);
+  });
+  if(!ACTIVE || !tabs.some(function(t){return t[0]===ACTIVE;})) ACTIVE=tabs[0][0];
+  go(ACTIVE);
+}
+function go(tab){
+  ACTIVE=tab;
+  ['apply','review','ledger'].forEach(function(id){ var s=$('tab-'+id); if(s)s.classList.toggle('none',id!==tab); });
+  document.querySelectorAll('#tabs button').forEach(function(b){ b.classList.toggle('active',b.getAttribute('data-tab')===tab); });
+  if(tab==='apply'&&$('ap_date')&&!$('ap_date').value)$('ap_date').value=today();
+  if(tab==='apply')togglePay();
+  if(tab==='ledger'&&$('ld_date')&&!$('ld_date').value)$('ld_date').value=today();
+  renderAll();
+}
+
+/* ───── 資料層（測試模式=localStorage；正式=RTDB finance/*) ───── */
+function initData(){
+  if(ITRCAuth.isDev()){
+    try{LEDGER=JSON.parse(localStorage.getItem('itrc_fin_ledger')||'[]');}catch(e){LEDGER=[];}
+    try{REIMB=JSON.parse(localStorage.getItem('itrc_fin_reimb')||'[]');}catch(e){REIMB=[];}
+    if(!LEDGER.length){ LEDGER=SEED_LEDGER.slice(); localStorage.setItem('itrc_fin_ledger',JSON.stringify(LEDGER)); } // 收支表空白→帶入期初歷史
+    renderAll();
+  }else{
+    var db=ITRCAuth.db;
+    fbLedger=db.ref('finance/ledger'); fbReimb=db.ref('finance/reimbursements');
+    fbLedger.on('value',function(s){
+      LEDGER=arr(s.val());
+      renderAll();
+    });
+    fbReimb.on('value',function(s){REIMB=arr(s.val());renderAll();});
+  }
+}
+function saveLedger(){ if(ITRCAuth.isDev()){localStorage.setItem('itrc_fin_ledger',JSON.stringify(LEDGER));renderAll();} else {fbLedger.set(LEDGER);} }
+function saveReimb(){ if(ITRCAuth.isDev()){localStorage.setItem('itrc_fin_reimb',JSON.stringify(REIMB));renderAll();} else {fbReimb.set(REIMB);} }
+
+/* ───── 申請核銷 ───── */
+var pendingReceipt='';
+if(document.addEventListener) document.addEventListener('change',function(e){
+  if(e.target&&e.target.id==='ap_file'){
+    var f=e.target.files[0]; pendingReceipt=''; $('ap_fileinfo').textContent='';
+    if(!f)return;
+    if(f.size>1800000){ alert('圖片太大（>1.8MB），請壓縮後再上傳。'); e.target.value=''; return; }
+    var r=new FileReader(); r.onload=function(){ pendingReceipt=r.result; $('ap_fileinfo').textContent='已附圖：'+f.name; }; r.readAsDataURL(f);
+  }
+});
+function togglePay(){ var w=$('ap_acctwrap'); if(w) w.style.display=($('ap_pay')&&$('ap_pay').value==='cash')?'none':''; }
+function submitReimb(){
+  var amt=Math.round(Number($('ap_amount').value));   // Number 避免 parseInt 把 1e9 吃成 1、小數無聲截斷
+  var item=$('ap_item').value.trim(), cat=$('ap_cat').value.trim();
+  var pay=$('ap_pay')?$('ap_pay').value:'transfer', acct=$('ap_acct')?$('ap_acct').value.trim():'';
+  if(!isFinite(amt)||amt<=0){alert('請填有效金額（正整數）');return;}
+  if(!item){alert('請填項目／用途');return;}
+  if(pay==='transfer'&&!acct){alert('匯款需填收款帳戶（或改選「現金」）');return;}
+  REIMB.push({id:uid(), created:new Date().toISOString(), date:$('ap_date').value||today(),
+    byUid:ME().uid, byName:ME().name, amount:amt, cat:cat, item:item, note:$('ap_note').value.trim(),
+    payMethod:pay, account:(pay==='transfer'?acct:''),
+    receipt:pendingReceipt||'', status:'submitted', approver:'', approvedAt:'', rejectReason:'', postedAt:''});
+  saveReimb();
+  $('ap_amount').value='';$('ap_item').value='';$('ap_note').value='';$('ap_cat').value='';
+  if($('ap_acct'))$('ap_acct').value='';
+  $('ap_file').value='';pendingReceipt='';$('ap_fileinfo').textContent='';
+  if(window.itrcToast)itrcToast('已送出核銷申請');
+}
+
+/* ───── 渲染 ───── */
+function renderAll(){
+  if(!$('tabs'))return;
+  if(ACTIVE==='apply') renderMyList();
+  if(ACTIVE==='review') renderReview();
+  if(ACTIVE==='ledger'){ var ed=ITRCAuth.can('treasury'); if($('ledgerAdd'))$('ledgerAdd').style.display=ed?'':'none'; renderSummary(); renderPendingPost(); renderLedger(); renderFinAdmin(ed); }
+}
+function statusPill(s){return '<span class="pill s-'+s+'">'+(STATUS_LABEL[s]||s)+'</span>';}
+function payText(r){ if(!r.payMethod)return '（未註明）'; if(r.payMethod==='cash')return '現金（已支付）'; return '匯款 · '+esc(r.account||'（未填帳戶）'); }
+function receiptCell(r){return r.receipt?'<img class="receipt" src="'+esc(r.receipt)+'" onclick="viewReceipt(\''+r.id+'\')">':'<span class="muted">—</span>';}
+function viewReceipt(id){
+  var r=REIMB.find(function(x){return x.id===id;}); if(!r||!r.receipt)return;
+  var w=window.open('','_blank');                       // data: URL 無法當作頂層網址直接開，改用包一層 HTML
+  if(!w){alert('瀏覽器擋掉了新分頁，請允許彈出視窗。');return;}
+  w.document.write('<!doctype html><meta charset="utf-8"><title>收據</title>'
+    +'<body style="margin:0;background:#0f1f3d;display:flex;align-items:center;justify-content:center;min-height:100vh">'
+    +'<img src="'+esc(r.receipt)+'" style="max-width:100%;max-height:100vh;object-fit:contain">');
+  w.document.close();
+}
+
+function renderMyList(){
+  var mine=REIMB.filter(function(r){return r.byUid===ME().uid;}).slice().reverse();
+  $('myList').innerHTML = mine.length ? table(['日期','類別','項目','金額','收據','狀態'],
+    mine.map(function(r){return '<tr><td>'+esc(r.date)+'</td><td>'+esc(r.cat)+'</td><td>'+esc(r.item)
+      +(r.payMethod?'<div class="muted">'+payText(r)+'</div>':'')
+      +(r.rejectReason?'<div class="muted">退回原因：'+esc(r.rejectReason)+'</div>':'')
+      +'</td><td class="num">'+money(r.amount)+'</td><td>'+receiptCell(r)+'</td><td>'+statusPill(r.status)+'</td></tr>';}).join(''))
+    : '<div class="empty">還沒有核銷紀錄。</div>';
+}
+
+function renderReview(){
+  var list=REIMB.filter(function(r){return r.status==='submitted';}).slice().reverse();
+  $('reviewList').innerHTML = list.length ? list.map(function(r){
+    return '<div class="surface" style="margin-bottom:10px">'
+      +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:baseline">'
+      +'<b style="color:var(--navy)">'+money(r.amount)+'</b> · '+esc(r.cat||'未分類')
+      +'<span class="muted">'+esc(r.item)+'</span>'
+      +'<span class="muted" style="margin-left:auto">'+esc(r.byName)+' · '+esc(r.date)+'</span></div>'
+      +(r.note?'<div class="muted" style="margin-top:4px">備註：'+esc(r.note)+'</div>':'')
+      +'<div class="muted" style="margin-top:4px">付款：'+payText(r)+'</div>'
+      +(r.receipt?'<div style="margin-top:8px">'+receiptCell(r)+'</div>':'')
+      +'<div style="margin-top:12px;display:flex;gap:8px"><button class="btn gold sm" onclick="approve(\''+r.id+'\')">核准</button>'
+      +'<button class="btn ghost sm" onclick="reject(\''+r.id+'\')">退回</button></div></div>';
+  }).join('') : '<div class="empty">目前沒有待簽核的申請。</div>';
+}
+function approve(id){
+  if(!ITRCAuth.can('approve'))return;
+  var r=REIMB.find(function(x){return x.id===id;}); if(!r||r.status!=='submitted')return;   // 只有待簽核可核准，防狀態回退
+  r.status='approved'; r.approver=ME().name; r.approvedAt=new Date().toISOString();
+  saveReimb(); if(window.itrcToast)itrcToast('已核准');
+}
+function reject(id){
+  if(!ITRCAuth.can('approve'))return;
+  var r=REIMB.find(function(x){return x.id===id;}); if(!r||r.status!=='submitted')return;   // 只有待簽核可退回
+  var why=prompt('退回原因（會讓申請人看到）：',''); if(why===null)return;
+  r.status='rejected'; r.rejectReason=why; r.approver=ME().name;
+  saveReimb(); if(window.itrcToast)itrcToast('已退回');
+}
+
+/* ───── 收支表（財務） ───── */
+function renderSummary(){
+  var inc=0,out=0;
+  LEDGER.forEach(function(e){ if(e.type==='in')inc+=Number(e.amount)||0; else out+=Number(e.amount)||0; });
+  var bal=inc-out;
+  $('s_in').textContent=money(inc); $('s_out').textContent=money(out);
+  $('s_bal').textContent=(bal<0?'-':'')+money(Math.abs(bal));   // 負結餘顯示 -$xxx
+  $('s_bal').style.color=bal<0?'var(--bad)':'';
+}
+function renderPendingPost(){
+  if(!ITRCAuth.can('treasury')){ $('pendingPost').innerHTML=''; return; }   // 待入帳＋一鍵入帳僅財務長可見
+  var list=REIMB.filter(function(r){return r.status==='approved';}).slice().reverse();
+  $('pendingPost').innerHTML = list.length ? '<div class="surface" style="margin-bottom:6px"><h3 style="margin:0 0 8px;color:var(--navy);font-size:15px">已核准 · 待入帳</h3>'
+    + table(['日期','類別','項目','申請人','付款','金額','操作'], list.map(function(r){
+      return '<tr><td>'+esc(r.date)+'</td><td>'+esc(r.cat)+'</td><td>'+esc(r.item)+'</td><td>'+esc(r.byName)
+        +'</td><td class="muted">'+payText(r)+(r.receipt?' · '+receiptCell(r):'')+'</td><td class="num">'+money(r.amount)+'</td><td><button class="btn gold sm" onclick="postToLedger(\''+r.id+'\')">一鍵入帳</button></td></tr>';
+    }).join('')) + '</div>' : '';
+}
+function postToLedger(id){
+  if(!ITRCAuth.can('treasury'))return;
+  var r=REIMB.find(function(x){return x.id===id;}); if(!r||r.status!=='approved')return;
+  if(LEDGER.some(function(e){return e.ref===r.id;}))return;   // 防重複入帳：同一筆核銷已有對應收支列就不再 push
+  LEDGER.push({id:uid(), date:r.date||today(), type:'out', cat:r.cat||'核銷', item:r.item,
+    amount:r.amount, note:'核銷·'+r.byName+(r.payMethod==='cash'?'／現金':(r.payMethod==='transfer'?'／匯款':''))+(r.approver?'／核准:'+r.approver:''), by:ME().name, ref:r.id});
+  r.status='posted'; r.postedAt=new Date().toISOString();
+  saveLedger(); saveReimb();   // 兩個都存
+  if(window.itrcToast)itrcToast('已轉入收支表');
+}
+function addLedger(){
+  if(!ITRCAuth.can('treasury'))return;
+  var amt=Math.round(Number($('ld_amount').value));   // 同上：用 Number 取代 parseInt
+  if(!isFinite(amt)||amt<=0){alert('請填有效金額（正整數）');return;}
+  LEDGER.push({id:uid(), date:$('ld_date').value||today(), type:$('ld_type').value,
+    cat:$('ld_cat').value.trim(), item:$('ld_item').value.trim(), amount:amt, note:'', by:ME().name, ref:''});
+  saveLedger();
+  $('ld_amount').value='';$('ld_cat').value='';$('ld_item').value='';
+  if(window.itrcToast)itrcToast('已加入收支表');
+}
+function delLedger(id){
+  if(!ITRCAuth.can('treasury'))return;
+  if(!confirm('刪除這筆收支？（已入帳的核銷不會退回狀態）'))return;
+  LEDGER=LEDGER.filter(function(e){return e.id!==id;}); saveLedger();
+}
+/* 換屆清理：刪「已入帳／已退回」核銷申請與附圖，釋放雲端空間。收支表（明細數字）不動。 */
+function renderFinAdmin(ed){
+  var el=$('finAdmin'); if(!el)return;
+  if(!ed){ el.innerHTML=''; return; }
+  var done=REIMB.filter(function(r){return r.status==='posted'||r.status==='rejected';}).length;
+  el.innerHTML='<div class="surface"><h3 style="margin:0 0 6px;color:var(--navy);font-size:15px">換屆清理</h3>'
+    +'<div class="muted" style="margin-bottom:10px">學期末釋放雲端空間：刪除「已入帳／已退回」的核銷申請與其發票圖（共 '+done+' 筆）。<b>收支表的收支數字不受影響</b>，待簽核／待入帳的申請也會保留。</div>'
+    +'<button class="btn ghost sm"'+(done?'':' disabled')+' onclick="purgeReimb()">清除已結案核銷（'+done+'）</button></div>';
+}
+function purgeReimb(){
+  if(!ITRCAuth.can('treasury'))return;
+  var done=REIMB.filter(function(r){return r.status==='posted'||r.status==='rejected';});
+  if(!done.length){alert('沒有可清除的已結案核銷。');return;}
+  if(!confirm('確定刪除 '+done.length+' 筆「已入帳／已退回」核銷紀錄與其發票圖？\n\n收支表（收支明細）數字不受影響，但這些核銷的申請資料與圖片會永久消失、無法復原。')) return;
+  REIMB=REIMB.filter(function(r){return r.status!=='posted'&&r.status!=='rejected';});
+  saveReimb();
+  if(window.itrcToast)itrcToast('已清除 '+done.length+' 筆結案核銷');
+}
+function renderLedger(){
+  var ed=ITRCAuth.can('treasury');
+  var cols=['日期','類型','類別','項目','金額','經手']; if(ed)cols.push('&nbsp;');
+  var rows=LEDGER.slice().sort(function(a,b){return (b.date||'').localeCompare(a.date||'');});
+  $('ledgerList').innerHTML = rows.length ? table(cols,
+    rows.map(function(e){
+      return '<tr><td>'+esc(e.date)+'</td><td>'+(e.type==='in'?'<span class="pill s-posted">收入</span>':'<span class="pill s-rejected">支出</span>')
+        +'</td><td>'+esc(e.cat)+'</td><td>'+esc(e.item)+(e.note?'<div class="muted">'+esc(e.note)+'</div>':'')
+        +'</td><td class="num">'+(e.type==='in'?'+':'−')+money(e.amount).slice(1)+'</td><td>'+esc(e.by||'')
+        +'</td>'+(ed?'<td><button class="btn ghost sm" onclick="delLedger(\''+e.id+'\')">刪</button></td>':'')+'</tr>';
+    }).join('')) : '<div class="empty">'+(ed?'收支表還是空的。核准的核銷可從上方「一鍵入帳」，或手動新增。':'收支表目前沒有資料。')+'</div>';
+}
+function csvCell(c){
+  c=String(c==null?'':c);
+  if(/^[=+\-@\t\r]/.test(c)) c="'"+c;                  // 防 CSV 公式注入（Excel 會執行 =/+/-/@ 開頭）
+  return /[",\n\r]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c;
+}
+function exportCSV(){
+  var head=['日期','類型','類別','項目','金額','經手','備註'];
+  var lines=[head.join(',')].concat(LEDGER.slice().sort(function(a,b){return (a.date||'').localeCompare(b.date||'');}).map(function(e){
+    return [e.date,(e.type==='in'?'收入':'支出'),e.cat,e.item,e.amount,e.by,e.note].map(csvCell).join(',');
+  }));
+  var blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a'); a.href=url; a.download='ITRC收支表_'+today()+'.csv'; a.click();
+  setTimeout(function(){URL.revokeObjectURL(url);},1000);
+  if(window.itrcToast)itrcToast('已匯出 CSV');
+}
+
+/* 小工具：建表 */
+function table(cols,bodyHtml){
+  return '<table><thead><tr>'+cols.map(function(c){return '<th'+(/金額/.test(c)?' class="num"':'')+'>'+c+'</th>';}).join('')+'</tr></thead><tbody>'+bodyHtml+'</tbody></table>';
+}
+</script>
+</body>
+</html>

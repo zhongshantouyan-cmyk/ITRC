@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ITRC 幹部與權限｜管理組</title>
+<link rel="stylesheet" href="itrc.css">
+<script src="itrc.js" defer></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<script src="itrc-auth.js"></script>
+<style>
+  .container{max-width:920px}
+  .who{margin-left:auto;font-size:13px;color:#cdd6e8}
+  .banner{background:var(--warn-bg);border:1px solid #e6d6a6;color:#6f5410;border-radius:var(--r);
+    padding:11px 15px;margin-bottom:16px;font-size:13px;line-height:1.65}
+  .banner b{color:#5a4410}
+  .legend{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+  .legend .c{flex:1;min-width:200px;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:11px 14px;box-shadow:var(--sh-1)}
+  .legend .c b{color:var(--navy);font-size:13.5px} .legend .c p{margin:3px 0 0;font-size:12.5px;color:var(--muted);line-height:1.55}
+  table{width:100%;border-collapse:collapse;font-size:13px;background:var(--card);border-radius:var(--r);overflow:hidden;box-shadow:var(--sh-1)}
+  th,td{padding:7px 9px;border-bottom:1px solid var(--line-2);text-align:left;vertical-align:middle}
+  th{background:var(--bg-2);color:var(--ink-2);font-size:12px;font-weight:700}
+  tr:last-child td{border-bottom:none}
+  td input,td select{width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:#fff;font-size:13px}
+  td.del{text-align:center;width:46px}
+  .del-btn{padding:6px 8px;color:var(--muted)}
+  .del-btn:hover{color:var(--bad);border-color:var(--bad);background:var(--bad-bg)}
+  td.empty{text-align:center;color:var(--muted);padding:26px 12px}
+  .addbar{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);padding:14px 16px;margin-bottom:16px;box-shadow:var(--sh-1)}
+  .addgrid{display:grid;grid-template-columns:1.1fr 1.6fr 1fr 1.2fr auto;gap:10px;align-items:end}
+  .addgrid label{margin-bottom:4px}
+  .r-officer{color:var(--ink-2)} .r-chair{color:var(--navy);font-weight:700} .r-advisor{color:var(--info);font-weight:700} .r-treasurer{color:var(--gold-ink);font-weight:700} .r-none{color:var(--muted)}
+  #sheet_src{color:var(--gold-ink);font-weight:700;text-decoration:underline;text-underline-offset:2px} #sheet_src:hover{color:var(--gold);text-decoration-thickness:2px}
+  .conn{font-size:12px;font-weight:700;color:#9fb0cc}
+  .gate{max-width:460px;margin:60px auto;text-align:center;background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);padding:34px 28px;box-shadow:var(--sh-2)}
+  .gate h2{margin:0 0 8px;color:var(--navy)} .gate p{color:var(--muted);font-size:13.5px;line-height:1.7}
+  .handover{margin-top:22px;background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sh-1)}
+  .handover>summary{cursor:pointer;padding:12px 16px;font-weight:700;color:var(--navy);list-style:none}
+  .handover>summary::-webkit-details-marker{display:none}
+  .handover>summary::before{content:'▸';color:var(--gold);margin-right:7px}
+  .handover[open]>summary::before{content:'▾'}
+  .handover .hbody{padding:2px 18px 16px;font-size:13px;color:var(--ink-2);line-height:1.75}
+  .handover ol{margin:4px 0;padding-left:20px} .handover li{margin:3px 0}
+  .tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .importbox{margin:0 0 16px;background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sh-1)}
+  .importbox>summary{cursor:pointer;padding:11px 15px;font-weight:700;color:var(--navy);list-style:none;display:flex;align-items:center;gap:7px}
+  .importbox>summary::-webkit-details-marker{display:none}
+  .importbox>summary::after{content:'▸';color:var(--gold);margin-left:2px}
+  .importbox[open]>summary::after{content:'▾'}
+  .importbox .ibody{padding:0 15px 15px}
+  .importbox textarea{width:100%;min-height:92px;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:#fff;font-size:13px;font-family:inherit;line-height:1.55;resize:vertical;box-sizing:border-box}
+  .importbox .irow{display:flex;align-items:center;gap:10px;margin-top:9px;flex-wrap:wrap}
+  .imp-tbl{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:11px;background:var(--card);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .imp-tbl th,.imp-tbl td{padding:5px 9px;border-bottom:1px solid var(--line-2);text-align:left}
+  .imp-tbl th{background:var(--bg-2);color:var(--ink-2);font-size:11.5px;font-weight:700}
+  .imp-tbl tr:last-child td{border-bottom:none}
+  .imp-warn{color:var(--bad)}
+  @media(max-width:680px){
+    .addgrid{grid-template-columns:1fr 1fr}
+    .addgrid>div:last-child{grid-column:1/-1}
+    .addgrid>div:last-child .btn{width:100%}
+    table{min-width:560px}
+  }
+</style>
+</head>
+<body>
+<header class="apphead">
+  <h1><svg class="svgic"><use href="#i-edit"></use></svg>幹部與權限</h1>
+  <span class="sub">管理組 · 指派誰能用財務站</span>
+  <div class="who"><span class="conn" id="conn">● 連線中…</span></div>
+</header>
+
+<div class="container" id="app"></div>
+
+<template id="tpl-app">
+  <div class="banner">
+    本頁<b>限正副社長／顧問</b>編輯。權限用 <b>Email（Google 信箱）</b>比對——把每位幹部的信箱填好、設好角色，他們用同一個 Google 帳號登入就會自動拿到權限；信箱留空＝該員還無法登入。<br>
+    換屆或第一次設定，可按下方<b>「開啟名單匯入」</b>在已授權試算表複製資料，貼上後檢查預覽；也可用下面的「貼上／CSV」自行匯入。
+  </div>
+
+  <div class="legend">
+    <div class="c"><b>社長／副社長</b><p>可改幹部名單與權限；在財務站「簽核」核准或退回核銷。</p></div>
+    <div class="c"><b>顧問</b><p>可改幹部名單與權限（不簽核核銷）。換屆走人後仍是永久救援管理員。</p></div>
+    <div class="c"><b>財務長</b><p>可編收支表、把核准的核銷一鍵入帳、手動記帳、匯出 CSV。</p></div>
+    <div class="c"><b>幹部</b><p>可在財務站「申請核銷」、檢視收支表。</p></div>
+  </div>
+
+  <div class="addbar">
+    <div class="addgrid">
+      <div><label>姓名</label><input id="n_name" placeholder="王小明"></div>
+      <div><label>Email（Google）</label><input id="n_email" type="email" placeholder="person1@example.invalid"></div>
+      <div><label>職稱</label><input id="n_title" placeholder="例：活動組員"></div>
+      <div><label>權限</label><select id="n_role"></select></div>
+      <div><button class="btn gold" onclick="addRow()"><svg class="svgic"><use href="#i-plus"></use></svg>新增</button></div>
+    </div>
+  </div>
+
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 12px">
+    <button class="btn ghost sm" onclick="importFromSheet()"><svg class="svgic"><use href="#i-refresh"></use></svg>開啟名單匯入</button>
+    <span class="hint">從 <a id="sheet_src" href="#" target="_blank" rel="noopener">名單試算表</a> 抓最新名單，預覽後再覆蓋（只動名單，不動收支表）</span>
+  </div>
+
+  <details class="importbox">
+    <summary><svg class="svgic"><use href="#i-download"></use></svg>從 Excel／試算表 匯入名單（貼上或選 CSV）</summary>
+    <div class="ibody">
+      <p class="hint" style="margin:2px 0 9px">欄位順序：<b>姓名 · Email · 職稱 · 權限</b>。「權限」填：社長／副社長／顧問／財務長／幹部（未提供時保留既有權限；新人待授權；停用請填「無權限」）。<a href="#" onclick="dlTemplate();return false;">下載範本 CSV</a></p>
+      <textarea id="imp_text" placeholder="從 Excel／Google 試算表 框選整塊複製，直接貼在這；或每行打：姓名,Email,職稱,權限"></textarea>
+      <div class="irow">
+        <label class="btn ghost sm">選 CSV 檔…<input type="file" id="imp_file" accept=".csv,.txt" hidden></label>
+        <button class="btn ghost sm" onclick="parseImport()"><svg class="svgic"><use href="#i-search"></use></svg>解析預覽</button>
+        <span class="hint" id="imp_msg"></span>
+      </div>
+      <div id="imp_preview"></div>
+    </div>
+  </details>
+
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th style="width:18%">姓名</th><th style="width:32%">Email（Google）</th><th style="width:18%">職稱</th><th style="width:22%">權限</th><th class="del">刪</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+  </div>
+  <p class="hint" id="count" style="margin-top:10px"></p>
+
+  <details class="handover">
+    <summary>換屆交接</summary>
+    <div class="hbody">
+      換屆＝<b>只換人、不動資料</b>（看板／講師排程／贊助／收支一律延續）。卸任前請依序：
+      <ol>
+        <li>把<b>新社長／副社長</b>設成「社長／副社長」、<b>新財務長</b>設成「財務長」，並填好他們的 Google 信箱。改權限的能力只給正副社長與顧問；其餘一律「幹部」，日後由社長／顧問親手開權限給需要的人。</li>
+        <li>請新團隊各自用那個信箱的 Google 帳號<b>登入一次</b>、確認進得去。</li>
+        <li>把<b>離任幹部</b>設成「無權限」或按 ✕ 刪除。</li>
+        <li>（選填）填本屆學期，按「封存本屆名單快照」留個記錄。</li>
+      </ol>
+      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:6px">
+        <div><label>本屆學期</label><input id="h_term" placeholder="例：114-2" style="width:150px"></div>
+        <button class="btn ghost" onclick="archiveRoster()"><svg class="svgic"><use href="#i-pin"></use></svg>封存本屆名單快照</button>
+      </div>
+      <p class="hint" style="margin-top:10px">系統內建一個永久救援管理員，萬一全屆走光、沒人能編名單，可請維護者用它解鎖——不會死鎖。</p>
+    </div>
+  </details>
+</template>
+
+<script>
+/* ───────────────────────────────────────────────
+   LOCK：Google 登入上線後改成 true，本頁即自動限「審核/財務長」才能編輯。
+   現在 false＝掀開著，任何人都能編。
+   ─────────────────────────────────────────────── */
+var LOCK = true;
+
+var CFG = {apiKey:"AIzaSyBG41luYP0eyt9UUeuS0lybKTqWYi1GpLc",authDomain:"itrc-workspace.firebaseapp.com",
+  databaseURL:"https://itrc-workspace-default-rtdb.asia-southeast1.firebasedatabase.app",projectId:"itrc-workspace",
+  storageBucket:"itrc-workspace.firebasestorage.app",messagingSenderId:"462903407211",appId:"1:462903407211:web:9cc9217dcef3c97cf2372e"};
+
+/* 幹部名單維持限制存取；只在已授權試算表複製或下載後預覽匯入。 */
+var SHEET_CSV_URL = ''; // Private roster: no anonymous CSV endpoint.
+var SHEET_VIEW_URL = 'https://docs.google.com/spreadsheets/d/1K7byAc1JhpcinOHSDnGEGfwy0kzfTnMB4U-neTjKMKg/edit?usp=sharing';   // 試算表本身，給「名單試算表」連結用
+
+var ROLE_OPTS=[['chair','社長／副社長'],['advisor','顧問'],['treasurer','財務長'],['officer','幹部'],['','無權限（不可登入）']];
+var ROLE_CLS={chair:'r-chair',advisor:'r-advisor',treasurer:'r-treasurer',officer:'r-officer','':'r-none'};
+var ROLE_ORDER={chair:0,advisor:1,treasurer:2,officer:3,'':4};
+var DATA=[], rolesRef=null;
+function $(id){return document.getElementById(id);}
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(m){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]);});}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
+function setConn(t){var c=$('conn');if(c)c.textContent=t;}
+
+/* 115-1 官方幹部名單（資料庫空白時的開站保底；換屆改用「開啟名單匯入」從試算表帶入）。
+   role：chair=正/副社長、advisor=顧問、treasurer=財務長、officer=一般幹部（含管理組PM/資訊長等）。*/
+function seed(){ return []; }
+function norm(v){var a=Array.isArray(v)?v:(v?Object.values(v):[]);return a.filter(Boolean).map(function(r){
+  return {id:r.id||uid(),name:r.name||'',email:r.email||'',title:r.title||r.group||'',role:r.role||''};});}
+
+/* ───── 啟動：LOCK 決定要不要先驗身分 ───── */
+window.addEventListener('DOMContentLoaded',function(){
+  if(LOCK){
+    ITRCAuth.init({onChange:function(u){
+      if(ITRCAuth.can('roster')){ mount(); }
+      else { showGate(u); }
+    }});
+  } else { mount(); }
+});
+function showGate(u){
+  var msg = !u ? '<h2>請先登入</h2><p>此頁限正副社長／顧問編輯。</p><button class="btn gold" onclick="ITRCAuth.signIn()">用 Google 登入</button>'
+                : '<h2>沒有編輯權限</h2><p>你的帳號（'+esc(u.email||u.name)+'）不是正副社長或顧問，無法編輯幹部名單與權限。</p>'
+                  +(ITRCAuth.isDev()?'':'<div style="margin-top:14px"><button class="btn ghost sm" onclick="ITRCAuth.signOut()">登出換帳號</button></div>');
+  $('app').innerHTML='<div class="gate">'+msg+'</div>';
+}
+var mounted=false;
+function mount(){
+  if(mounted){return;} mounted=true;
+  $('app').innerHTML=''; $('app').appendChild($('tpl-app').content.cloneNode(true));
+  // 下拉選單（職稱為自由輸入，不需預填）
+  $('n_role').innerHTML=ROLE_OPTS.map(function(o){return '<option value="'+o[0]+'">'+o[1]+'</option>';}).join('');
+  // 在「姓名／Email」欄按 Enter 即新增
+  [$('n_name'),$('n_email')].forEach(function(el){el.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();addRow();}});});
+  // 選 CSV 檔 → 讀成文字丟進貼上框 → 直接解析預覽
+  $('imp_file').addEventListener('change',function(e){
+    var file=e.target.files[0]; if(!file)return;
+    var rd=new FileReader();
+    rd.onload=function(){ $('imp_text').value=String(rd.result||'').replace(/^﻿/,''); parseImport(); };
+    rd.readAsText(file,'UTF-8'); e.target.value='';
+  });
+  // 「名單試算表」來源連結
+  var src=$('sheet_src'); if(src){var u=SHEET_VIEW_URL||SHEET_CSV_URL; src.href=u||'#'; if(!u){src.title='尚未設定名單試算表網址';}}
+  initData();
+}
+
+/* ───── 資料層（本機/測試＝localStorage、不寫雲端；正式＝雲端 roles/）
+   測試判斷統一交給 ITRCAuth.isDev()，與財務站一致，避免「auth 進測試但資料層仍寫雲端」的脫鉤。 ───── */
+function initData(){
+  if(ITRCAuth.isDev()){
+    try{DATA=JSON.parse(localStorage.getItem('itrc_roles_test')||'[]');}catch(e){DATA=[];}
+    if(!DATA.length){DATA=seed();saveData();}
+    setConn('● 測試（本機·不寫雲端）'); render();
+  }else{
+    if(!(firebase.apps&&firebase.apps.length))firebase.initializeApp(CFG);
+    rolesRef=firebase.database().ref('roles');
+    setConn('● 雲端共用');
+    rolesRef.on('value',function(s){DATA=norm(s.val());render();},
+      function(){setConn('● 連線失敗（改用本機）');try{DATA=JSON.parse(localStorage.getItem('itrc_roles_test')||'[]');}catch(e){DATA=[];}if(!DATA.length)DATA=seed();render();});
+  }
+}
+function saveData(){
+  if(ITRCAuth.isDev() || !rolesRef){localStorage.setItem('itrc_roles_test',JSON.stringify(DATA));render();}
+  else{rolesRef.set(DATA);}
+}
+
+/* ───── CRUD ───── */
+function addRow(){
+  var name=$('n_name').value.trim();
+  if(!name){alert('請填姓名');return;}
+  DATA.push({id:uid(),name:name,email:$('n_email').value.trim(),title:$('n_title').value.trim(),role:$('n_role').value});
+  $('n_name').value='';$('n_email').value='';$('n_title').value='';$('n_name').focus();
+  saveData(); if(window.itrcToast)itrcToast('已新增 '+name);
+}
+function importFromSheet(){
+  if(!ITRCAuth.can('roster')){ alert('請使用有名單管理權限的帳號登入。'); return; }
+  var box=document.querySelector('.importbox'); if(box)box.open=true;
+  var msg=$('imp_msg'); if(msg)msg.textContent='請在已授權的名單試算表複製資料後貼上，或選取下載的 CSV，再檢查預覽。名單不必公開分享。';
+  var input=$('imp_text'); if(input)input.focus();
+}
+function upd(id,field,val){var r=DATA.find(function(x){return x.id===id;});if(!r)return;r[field]=val;saveData();}
+function del(id){var r=DATA.find(function(x){return x.id===id;});if(!r)return;if(!confirm('刪除「'+(r.name||'未命名')+'」？'))return;DATA=DATA.filter(function(x){return x.id!==id;});saveData();if(window.itrcToast)itrcToast('已刪除 '+(r.name||''));}
+function archiveRoster(){
+  var term=($('h_term').value||'').trim();
+  if(!term){alert('請先填本屆學期，例如 114-2');return;}
+  if(!confirm('把目前 '+DATA.length+' 人的名單封存為「'+term+'」快照？（名單本身不會清空、其他資料也不動）'))return;
+  var snap={term:term, savedAt:new Date().toISOString(),
+    members:DATA.map(function(r){return {name:r.name,email:r.email,title:r.title,role:r.role};})};
+  var key=term.replace(/[.#$/\[\]]/g,'_');
+  if(ITRCAuth.isDev() || !rolesRef){
+    var arch={}; try{arch=JSON.parse(localStorage.getItem('itrc_roles_archive')||'{}');}catch(e){}
+    arch[key]=snap; localStorage.setItem('itrc_roles_archive',JSON.stringify(arch));
+  }else{ firebase.database().ref('roles_archive/'+key).set(snap); }
+  if(window.itrcToast)itrcToast('已封存本屆名單快照：'+term);
+}
+
+/* ───── 從 Excel／CSV 匯入名單（貼上或選檔 → 預覽 → 覆蓋）───── */
+var IMPORT_ROWS=null, IMPORT_META=null;
+function roleFromText(s){
+  s=(s||'').trim();
+  if(!s) return 'officer';                          // 權限留空＝幹部
+  if(/^(chair|advisor|treasurer|officer)$/i.test(s)) return s.toLowerCase();
+  if(/無|不可登入|停用|離任|none/i.test(s)) return '';
+  if(/財務/.test(s)) return 'treasurer';
+  if(/社長/.test(s)) return 'chair';                // 社長／副社長
+  if(/顧問|指導/.test(s)) return 'advisor';         // 只有顧問給 roster 權限；管理組PM／資訊長不再自動升，其餘＝幹部
+  return 'officer';                                 // 幹部／組員／未知 → 幹部
+}
+function roleFromTitle(t){                           // 沒有「權限」欄時，保守地從職稱推：只給明確的社長/財務/顧問高權限，其餘一律幹部（避免誤放權限）
+  t=(t||'').trim();
+  if(/財務/.test(t)) return 'treasurer';
+  if(/社長/.test(t)) return 'chair';                // 社長／副社長
+  if(/顧問|指導/.test(t)) return 'advisor';
+  return 'officer';                                 // 各長／PM／組員 → 幹部（要授權請在「權限」欄設「顧問」或直接設副社長）
+}
+function splitLine(line,delim){
+  var out=[],cur='',q=false;
+  for(var i=0;i<line.length;i++){var ch=line[i];
+    if(q){ if(ch==='"'){ if(line[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=ch; }
+    else { if(ch==='"')q=true; else if(ch===delim){out.push(cur);cur='';} else cur+=ch; }}
+  out.push(cur); return out;
+}
+function parseImport(){
+  var raw=($('imp_text').value||'').replace(/^﻿/,'');
+  if(!raw.trim()){ $('imp_msg').textContent='貼上內容，或選一個 CSV 檔'; IMPORT_ROWS=null; IMPORT_META=null; $('imp_preview').innerHTML=''; return; }
+  var delim=raw.indexOf('\t')>=0?'\t':',';           // 從 Excel 貼上＝tab、CSV＝逗號
+  var lines=raw.replace(/\r\n?/g,'\n').split('\n').filter(function(l){return l.trim();});
+  if(!lines.length){ $('imp_msg').textContent='沒有解析到任何一列'; IMPORT_ROWS=null; IMPORT_META=null; $('imp_preview').innerHTML=''; return; }
+  // 看標題列自動對欄（不管欄位順序、缺欄也能處理）；認不出標題就退回固定順序 姓名,Email,職稱,權限
+  var head=splitLine(lines[0],delim).map(function(x){return x.trim();});
+  var col={name:-1,email:-1,title:-1,role:-1};
+  head.forEach(function(h,i){
+    if(col.name<0 && /姓名|名字|name/i.test(h)) col.name=i;
+    if(col.email<0 && /e-?mail|信箱|郵件|mail/i.test(h)) col.email=i;
+    if(col.title<0 && /職稱|頭銜|職務|title/i.test(h)) col.title=i;
+    if(col.role<0 && /權限|角色|role/i.test(h)) col.role=i;
+  });
+  var hasHeader = col.name>=0 || col.email>=0;
+  if(!hasHeader){ col={name:0,email:1,title:2,role:3}; }
+  var rows=[],skipped=0;
+  for(var i=hasHeader?1:0;i<lines.length;i++){
+    var f=splitLine(lines[i],delim).map(function(x){return x.trim();});
+    var name=col.name>=0?(f[col.name]||''):'';
+    if(!name){skipped++;continue;}
+    var title=col.title>=0?(f[col.title]||''):'';
+    var rc=col.role>=0?(f[col.role]||'').trim():'';   // 有填權限就用；空白就退回依職稱推（加了權限欄也只需填例外）
+    var email=col.email>=0?(f[col.email]||''):'';
+    var existing=DATA.find(function(r){return email && String(r.email||'').toLowerCase()===email.toLowerCase();});
+    rows.push({id:existing?existing.id:uid(),name:name,email:email,title:title,
+      role:(rc?roleFromText(rc):(existing?existing.role:''))});
+  }
+  IMPORT_ROWS=rows; IMPORT_META={hasRoleCol:col.role>=0};
+  renderImportPreview(rows,skipped);
+}
+function renderImportPreview(rows,skipped){
+  if(!rows.length){ $('imp_msg').textContent='沒有解析到任何一列（每列至少要有姓名）'; $('imp_preview').innerHTML=''; return; }
+  var roleLabel={chair:'社長／副社長',advisor:'顧問',treasurer:'財務長',officer:'幹部','':'無權限'};
+  var noEmail=rows.filter(function(r){return !r.email;}).length;
+  var body=rows.map(function(r){
+    return '<tr><td>'+esc(r.name)+'</td><td>'+(r.email?esc(r.email):'<span class="imp-warn">（無）</span>')
+      +'</td><td>'+esc(r.title)+'</td><td>'+roleLabel[r.role]+'</td></tr>';
+  }).join('');
+  var roleNote=(IMPORT_META&&!IMPORT_META.hasRoleCol)?'未提供權限欄：既有人員保留原權限，新人預設無權限，職稱更新不會自動升權。':'';
+  $('imp_msg').innerHTML=esc('解析到 '+rows.length+' 位'+(skipped?('，略過 '+skipped+' 列（沒有姓名）'):'')+(noEmail?('，其中 '+noEmail+' 位沒填信箱（無法登入）'):''))+(roleNote?'<br><span class="imp-warn">'+esc(roleNote)+'</span>':'');
+  $('imp_preview').innerHTML='<table class="imp-tbl"><thead><tr><th>姓名</th><th>Email</th><th>職稱</th><th>權限</th></tr></thead><tbody>'+body+'</tbody></table>'
+    +'<div class="irow"><button class="btn gold sm" onclick="commitImport()"><svg class="svgic"><use href="#i-check"></use></svg>確定：以這 '+rows.length+' 位覆蓋名單</button>'
+    +'<span class="hint">會整份取代目前 '+DATA.length+' 位（只動名單，不動收支表）</span></div>';
+}
+function commitImport(){
+  if(!IMPORT_ROWS||!IMPORT_ROWS.length)return;
+  if(!confirm('以匯入的 '+IMPORT_ROWS.length+' 位覆蓋目前 '+DATA.length+' 位？\n（只動幹部名單，收支表等其他資料不受影響）'))return;
+  DATA=IMPORT_ROWS.map(function(r){return {id:r.id||uid(),name:r.name,email:r.email,title:r.title,role:r.role};});
+  IMPORT_ROWS=null; $('imp_text').value=''; $('imp_preview').innerHTML=''; $('imp_msg').textContent='';
+  saveData(); if(window.itrcToast)itrcToast('已匯入 '+DATA.length+' 位幹部');
+}
+function dlTemplate(){
+  var rows=[['姓名','Email','職稱','權限'],
+    ['王小明','person2@example.invalid','社長','社長'],
+    ['李大華','person3@example.invalid','財務長','財務長'],
+    ['陳美美','person4@example.invalid','資訊長','幹部'],
+    ['張三','person5@example.invalid','活動組員','幹部']];
+  var csv='﻿'+rows.map(function(r){return r.join(',');}).join('\r\n');
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+  a.download='ITRC幹部名單範本.csv'; document.body.appendChild(a); a.click();
+  setTimeout(function(){URL.revokeObjectURL(a.href);a.remove();},0);
+}
+
+function render(){
+  if(!$('rows'))return;
+  var roleOpt=function(sel){return ROLE_OPTS.map(function(o){return '<option value="'+o[0]+'"'+(o[0]===sel?' selected':'')+'>'+o[1]+'</option>';}).join('');};
+  var ord=function(r){return ROLE_ORDER[r.role]==null?9:ROLE_ORDER[r.role];};
+  var sorted=DATA.slice().sort(function(a,b){return ord(a)-ord(b)||a.name.localeCompare(b.name,'zh-Hant');});
+  $('rows').innerHTML=sorted.map(function(r){
+    return '<tr>'
+      +'<td><input value="'+esc(r.name)+'" onchange="upd(\''+r.id+'\',\'name\',this.value)"></td>'
+      +'<td><input type="email" value="'+esc(r.email)+'" placeholder="尚未填信箱" onchange="upd(\''+r.id+'\',\'email\',this.value.trim())"></td>'
+      +'<td><input value="'+esc(r.title)+'" placeholder="例：活動組員" onchange="upd(\''+r.id+'\',\'title\',this.value.trim())"></td>'
+      +'<td class="'+(ROLE_CLS[r.role]||'')+'"><select onchange="upd(\''+r.id+'\',\'role\',this.value)">'+roleOpt(r.role)+'</select></td>'
+      +'<td class="del"><button class="btn ghost sm del-btn" title="刪除這位" aria-label="刪除" onclick="del(\''+r.id+'\')"><svg class="svgic"><use href="#i-trash"></use></svg></button></td></tr>';
+  }).join('') || '<tr><td colspan="5" class="empty">名單是空的，用上方表單新增第一位幹部，或按「開啟名單匯入」從試算表帶入。</td></tr>';
+  var withEmail=DATA.filter(function(r){return r.email;}).length;
+  $('count').textContent='共 '+DATA.length+' 位 · 已填信箱 '+withEmail+' 位 · 可改權限 '
+    +DATA.filter(function(r){return r.role==='chair'||r.role==='advisor';}).length+' · 財務長 '+DATA.filter(function(r){return r.role==='treasurer';}).length;
+}
+</script>
+</body>
+</html>

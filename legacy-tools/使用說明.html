@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>使用說明｜ITRC 幹部工具站</title>
+<meta name="description" content="ITRC 幹部工具站使用說明書：角色權限、登入、核銷完整流程、幹部與權限設定、換屆交接。整份可貼給 AI 問怎麼操作。">
+<meta name="theme-color" content="#0f1f3d">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230f1f3d'/%3E%3Crect x='3' y='3' width='58' height='58' rx='12' fill='none' stroke='%23c9a14a' stroke-width='2'/%3E%3Ctext x='32' y='39' font-family='sans-serif' font-size='17' font-weight='800' text-anchor='middle' fill='%23e3c270'%3EITRC%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="itrc.css">
+<script src="itrc.js" defer></script>
+<style>
+  .docwrap{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);
+    box-shadow:var(--sh-1);padding:30px 34px;max-width:860px;margin:0 auto}
+  .doctop{max-width:860px;margin:0 auto 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .doctop .hint{flex:1;min-width:200px}
+  .doc{color:var(--ink-2);font-size:14.5px;line-height:1.78}
+  .doc h1{font-size:24px;color:var(--navy);margin:0 0 8px;letter-spacing:.3px}
+  .doc h2{font-size:19px;color:var(--navy);margin:36px 0 12px;padding-bottom:7px;border-bottom:2px solid var(--line)}
+  .doc h3{font-size:15.5px;color:var(--navy-3);margin:24px 0 8px}
+  .doc p{margin:11px 0}
+  .doc ul,.doc ol{margin:11px 0;padding-left:26px}
+  .doc li{margin:6px 0}
+  .doc code{background:#eef1f7;color:var(--gold-ink);padding:1px 6px;border-radius:5px;
+    font-size:12.5px;font-family:ui-monospace,"Consolas","Cascadia Mono",monospace}
+  .doc strong{color:var(--ink);font-weight:700}
+  .doc hr{border:none;border-top:1px solid var(--line);margin:28px 0}
+  .doc blockquote{margin:14px 0;padding:11px 15px;background:var(--bg-2);border-left:3px solid var(--gold);
+    border-radius:0 8px 8px 0;color:var(--muted);font-size:13.5px}
+  .doc blockquote code{background:#e4e9f3}
+  .doc table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13.5px}
+  .doc th,.doc td{border:1px solid var(--line);padding:9px 11px;text-align:left;vertical-align:top;line-height:1.6}
+  .doc th{background:var(--navy);color:#fff;font-weight:700;white-space:nowrap}
+  .doc tbody tr:nth-child(even) td{background:var(--bg-2)}
+  @media (max-width:560px){ .docwrap{padding:20px 16px} .doc th,.doc td{padding:7px 8px} }
+</style>
+</head>
+<body>
+<header class="apphead">
+  <h1><svg class="svgic"><use href="#i-help"></use></svg>使用說明書</h1>
+  <span class="sub">ITRC 幹部工具站 · 操作手冊</span>
+  <div class="right">
+    <button class="btn gold sm" id="copyBtn" type="button">
+      <svg class="svgic"><use href="#i-copy"></use></svg>複製全文給 AI
+    </button>
+  </div>
+</header>
+
+<div class="container">
+  <div class="doctop">
+    <p class="hint">看不懂哪一步？按右上角「複製全文給 AI」，把整份說明書貼進 ChatGPT / Claude，再問你的問題即可。</p>
+  </div>
+  <div class="docwrap"><article class="doc" id="doc"></article></div>
+</div>
+
+<script type="text/markdown" id="manualSrc">
+# ITRC 幹部工具站 使用說明書
+
+> 給社團幹部看的白話操作手冊。整份可直接貼給 AI 問「怎麼操作」。
+
+---
+
+## 一、這個工具站是什麼
+
+ITRC 幹部工具站是**中山大學投資交易研究社的學期活動籌備一站式平台**。打開首頁(`index.html`)就能看到一排工具卡,涵蓋整個學期的籌備流程:活動組排講師、管理組看板追任務、行銷組生成貼文、公關組拉贊助、學期末批次製作證書,以及最重要的**財務站**(管核銷與收支表)。
+
+操作方式很簡單:從首頁點工具卡進入該工具;每個工具頁面上方都有一條**深色導覽列**,可隨時返回首頁或切換其他工具。
+
+要注意兩件事:
+- **首頁本身不分角色**。所有工具卡對每個人都一樣顯示,卡片上的「管理組/活動組/財務」只是文字標籤,不是權限分流。真正會檢查你身分的是**財務站**和**幹部與權限**這兩個需要登入的頁面。
+- **資料怎麼存**:大部分工具(任務看板、講師池、贊助紀錄、證書模板、財務站收支表)是**雲端即時同步、全社共用**;少部分個人偏好(圖文小幫手的 SOP 勾選、公關組寄件人資料)只存在**你自己這台電腦的瀏覽器裡**。換電腦或清快取前,請先用工具內的「匯出」備份。
+
+---
+
+## 二、四種角色各能做什麼
+
+身分是用你**登入的 Google email** 去比對雲端名單來判定的。四種角色與能力如下:
+
+| 角色 | 能做的事 | 看不到 / 不能做 |
+|---|---|---|
+| **社長／副社長**(chair) | 編輯幹部名單與權限、財務站**簽核**(核准/退回核銷)、看收支表、申請核銷 | (擁有最完整權限,沒有被擋的功能) |
+| **顧問**(advisor)<br>指導老師／退任社長等 | 編輯幹部名單與權限、看收支表、申請核銷 | **不能簽核核銷**(看不到「簽核」分頁) |
+| **財務長**(treasurer) | 編輯收支表、把核准的核銷**一鍵入帳**、手動記帳、匯出 CSV、看收支表、申請核銷 | 不能編輯幹部名單與權限、不能簽核核銷 |
+| **幹部**(officer) | 看收支表、申請核銷 | 不能編名單、不能簽核、不能編收支表 |
+
+另外保留**社團公開帳號**作為救援管理員，避免換屆後無人可維護名單。個人帳號的角色依內部權限名單決定；不在公開程式預置個人信箱。
+
+---
+
+## 三、怎麼登入
+
+正式站使用 **Google 登入**:
+
+1. 打開需要登入的頁面(例如**財務站** `ITRC財務站.html`,或**幹部與權限**頁)。
+2. 看到「**用 Google 登入**」按鈕就點下去,會跳出 Google 登入視窗。
+3. 選擇你的 Google 帳號登入。系統會拿你的 email 去比對雲端名單,自動給你對應角色。
+4. 登入後,該頁就會依你的角色顯示對應功能(例如財務長會多出入帳按鈕、社長會多出「簽核」分頁)。
+
+### 萬一進不去 / 沒有權限怎麼辦
+
+- **看到「請先登入」**:代表還沒登入,點「用 Google 登入」即可。
+- **看到「沒有編輯權限」**:代表你登入的 email 不在可編輯名單裡。請找社長或顧問,把你的 Google 信箱加進「幹部與權限」頁並設好角色;設好後你用**同一個 Google 帳號**登入就會生效。畫面上若有「**登出換帳號**」按鈕,也可能是你登錯帳號了,登出換正確的那個。
+- **全屆都進不去 / 沒人能編名單(死鎖)**:聯絡維護者,用內建的**永久救援管理員**帳號(見第二節救命索)登入解鎖。
+
+> 小提醒:加好某人的信箱與角色後,要**本人用那個 Google 帳號**登入才算數。信箱欄留空 = 那個人無法登入。
+
+---
+
+## 四、財務長：怎麼看與編輯收支表
+
+進入**財務站**(`ITRC財務站.html`)並用財務長帳號登入後,上方會依你的角色顯示分頁。財務長會看到「**收支表**」分頁,且可以編輯。
+
+- **看收支表**:所有登入的幹部都看得到收支表(明細與結餘);只有財務長能編輯。
+- **收支資料來源**：正式帳務只從已授權資料庫讀取；空帳冊不會自動匯入歷史明細。
+- **手動記帳**:財務長可直接在收支表新增收入/支出列。
+- **匯出 CSV**:財務長可把收支表匯出成 CSV 備份。
+- **把核銷入帳**:財務長另有一個「**一鍵入帳**」功能,把社長核准過的核銷自動轉成一筆支出(詳見下一節)。
+
+---
+
+## 五、核銷完整流程(最重要)
+
+核銷一共三步:**幹部申請 → 社長簽核 → 財務長入帳**。下面逐步照做。
+
+### ① 幹部申請核銷
+
+進入財務站,在「**申請核銷**」分頁(人人可見)填表:
+
+1. **金額(元)**:輸入正整數(例如 350)。
+2. **類別**:輸入或從下拉清單選(場地/餐飲/文具/講師/行銷印刷/交通/社費/贊助收入/雜支)。
+3. **日期**:預設今天,可改。
+4. **項目／用途**:必填,寫清楚用途,例如「第3週社課租借麥克風」。
+5. **付款方式**:下拉選擇——
+   - **「匯款(轉帳給我)」**:你先墊錢,要社團轉帳還你。**選這個一定要填下面的收款帳戶**。
+   - **「現金(已當場支付)」**:現場已用現金付掉。選這個時,收款帳戶欄會自動隱藏,不用填。
+6. **收款帳戶(戶名／銀行代碼／帳號)**:選「匯款」時必填,格式例:「王小明／822 中信／0001234567890」。
+7. **備註(選填)**:補充說明。
+8. **發票／收據佐證(選填,圖片)**:可上傳發票或收據照片。**圖片限 1.8MB**,太大會跳「圖片太大(>1.8MB),請壓縮後再上傳。」
+9. 按「**送出申請**」。
+   - 若金額不是正整數或項目沒填,會被擋下。
+   - 若選「匯款」卻沒填帳戶,會跳「匯款需填收款帳戶(或改選「現金」)」。
+
+送出後,表單下方「**我的核銷紀錄**」會出現這筆,狀態是「**已送出(待簽核)**」。如果被退回,這裡會看到「退回原因:…」。
+
+### ② 社長／副社長簽核
+
+只有**社長/副社長**(有簽核權限者)登入後,財務站才會多出「**簽核**」分頁。裡面是待簽核清單,每筆有兩顆按鈕:
+
+- **「核准」**:同意這筆核銷,狀態變「**已核准(待入帳)**」,系統記下核准人與時間。
+- **「退回」**:會跳出視窗要你填**退回原因**(申請人看得到)。填好按確定即退回,狀態變「**已退回**」;按取消則不退回。
+
+### ③ 財務長入帳
+
+**財務長**登入後,在「**收支表**」分頁裡的「**已核准 · 待入帳**」清單,每筆已核准的核銷會有「**一鍵入帳**」按鈕:
+
+- 按下去,系統會把這筆自動轉成收支表的一筆**支出**,備註會自動帶上「核銷·申請人／現金或匯款／核准:核准人」,並把該核銷狀態改成「**已入帳**」。
+- **防重複**:同一筆核銷若已經入過帳,不會再重複新增,放心。
+
+到此核銷完成,狀態走完「已送出 → 已核准 → 已入帳」。
+
+---
+
+## 六、管理組：怎麼設定幹部名單與權限
+
+進入**幹部與權限**頁(`ITRC管理組-幹部與權限.html`)。這頁**限社長／副社長／顧問編輯**,用 Google email 比對身分;沒權限的人只會看到擋下頁,看不到名單。
+
+頁面由上到下:頁首與連線狀態 → 黃色說明橫幅 → 角色圖例(四張卡) → 新增列 → 名單匯入列 → 名單表格 → 換屆交接區。
+
+### 新增一位幹部
+
+在上方「新增列」填四欄,按「**新增**」(金色 + 按鈕):
+- **姓名**(必填,空白會跳「請填姓名」)
+- **Email(Google)**:這個人登入要用的 Google 信箱。**留空 = 這個人無法登入。**
+- **職稱**:自由輸入,例如「活動組員」。
+- **權限**:下拉選一個——「社長／副社長」「顧問」「財務長」「幹部」「無權限(不可登入)」。
+
+> 小撇步:在「姓名」或「Email」欄按 Enter 也會直接新增。
+
+### 改某人的權限
+
+直接在那一列的「**權限**」下拉改成新角色即可。**沒有「儲存」按鈕,改完就即時存檔**。職稱、姓名、Email 同樣是改完即存。
+
+### 刪除某人
+
+按該列的「**刪**」(垃圾桶)按鈕,確認後移除。
+
+### 從受限制的名單試算表匯入
+
+名單試算表保留限制存取。管理者在已授權的試算表複製資料後貼到工具，或下載 CSV 再選檔；按「開啟名單匯入」可開啟匯入區。工具先預覽姓名、Email、職稱與權限，確認後才取代名單。
+
+- 欄位順序不限，依姓名／Email／職稱／權限標題辨識。
+- 沒有權限欄時：依相同 Email 保留既有角色與 ID；新人預設無權限。修改職稱不會自動升權。
+- 權限變更要由有管理權限的人明確檢查。換屆先封存舊名單，再確認目前人員與角色。
+- 匯入仍會整份取代名單；先核對缺漏。這個操作不更動收支資料。
+- 不必發布到網路，也不必開放持有連結者讀取。
+
+### 關於鎖定(LOCK)
+
+這頁目前是**鎖定狀態**:只有社長／副社長／顧問登入後才能看到並編輯名單;沒權限的人會被擋下,看不到任何名單內容。這是正常的安全設計,不用特別操作。
+
+---
+
+## 七、換屆要做的事
+
+換屆主要兩件事:**封存這屆名單** + **清理財務站的上傳資料**。重點是「**只換人、不動資料**」。
+
+### 1. 封存本屆名單快照(管理組做)
+
+在「幹部與權限」頁底部展開「**換屆交接**」區塊:
+1. 先填「本屆學期」(例:`114-2`),空白會擋下。
+2. 按「**封存本屆名單快照**」,確認後會存一份這屆名單的快照。
+3. **這只是新增一份備份,不會清空也不會改現有名單**,收支表等其他資料完全不動。
+4. 接著就可以在名單試算表更新成新一屆,再用「預覽匯入名單」帶入,或手動逐筆更新。
+
+### 2. 清理財務站已結案核銷(財務長做)
+
+進財務站「收支表」分頁底部的「**換屆清理**」區塊(僅財務長可見),按「**清除已結案核銷(N)**」:
+- 會刪掉狀態為「**已入帳**」和「**已退回**」的核銷申請**及其發票圖**,釋放雲端空間。
+- **不會動到收支表**(收支明細數字完全不受影響)。
+- 還在「待簽核」「待入帳」的申請會保留,不會被清掉。
+- 會二次確認:「確定刪除 N 筆…永久消失、無法復原。」——按下去就**無法復原**,請確認清掉的都是已結案的。
+
+---
+
+## 八、常見問題 FAQ
+
+**Q1. 我登入了,卻看不到「簽核」或「一鍵入帳」這些功能?**
+這些功能是**依角色**顯示的。「簽核」只有社長/副社長看得到;「一鍵入帳」「換屆清理」只有財務長看得到。如果你覺得自己角色不對,請社長／顧問到「幹部與權限」頁確認你的信箱對應的角色,並確認你**登入的是同一個 Google 帳號**。
+
+**Q2. 上傳發票一直失敗?**
+最常見原因是**圖片超過 1.8MB**,會跳「圖片太大(>1.8MB),請壓縮後再上傳。」。請先把照片壓縮(或用手機重拍小一點)再上傳。發票本來就是選填,真的不行也可以先送出、之後補。
+
+**Q3. 核銷金額或內容填錯了怎麼辦?**
+送出前驗證會擋掉「金額非正整數」「項目沒填」「匯款沒填帳戶」這些情形。若已送出才發現填錯,可請社長在簽核時按「**退回**」並寫明原因,你就能看到退回原因、重新申請一筆正確的。
+
+**Q4. 同一筆核銷會不會被重複入帳?**
+不會。財務長按「一鍵入帳」時系統有**防重複**機制,同一筆核銷若已對應到一筆收支列,就不會再新增第二筆。
+
+**Q5. 換屆後新幹部要做什麼才能用?**
+社長／顧問到「幹部與權限」頁,把新幹部的**姓名 + Google 信箱 + 職稱 + 權限**加進名單(或在名單試算表更新後用「預覽匯入名單」整份覆蓋)。加好後,新幹部用**自己那個 Google 帳號**登入財務站等頁面,就會自動拿到對應權限。信箱留空的人無法登入。
+
+**Q6. 整屆都離開了、沒人能進去編名單怎麼辦?**
+系統內建**永久救援管理員**帳號(萬能管理員),不受名單影響、一律最高權限。請聯絡維護者用它登入解鎖,系統不會死鎖。
+
+**Q7. 我清了「換屆清理」,收支表的數字會不會不見?**
+不會。換屆清理只刪「已入帳/已退回」的**核銷申請紀錄與發票圖**,**收支表的明細與結餘完全不受影響**。
+
+**Q8. 為什麼我在自己電腦設好的圖文 SOP 勾選,換台電腦就不見了?**
+因為圖文小幫手的 SOP 勾選、公關組寄件人資料這類**個人偏好只存在你自己瀏覽器**(localStorage)。換電腦或清快取前,請先用工具內的「匯出」備份。雲端共用的資料(看板、收支表等)則不受影響。
+
+---
+
+## 九、把問題丟給 AI 怎麼問
+
+把這份說明書連同你的問題一起貼給 AI,用下面的範例(可直接複製,改成你的情況):
+
+1. 「我是 ITRC 的幹部,要申請第 5 週社課買文具的核銷 280 元,我先墊錢要社團轉帳給我。請依說明書,一步一步告訴我每個欄位該填什麼、付款方式要選哪個、帳戶欄怎麼填。」
+
+2. 「我是社長,財務站「簽核」分頁有一筆核銷我覺得金額不對想退回。請依說明書教我怎麼操作『退回』,退回原因該怎麼寫對方才看得懂。」
+
+3. 「我是財務長,有幾筆核銷已經被社長核准了,我要把它們入帳到收支表。請依說明書告訴我在哪個分頁、按哪個按鈕、入帳後備註會自動帶什麼。」
+
+4. 「我是管理組,要把新一屆幹部換上去。請依說明書教我:怎麼先封存這屆名單快照、怎麼在名單試算表更新後用『預覽匯入名單』帶入、以及新增單一幹部時 Email 欄留空會怎樣。」
+
+5. 「我登入財務站後看不到『簽核』分頁,但我應該是副社長。請依說明書幫我判斷可能原因,以及我該找誰、檢查哪裡(角色名單/登入帳號)。」
+
+---
+
+> 相關檔案(本機絕對路徑):
+> 首頁 `C:\Users\USER\itrc-tools\index.html`、財務站 `C:\Users\USER\itrc-tools\ITRC財務站.html`、幹部與權限 `C:\Users\USER\itrc-tools\ITRC管理組-幹部與權限.html`。權限邏輯定義在 `C:\Users\USER\itrc-tools\itrc-auth.js`。
+</script>
+
+<script>
+(function(){
+  function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+  function inline(s){
+    s=esc(s);
+    s=s.replace(/&lt;br\s*\/?&gt;/gi,'<br>');                 // 保留刻意換行
+    s=s.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');    // 粗體
+    s=s.replace(/`([^`]+)`/g,'<code>$1</code>');              // 行內代碼
+    return s;
+  }
+  function isSep(s){var t=s.replace(/[\s|:]/g,'');return t.length>=2 && /^-+$/.test(t);}
+  function splitRow(s){return s.trim().replace(/^\|/,'').replace(/\|$/,'').split('|').map(function(c){return c.trim();});}
+  function mdRender(src){
+    var L=src.replace(/\r/g,'').replace(/^\n+/,'').split('\n'), out=[], i=0;
+    while(i<L.length){
+      var ln=L[i];
+      if(/^\s*$/.test(ln)){i++;continue;}
+      if(/^---+\s*$/.test(ln)){out.push('<hr>');i++;continue;}
+      var h=/^(#{1,3})\s+(.*)$/.exec(ln);
+      if(h){var lv=h[1].length;out.push('<h'+lv+'>'+inline(h[2])+'</h'+lv+'>');i++;continue;}
+      if(/^\s*>\s?/.test(ln)){
+        var bq=[];
+        while(i<L.length && /^\s*>\s?/.test(L[i])){bq.push(inline(L[i].replace(/^\s*>\s?/,'')));i++;}
+        out.push('<blockquote>'+bq.join('<br>')+'</blockquote>');continue;
+      }
+      if(ln.indexOf('|')>=0 && i+1<L.length && L[i+1].indexOf('|')>=0 && isSep(L[i+1])){
+        var head=splitRow(ln); i+=2; var rows=[];
+        while(i<L.length && L[i].indexOf('|')>=0 && !/^\s*$/.test(L[i])){rows.push(splitRow(L[i]));i++;}
+        var t='<table><thead><tr>';
+        head.forEach(function(c){t+='<th>'+inline(c)+'</th>';});
+        t+='</tr></thead><tbody>';
+        rows.forEach(function(r){t+='<tr>';r.forEach(function(c){t+='<td>'+inline(c)+'</td>';});t+='</tr>';});
+        out.push(t+'</tbody></table>');continue;
+      }
+      if(/^\s*\d+\.\s+/.test(ln)){
+        var oi=[];
+        while(i<L.length && /^\s*\d+\.\s+/.test(L[i])){
+          var m=/^\s*(\d+)\.\s+(.*)$/.exec(L[i]); oi.push('<li value="'+m[1]+'">'+inline(m[2])+'</li>'); i++;
+        }
+        out.push('<ol>'+oi.join('')+'</ol>');continue;
+      }
+      if(/^\s*[-*]\s+/.test(ln)){
+        var ui=[];
+        while(i<L.length && /^\s*[-*]\s+/.test(L[i]) && !/^---+\s*$/.test(L[i])){
+          ui.push('<li>'+inline(L[i].replace(/^\s*[-*]\s+/,''))+'</li>'); i++;
+        }
+        out.push('<ul>'+ui.join('')+'</ul>');continue;
+      }
+      out.push('<p>'+inline(ln)+'</p>'); i++;
+    }
+    return out.join('\n');
+  }
+
+  function ready(fn){ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',fn); else fn(); }
+  ready(function(){
+    var raw=document.getElementById('manualSrc').textContent;
+    document.getElementById('doc').innerHTML=mdRender(raw);
+    document.getElementById('copyBtn').addEventListener('click',function(){
+      var txt=raw.replace(/^\n+/,'').trimEnd();
+      function done(){ if(window.itrcToast)itrcToast('已複製整份說明書，可貼給 AI'); }
+      function fb(t){var a=document.createElement('textarea');a.value=t;a.style.position='fixed';a.style.opacity='0';
+        document.body.appendChild(a);a.select();try{document.execCommand('copy');done();}catch(e){alert('複製失敗，請手動選取');}document.body.removeChild(a);}
+      if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done,function(){fb(txt);});
+      else fb(txt);
+    });
+  });
+})();
+</script>
+</body>
+</html>
