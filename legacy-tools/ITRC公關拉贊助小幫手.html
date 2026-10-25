@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ITRC 贊助作戰中心</title>
+<link rel="stylesheet" href="itrc.css">
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<script src="itrc-auth.js"></script>
+<script src="itrc-cloud.js"></script>
+<script src="itrc.js" defer></script>
+<style>
+  :root{--navy:#0f1f3d;--navy2:#16294e;--gold:#c9a14a;--gold2:#e3c270;--ink:#1a2233;--muted:#5b6678;--line:#e4e8f0;--bg:#f5f6fa;--card:#fff;--ok:#1f9d6b;--warn:#c47f1a;--red:#c0563d}
+  *{box-sizing:border-box;font-family:"Segoe UI","Microsoft JhengHei",system-ui,sans-serif}
+  body{margin:0;background:var(--bg);color:var(--ink);font-size:15px;line-height:1.6}
+  header{background:linear-gradient(135deg,var(--navy),var(--navy2));color:#fff;padding:16px 22px;display:flex;align-items:center;gap:12px}
+  header .logo{width:40px;height:40px;border:2px solid var(--gold);border-radius:9px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--gold2);font-weight:800;font-size:11px;line-height:1.05}
+  header h1{font-size:18px;margin:0}
+  header .sub{color:#9fb0cc;font-size:12.5px;margin-top:2px}
+  .tabs{display:flex;gap:2px;background:var(--navy);padding:0 12px;flex-wrap:wrap}
+  .tab{padding:11px 14px;color:#9fb0cc;cursor:pointer;border-bottom:3px solid transparent;font-size:13.5px;font-weight:600}
+  .tab.active{color:#fff;border-color:var(--gold)}
+  .wrap{max-width:1120px;margin:0 auto;padding:20px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:880px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px}
+  .card h2{font-size:15px;margin:0 0 12px;display:flex;align-items:center;gap:8px}
+  .card h2 .dot{width:7px;height:7px;border-radius:50%;background:var(--gold)}
+  label{display:block;font-size:13px;color:var(--muted);margin:11px 0 5px;font-weight:600}
+  input,textarea,select{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font-size:14px;background:#fbfcfe;color:var(--ink)}
+  textarea{resize:vertical;line-height:1.55}
+  input:focus,textarea:focus,select:focus{outline:none;border-color:var(--gold);background:#fff}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+  .btnrow{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+  button.act{background:var(--gold);color:#241c06;border:none;padding:9px 16px;border-radius:8px;font-weight:700;cursor:pointer;font-size:14px}
+  button.act:hover{background:var(--gold2)}
+  button.ghost{background:#fff;border:1px solid var(--line);color:var(--ink);padding:8px 13px;border-radius:8px;cursor:pointer;font-size:13px}
+  button.ghost:hover{border-color:var(--gold)}
+  .seg{display:flex;gap:6px;margin:4px 0}.seg button{flex:1;padding:9px;border:1px solid var(--line);background:#fff;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;color:var(--muted)}
+  .seg button.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+  .out{white-space:pre-wrap;background:var(--navy);color:#eef2f9;border-radius:10px;padding:16px;font-size:13.5px;line-height:1.65;min-height:120px;font-family:"Microsoft JhengHei",sans-serif}
+  .hint{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.5}
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:10px 18px;border-radius:8px;font-size:14px;opacity:0;transition:.25s;pointer-events:none;z-index:9}
+  .toast.show{opacity:1}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
+  th,td{border:1px solid var(--line);padding:4px 5px;text-align:left;vertical-align:middle}
+  th{background:#f0f3f8;font-weight:700;font-size:11.5px;white-space:nowrap}
+  td input,td select{padding:4px 5px;font-size:12px;border-radius:6px}
+  td.ck{text-align:center}
+  .none{display:none}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  @media(max-width:700px){.kpis{grid-template-columns:repeat(2,1fr)}}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:14px}
+  .kpi .n{font-size:28px;font-weight:800;color:var(--navy)}.kpi .l{font-size:12.5px;color:var(--muted)}
+  .funnel{margin-top:6px}
+  .fbar{display:flex;align-items:center;gap:10px;margin:6px 0;font-size:13px}
+  .fbar .lab{width:96px;color:var(--ink);font-weight:600;flex:none}
+  .fbar .track{flex:1;background:#eef1f6;border-radius:6px;height:20px;overflow:hidden}
+  .fbar .fill{height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2));border-radius:6px}
+  .fbar .cnt{width:28px;text-align:right;font-weight:700;color:var(--navy);flex:none}
+  .catbox{border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-bottom:8px}
+  .catbox .head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}
+  .cand{display:flex;align-items:center;gap:6px;font-size:13px;padding:3px 0}
+  .cand a{color:var(--navy);text-decoration:none;border-bottom:1px dotted #aab}
+  .cand button{padding:2px 8px;font-size:11.5px}
+  .pill{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;font-weight:700;cursor:pointer;background:#eef2f9;color:#3a4a66}
+  .note{background:#fff8ea;border:1px solid #f0e2c0;border-radius:8px;padding:10px 12px;font-size:12.5px;color:#7a5e1e;margin-top:10px}
+  ol.sop{padding-left:20px}ol.sop li{margin:9px 0}
+  .src{font-size:11px;color:#9aa3b2}
+  .addcand{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+  .addcand input{flex:1;min-width:110px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;font-size:13px}
+  .cand .trophy{background:none;border:none;cursor:pointer;font-size:14px;padding:0 2px;line-height:1}
+  .cand .del{color:#c0563d;opacity:.45}.cand .del:hover{opacity:1}
+  .catbox .head .xcat{margin-left:auto;color:#c0563d;opacity:.4;font-size:12px}.catbox .head .xcat:hover{opacity:1}
+  a{color:var(--navy)}
+</style>
+</head>
+<body>
+<header class="apphead">
+  <div class="logo">ITRC<span style="font-size:8px">NSYSU</span></div>
+  <div><h1>贊助作戰中心</h1><div class="sub">公關組 · 從尋找廠商到結案，一站完成</div></div>
+</header>
+
+<div class="tabs">
+  <div class="tab active" data-tab="dash"><svg class="svgic" style="width:15px;height:15px;vertical-align:-3px;margin-right:5px"><use href="#i-dashboard"></use></svg>總覽</div>
+  <div class="tab" data-tab="find"><svg class="svgic" style="width:15px;height:15px;vertical-align:-3px;margin-right:5px"><use href="#i-search"></use></svg>找廠商</div>
+  <div class="tab" data-tab="pipe"><svg class="svgic" style="width:15px;height:15px;vertical-align:-3px;margin-right:5px"><use href="#i-checklist"></use></svg>Pipeline</div>
+  <div class="tab" data-tab="mail"><svg class="svgic" style="width:15px;height:15px;vertical-align:-3px;margin-right:5px"><use href="#i-mail"></use></svg>信件</div>
+  <div class="tab" data-tab="close"><svg class="svgic" style="width:15px;height:15px;vertical-align:-3px;margin-right:5px"><use href="#i-chart"></use></svg>結案</div>
+  <div class="tab" data-tab="record"><svg class="svgic" style="width:15px;height:15px;vertical-align:-3px;margin-right:5px"><use href="#i-trophy"></use></svg>贊助紀錄</div>
+  <div class="tab" data-tab="sop"><svg class="svgic" style="width:15px;height:15px;vertical-align:-3px;margin-right:5px"><use href="#i-file"></use></svg>SOP</div>
+</div>
+
+<!-- DASH -->
+<div class="wrap" id="tab-dash">
+  <div class="kpis">
+    <div class="kpi"><div class="n" id="k_total">0</div><div class="l">Pipeline 廠商數</div></div>
+    <div class="kpi"><div class="n" id="k_secured" style="color:var(--ok)">0</div><div class="l">已確認以上</div></div>
+    <div class="kpi"><div class="n" id="k_closed">0</div><div class="l">已結案</div></div>
+    <div class="kpi"><div class="n" id="k_follow" style="color:var(--warn)">0</div><div class="l">今天該追(≥2天沒回)</div></div>
+  </div>
+  <div class="grid" style="margin-top:18px">
+    <div class="card"><h2><span class="dot"></span>漏斗各階段</h2><div class="funnel" id="funnel"></div></div>
+    <div class="card"><h2><span class="dot"></span>今天該追的廠商</h2><div id="followList"></div>
+      <div class="hint">寄信後每兩天追一次（SOP 第2步）。點廠商可跳到 Pipeline。</div></div>
+  </div>
+</div>
+
+<!-- FIND -->
+<div class="wrap none" id="tab-find">
+  <div class="grid">
+    <div class="card" style="max-height:none">
+      <h2><span class="dot"></span>候選廠商庫（已查證·附來源）</h2>
+      <p class="hint">優先挑「能提供實體產品、客群年輕、重視品牌曝光」的中小品牌成功率最高。點品牌名開啟官網找窗口，按「＋」直接加入 Pipeline；獎盃圖示代表曾贊助（可點看紀錄），垃圾桶圖示為自候選庫移除。</p>
+      <div class="addcand">
+        <input id="nc_brand" placeholder="新增廠商名稱">
+        <input id="nc_url" placeholder="官網連結（可空）">
+        <input id="nc_cat" list="catList" placeholder="分類（可輸入新分類）">
+        <datalist id="catList"></datalist>
+        <button class="act" onclick="addCand()">＋ 加入候選庫</button>
+      </div>
+      <div id="candList"></div>
+    </div>
+    <div class="card">
+      <h2><span class="dot"></span>找更多（即時搜尋）</h2>
+      <p class="hint">名單之外想再拓展，輸入品項/類別產生即時搜尋，結果都是現在真的在的品牌。</p>
+      <label>想找的品項 / 類別</label>
+      <input id="q_item" placeholder="例：保溫瓶 / 香氛蠟燭 / 文具" onkeydown="if(event.key==='Enter')genSearch()">
+      <div class="btnrow"><button class="act" onclick="genSearch()">產生搜尋 ▸</button></div>
+      <div id="searchOut"></div>
+      <div class="note">「其他待分類」廠商（basiik、mise en plants、永康八號、阿努納奇）品類尚未確認；補上它們的銷售品項後，相鄰建議會更精準。</div>
+    </div>
+  </div>
+</div>
+
+<!-- PIPELINE -->
+<div class="wrap none" id="tab-pipe">
+  <div class="card">
+    <h2><span class="dot"></span>廠商 Pipeline（存本機，可匯出貼進共編 Google Sheet）</h2>
+    <div class="btnrow">
+      <button class="act" onclick="addVendor()">＋ 手動新增</button>
+      <button class="ghost" onclick="exportTSV()"><svg class="svgic" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px"><use href="#i-copy"></use></svg>複製成表格</button>
+      <select id="filterStage" onchange="renderPipe()" style="width:auto;display:inline-block">
+        <option value="">全部階段</option>
+      </select>
+    </div>
+    <div style="overflow:auto"><table id="tbl"></table></div>
+    <div class="hint">勾選欄對應 SOP：圖+logo → 製圖 → 發文 → 拍照 → 感謝狀 → 結案報告。階段改成「已寄信待回」會自動帶今天為寄信日。</div>
+  </div>
+</div>
+
+<!-- MAIL -->
+<div class="wrap none" id="tab-mail">
+  <div class="grid">
+    <div class="card">
+      <h2><span class="dot"></span>填寫</h2>
+      <label>從 Pipeline 帶入（選填）</label>
+      <select id="pickVendor" onchange="fillFromVendor()"><option value="">— 手動輸入 —</option></select>
+      <label>信件版本</label>
+      <div class="seg">
+        <button id="v1" class="on" onclick="setVer(1)">第一種：指定品項</button>
+        <button id="v2" onclick="setVer(2)">第二種：談大方向</button>
+      </div>
+      <label>廠商名稱</label><input id="brand" oninput="genMail()" placeholder="例：翔仔居家">
+      <div id="itemWrap"><label>想要的品項</label><input id="items" oninput="genMail()" placeholder="例：天絲涼被 ×2"></div>
+      <label>IG 連結</label><input id="ig" value="https://www.instagram.com/nsysu_itrc/" oninput="genMail()">
+      <label>合作企劃書連結</label><input id="deck" placeholder="貼上最新企劃書連結" oninput="genMail()">
+      <h2 style="margin-top:16px"><span class="dot"></span>寄件人（填自己的，會記住）</h2>
+      <div class="row2"><div><label>中文名</label><input id="s_zh" oninput="saveSender();genMail()" placeholder="你的姓名"></div>
+        <div><label>英文名</label><input id="s_en" oninput="saveSender();genMail()" placeholder="Claire"></div></div>
+      <label>職稱</label><input id="s_role" value="專案管理公關" oninput="saveSender();genMail()">
+      <div class="row3"><div><label>Email</label><input id="s_email" oninput="saveSender();genMail()" placeholder="自己的信箱"></div>
+        <div><label>電話</label><input id="s_phone" oninput="saveSender();genMail()"></div>
+        <div><label>Line id</label><input id="s_line" oninput="saveSender();genMail()"></div></div>
+      <div class="note">用私人信箱寄出，每兩天追一次。</div>
+    </div>
+    <div class="card">
+      <h2><span class="dot"></span>產出</h2>
+      <label>主旨</label><div class="out" id="subj" style="min-height:0;padding:10px 16px">學生贊助合作詢問</div>
+      <div class="btnrow"><button class="ghost" onclick="copyText('學生贊助合作詢問')"><svg class="svgic" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px"><use href="#i-copy"></use></svg>複製主旨</button></div>
+      <label>內文</label><div class="out" id="body"></div>
+      <div class="btnrow"><button class="act" onclick="copyEl('body')"><svg class="svgic" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px"><use href="#i-copy"></use></svg>複製內文</button>
+        <button class="ghost" onclick="addFromMail()">＋ 建檔到 Pipeline（已寄信待回）</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- CLOSE -->
+<div class="wrap none" id="tab-close">
+  <div class="grid">
+    <div class="card">
+      <h2><span class="dot"></span>結案成效數據</h2>
+      <label>廠商名稱</label><input id="r_brand" oninput="genReport()" placeholder="例：好日子">
+      <label>合作活動 / 期間</label><input id="r_event" value="114-2 期末模擬交易挑戰賽" oninput="genReport()">
+      <label>合作內容</label><input id="r_deal" oninput="genReport()" placeholder="例：提供高檔茶葉作為最佳績效獎獎品">
+      <div class="row2"><div><label>IG 貼文(篇)</label><input id="r_posts" type="number" value="2" oninput="genReport()"></div>
+        <div><label>限動(則)</label><input id="r_story" type="number" value="3" oninput="genReport()"></div></div>
+      <div class="row2"><div><label>觸及(約)</label><input id="r_reach" oninput="genReport()" placeholder="1500"></div>
+        <div><label>得獎人數</label><input id="r_win" type="number" value="1" oninput="genReport()"></div></div>
+      <label>其他曝光(每行一條)</label><textarea id="r_other" oninput="genReport()">活動現場實體產品展示</textarea>
+    </div>
+    <div class="card">
+      <h2><span class="dot"></span>成效報告書</h2>
+      <div class="out" id="r_out" style="min-height:240px"></div>
+      <div class="btnrow"><button class="act" onclick="copyEl('r_out')"><svg class="svgic" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px"><use href="#i-copy"></use></svg>複製報告</button>
+        <button class="ghost" onclick="alert('開啟同資料夾「ITRC證書產生器.html」做感謝狀，結案時連同報告一起寄給廠商。')"><svg class="svgic" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px"><use href="#i-certificate"></use></svg>感謝狀怎麼做</button></div>
+      <div class="note">結案 = 感謝狀（證書產生器）＋ 這份成效報告書，一起寄給廠商。</div>
+    </div>
+  </div>
+</div>
+
+<!-- RECORD -->
+<div class="wrap none" id="tab-record">
+  <div class="grid">
+    <div class="card">
+      <h2><span class="dot"></span>本學期結案（自動帶入 Pipeline）</h2>
+      <div id="recAuto"></div>
+      <div class="hint">廠商在 Pipeline 設為「已結案」就會出現在這。按「↓ 存進歷年」永久保存，之後 Pipeline 清空也不會掉。</div>
+    </div>
+    <div class="card">
+      <h2><span class="dot"></span>歷年贊助紀錄 <span id="recConn" style="font-size:11px;font-weight:400;color:var(--muted);margin-left:8px"></span></h2>
+      <div class="row2"><div><label>年度 / 期</label><input id="rc_year" placeholder="例：114-2"></div>
+        <div><label>廠商</label><input id="rc_brand" placeholder="廠商名稱"></div></div>
+      <label>贊助內容</label><input id="rc_items" placeholder="例：足浴包 20 份 / 贊助金 3000">
+      <label>備註</label><input id="rc_note" placeholder="窗口、特別要求…">
+      <div class="btnrow"><button class="act" onclick="addRec()">＋ 新增紀錄</button></div>
+      <div id="recList" style="margin-top:10px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- SOP -->
+<div class="wrap none" id="tab-sop">
+  <div class="card">
+    <h2><span class="dot"></span>拉贊助全流程（零 → 結案）</h2>
+    <ol class="sop">
+      <li><b>規劃：</b>決定這學期要的品項/資金、檔期、要幾家、能給的權益。</li>
+      <li><b>找廠商：</b>用「找廠商」分頁的候選庫＋平台＋即時搜尋，把目標放進 Pipeline。</li>
+      <li><b>寄信：</b>用私人信箱寄，主旨「學生贊助合作詢問」，<b>每兩天追一次</b>。</li>
+      <li><b>洽談 → 確認：</b>敲定品項、數量、權益、廠商特別要求；放「成功廠商」共編表。</li>
+      <li><b>素材：</b>跟廠商要產品圖＋logo，建資料夾「<b>115廠商圖檔</b>」，通知行銷組製圖。</li>
+      <li><b>曝光履約：</b>依權益發文/限動/活動置入；<b>頒獎前務必先發文、拍完照</b>才給同學。</li>
+      <li><b>結案：</b>寄<b>感謝狀＋成效報告書</b>，歸檔。</li>
+    </ol>
+  </div>
+</div>
+
+<div class="toast" id="toast">已複製</div>
+
+<script>
+/* ============ DATA ============ */
+const STAGES=['待寄信','已寄信待回','洽談中','已確認','素材收集','曝光履約','已結案','婉拒'];
+const SECURED=['已確認','素材收集','曝光履約','已結案'];
+
+/* candidate pool — real brands from web search, each with source */
+const G=q=>'https://www.google.com/search?q='+encodeURIComponent(q+' 官網');
+const CANDS=[
+ {cat:'學生贊助平台（一次對接多家）',have:'',items:[
+   ['Sponya 學生拉贊助','https://sponya.co/student/'],
+   ['104 Be A Giver 學生贊助','https://beagiver.104.com.tw/campus/studentsponsor'],
+   ['ZOCHA 校園贊助','https://www.zocha.com.tw/'],
+   ['高點教育 校園贊助','http://www.get.com.tw/Event/sponsor/'],
+   ['捷可印 校園活動贊助','https://www.jcolor.com.tw/school-donate-introduction'],
+   ['COLAZ 酷樂網 贊助合作','https://www.colaz.com.tw/']]},
+ {cat:'寢具・家居布品',have:'ALAI寢具工廠、竹漾DUYAN、好傢在',items:[
+   ['翔仔居家','https://www.siangapato.com.tw/'],['青鳥家居','https://www.bluebirdbedding.com.tw/'],
+   ['棉床本舖 Annahome','https://www.annahome.co/'],['鴻宇',G('鴻宇 寢具')],['禾雅 HOYACASA',G('禾雅 HOYACASA 寢具')]]},
+ {cat:'環保杯・保溫瓶',have:'Elephant Cuppa',items:[
+   ['WOKY 沃廚',G('WOKY 沃廚')],['NORNS',G('NORNS 杯')],['Seventy P. 鈦享瓶',G('Seventy P 鈦享瓶')],
+   ['TiKOBO 鈦工坊',G('TiKOBO 鈦工坊')],['HOUSUXI','https://www.housuxi.com/']]},
+ {cat:'茶飲・茶葉',have:'好日子',items:[
+   ['淡然有味 Danran','https://www.danran-tea.com/'],['京盛宇','https://www.jsy-tea.com/'],
+   ['樂木集',G('樂木集 漢方茶')],['拉蓓',G('拉蓓 漢方')],['台灣茶人',G('台灣茶人 茶葉')]]},
+ {cat:'足部・身體保養',have:'給足呵護',items:[
+   ['Footer',G('Footer 機能襪')],['Dr.Foot 達特富',G('Dr.Foot 達特富')],
+   ['St.Clare 聖克萊爾',G('St.Clare 聖克萊爾')],['佳工坊',G('佳工坊 足膜')]]},
+ {cat:'3C 配件',have:'PUREGEAR',items:[
+   ['犀牛盾 RhinoShield',G('犀牛盾 RhinoShield')],['bitplay',G('bitplay')],['DEVILCASE',G('DEVILCASE')],
+   ['TOYSELECT 拓伊生活','https://www.toyselect.me/'],['膜力紅','https://www.molihong.com.tw/']]},
+ {cat:'美髮・美妝',have:'A&D 雅頓髮品',items:[
+   ['台灣原生咖啡洗髮精',G('台灣原生咖啡洗髮精')],['雪芙蘭',G('雪芙蘭 洗髮')]]},
+ {cat:'香氛・文創（相鄰，學生愛）',have:'—',items:[
+   ['MIX LAB','https://www.mixlab.com.tw/'],['smellscape','https://www.smellscape.com.tw/'],
+   ['SCENT FOREST 香氛森林','https://www.scentforest.com/'],['It\'s Saturday!','https://its-saturday.com/'],
+   ['心路 幸福工場','https://eshop.syinlu.org.tw/']]}
+];
+
+/* ============ STATE ============ */
+let ROWS=[];
+function save(){return saveSponsor(pipeRef,ROWS,'itrc_pipeline');}
+let POOL=CANDS;
+function savePool(){return saveSponsor(candRef,POOL,'itrc_cands');}
+/* Google 登入與角色確認後才讀寫共用資料；連線失敗不自動改成本機儲存。 */
+const REC_FB_CONFIG = {
+  apiKey: "AIzaSyBG41luYP0eyt9UUeuS0lybKTqWYi1GpLc",
+  authDomain: "itrc-workspace.firebaseapp.com",
+  databaseURL: "https://itrc-workspace-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "itrc-workspace",
+  storageBucket: "itrc-workspace.firebasestorage.app",
+  messagingSenderId: "462903407211",
+  appId: "1:462903407211:web:9cc9217dcef3c97cf2372e",
+  measurementId: "G-Z17XG7FJ5T"
+};
+let REC=[];
+let recRef=null, recMode='local';
+let pipeRef=null, candRef=null;       // Pipeline 與候選庫也共用同一 itrc-workspace
+function normalizeRec(v){let a=Array.isArray(v)?v:(v?Object.values(v):[]);return a.filter(Boolean).map(r=>({year:r.year||'',brand:r.brand||'',items:r.items||'',note:r.note||''}));}
+function normalizePipe(v){let a=Array.isArray(v)?v:(v?Object.values(v):[]);return a.filter(Boolean);}
+function normalizeCand(v){let a=Array.isArray(v)?v:(v?Object.values(v):[]);return a.filter(Boolean).map(c=>({cat:c.cat||'',items:(Array.isArray(c.items)?c.items:(c.items?Object.values(c.items):[])).filter(Boolean)}));}
+function setRecConn(t){const c=document.getElementById('recConn');if(c)c.textContent=t;}
+let sponsorCloud=null;
+function initRecCloud(){
+  ROWS=[];REC=[];POOL=CANDS;renderRecord();renderCands();renderPipe();renderDash();fillPicker();
+  sponsorCloud=ITRCCloud.create({status:setRecConn,
+    onLocal:function(){
+      recMode='local';
+      try{ROWS=JSON.parse(localStorage.getItem('itrc_pipeline')||'[]');REC=JSON.parse(localStorage.getItem('itrc_records')||'[]');POOL=JSON.parse(localStorage.getItem('itrc_cands')||'null')||CANDS;}catch(e){ROWS=[];REC=[];POOL=CANDS;}
+      renderRecord();renderCands();renderPipe();renderDash();fillPicker();
+    },
+    onUnavailable:function(){recRef=pipeRef=candRef=null;recMode='blocked';ROWS=[];REC=[];POOL=CANDS;renderRecord();renderCands();renderPipe();renderDash();fillPicker();},
+    onCloudReady:function(cloud){
+      recMode='cloud';
+      recRef=cloud.watch('sponsors/records',function(snap){REC=normalizeRec(snap.val());renderRecord();renderCands();});
+      pipeRef=cloud.watch('sponsors/pipeline',function(snap){ROWS=normalizePipe(snap.val());renderPipe();renderDash();fillPicker();});
+      candRef=cloud.watch('sponsors/cands',function(snap){const value=snap.val();POOL=value==null?CANDS:normalizeCand(value);renderCands();});
+    }
+  });
+}
+function saveSponsor(ref,value,localKey){
+  if(sponsorCloud&&sponsorCloud.isLocal()){localStorage.setItem(localKey,JSON.stringify(value));setRecConn('● 本機測試已儲存，未寫入雲端');return Promise.resolve(true);}
+  if(!sponsorCloud){setRecConn('● 尚未儲存：登入尚未確認');return Promise.resolve(false);}
+  return sponsorCloud.write(ref,value);
+}
+function saveRec(){return saveSponsor(recRef,REC,'itrc_records');}
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+const jq=s=>String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+/* JS 字串嵌進 HTML 屬性：先轉 JS 字面值，再轉 HTML 實體（含 " 與 &），避免廠商名含引號時破壞 onclick 或被注入 */
+const ja=s=>esc(jq(s));
+/* 候選庫網址可能由幹部自行貼上並雲端共用，擋掉 javascript:/data: 等非 http(s) scheme */
+const safeUrl=u=>{const s=String(u==null?'':u).trim();return /^(https?:|\/|#|$)/i.test(s)?s:'#';};
+const today=()=>new Date().toISOString().slice(0,10);
+function daysSince(d){if(!d)return null;return Math.floor((Date.now()-new Date(d))/86400000);}
+
+/* ============ TABS ============ */
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));t.classList.add('active');
+  ['dash','find','pipe','mail','close','record','sop'].forEach(id=>document.getElementById('tab-'+id).classList.add('none'));
+  document.getElementById('tab-'+t.dataset.tab).classList.remove('none');
+  if(t.dataset.tab==='dash')renderDash(); if(t.dataset.tab==='mail')fillPicker(); if(t.dataset.tab==='record')renderRecord();
+});
+function goTab(name){document.querySelectorAll('.tab').forEach(x=>{if(x.dataset.tab===name)x.click();});}
+
+/* ============ DASHBOARD ============ */
+function renderDash(){
+  document.getElementById('k_total').textContent=ROWS.length;
+  document.getElementById('k_secured').textContent=ROWS.filter(r=>SECURED.includes(r.stage)).length;
+  document.getElementById('k_closed').textContent=ROWS.filter(r=>r.stage==='已結案').length;
+  const need=ROWS.filter(r=>r.stage==='已寄信待回'&&daysSince(r.sent)>=2);
+  document.getElementById('k_follow').textContent=need.length;
+  const max=Math.max(1,...STAGES.map(s=>ROWS.filter(r=>r.stage===s).length));
+  document.getElementById('funnel').innerHTML=STAGES.map(s=>{
+    const c=ROWS.filter(r=>r.stage===s).length;
+    return `<div class="fbar"><div class="lab">${s}</div><div class="track"><div class="fill" style="width:${c/max*100}%"></div></div><div class="cnt">${c}</div></div>`;
+  }).join('');
+  document.getElementById('followList').innerHTML = need.length
+    ? need.map(r=>`<div class="cand"><b>${r.brand||'(未命名)'}</b> <span class="src">已寄 ${daysSince(r.sent)} 天</span> <button class="ghost" onclick="goTab('pipe')">前往</button></div>`).join('')
+    : '<p class="hint">目前沒有逾期未追的廠商。</p>';
+}
+
+/* ============ FIND ============ */
+function sponsoredSet(){const s=new Set();ROWS.forEach(r=>{if(r.stage==='已結案'&&r.brand)s.add(r.brand.trim());});REC.forEach(r=>{if(r.brand)s.add(r.brand.trim());});return s;}
+function renderCands(){
+  const sp=sponsoredSet();
+  document.getElementById('catList').innerHTML=POOL.map(c=>`<option value="${esc(c.cat)}">`).join('');
+  document.getElementById('candList').innerHTML=POOL.map((c,ci)=>`
+    <div class="catbox"><div class="head"><b>${esc(c.cat)}</b>${c.have?`<span class="src">已合作：${esc(c.have)}</span>`:''}<button class="ghost xcat" title="刪除分類" onclick="delCat(${ci})">✕</button></div>
+    ${c.items.map((it,ii)=>{const won=sp.has((it[0]||'').trim());return `<div class="cand"><button class="ghost" title="加入 Pipeline" onclick="addVendor({brand:'${ja(it[0])}',cat:'${ja(c.cat.replace(/（.*/,'').trim())}',stage:'待寄信',note:'${ja(it[1])}'})">＋</button>
+      <a href="${esc(safeUrl(it[1]))}" target="_blank" rel="noopener">${esc(it[0])}</a>${won?`<button class="trophy" title="看贊助紀錄" onclick="goTab('record')"><svg class="svgic" style="width:14px;height:14px"><use href="#i-trophy"></use></svg></button>`:''}<button class="ghost del" title="從候選庫刪除" onclick="delCand(${ci},${ii})"><svg class="svgic" style="width:13px;height:13px"><use href="#i-trash"></use></svg></button></div>`;}).join('')}
+    </div>`).join('');
+}
+async function addCand(){const b=document.getElementById('nc_brand').value.trim();if(!b){toast('先填廠商名稱');return;}
+  const url=document.getElementById('nc_url').value.trim()||G(b);let cat=document.getElementById('nc_cat').value.trim()||'其他';
+  let c=POOL.find(x=>x.cat===cat);if(!c){c={cat,items:[]};POOL.push(c);}c.items.push([b,url]);renderCands();
+  if(await savePool()){document.getElementById('nc_brand').value='';document.getElementById('nc_url').value='';toast('已加入候選庫：'+b);}else toast('候選資料尚未儲存，請查看登入與連線狀態');}
+function delCand(ci,ii){POOL[ci].items.splice(ii,1);savePool();renderCands();}
+function delCat(ci){if(!confirm('刪除分類「'+POOL[ci].cat+'」與其下廠商？'))return;POOL.splice(ci,1);savePool();renderCands();}
+function renderRecord(){
+  const auto=ROWS.map((r,i)=>({r,i})).filter(o=>o.r.stage==='已結案');
+  document.getElementById('recAuto').innerHTML=auto.length?auto.map(o=>`<div class="cand"><b>${esc(o.r.brand||'(未命名)')}</b> <span class="src">${esc(o.r.items||'')}</span><button class="ghost" style="margin-left:auto" onclick="snapRec(${o.i})">↓ 存進歷年</button></div>`).join(''):'<p class="hint">目前 Pipeline 沒有「已結案」廠商。</p>';
+  document.getElementById('recList').innerHTML=REC.length?REC.map((r,i)=>`<div class="cand"><b>${esc(r.brand)}</b> <span class="src">${esc(r.year||'')}</span> ${esc(r.items||'')}${r.note?' · '+esc(r.note):''}<button class="ghost del" style="margin-left:auto" onclick="delRec(${i})"><svg class="svgic" style="width:13px;height:13px"><use href="#i-trash"></use></svg></button></div>`).join(''):'<p class="hint">還沒有歷年紀錄。手動新增，或從左邊「存進歷年」。</p>';
+}
+async function addRec(){const b=document.getElementById('rc_brand').value.trim();if(!b){toast('先填廠商');return;}
+  REC.push({year:document.getElementById('rc_year').value.trim(),brand:b,items:document.getElementById('rc_items').value.trim(),note:document.getElementById('rc_note').value.trim()});renderRecord();renderCands();
+  if(await saveRec()){['rc_brand','rc_items','rc_note'].forEach(id=>document.getElementById(id).value='');toast('已新增紀錄');}else toast('歷年紀錄尚未儲存，請查看登入與連線狀態');}
+async function snapRec(i){const r=ROWS[i];REC.push({year:'',brand:r.brand||'',items:r.items||'',note:r.note||''});renderRecord();renderCands();if(await saveRec())toast(sponsorCloud.isLocal()?'已存本機測試資料':'歷年紀錄已存雲端');}
+function delRec(i){REC.splice(i,1);saveRec();renderRecord();renderCands();}
+function genSearch(){
+  const q=(document.getElementById('q_item').value||'').trim();
+  if(!q){document.getElementById('searchOut').innerHTML='<p class="hint">先輸入一個品項／類別。</p>';return;}
+  const e=encodeURIComponent;
+  const links=[['Google：學生社團贊助',`https://www.google.com/search?q=${e(q+' 學生社團 贊助 合作 台灣')}`],
+    ['Google：抽獎贊助品牌',`https://www.google.com/search?q=${e(q+' 品牌 抽獎 贊助 大學')}`],
+    ['Google：品牌官網',`https://www.google.com/search?q=${e(q+' 品牌 台灣 官網')}`],
+    ['Instagram 品牌',`https://www.google.com/search?q=${e('site:instagram.com '+q+' 台灣 品牌')}`],
+    ['Dcard 推薦',`https://www.dcard.tw/search/posts?query=${e(q+' 推薦')}`]];
+  document.getElementById('searchOut').innerHTML='<div style="margin-top:10px;display:flex;flex-direction:column;gap:7px">'+
+    links.map(l=>`<a href="${l[1]}" target="_blank" style="text-decoration:none"><button class="ghost" style="width:100%;text-align:left">${l[0]}</button></a>`).join('')+'</div>';
+}
+
+/* ============ PIPELINE ============ */
+const COLS=[
+  {k:'brand',t:'廠商',w:'92px'},{k:'cat',t:'品類',w:'92px'},
+  {k:'stage',t:'階段',type:'sel',opts:STAGES,w:'104px'},
+  {k:'email',t:'信箱',w:'130px'},{k:'items',t:'品項/數量',w:'120px'},
+  {k:'sent',t:'寄信日',type:'date',w:'120px'},
+  {k:'assets',t:'圖logo',type:'ck'},{k:'art',t:'製圖',type:'ck'},{k:'post',t:'發文',type:'ck'},
+  {k:'photo',t:'拍照',type:'ck'},{k:'thank',t:'感謝狀',type:'ck'},{k:'report',t:'報告',type:'ck'},
+  {k:'note',t:'備註/權益',w:'150px'}
+];
+async function addVendor(d){ROWS.push(Object.assign({stage:'待寄信'},d||{}));renderPipe();renderDash();
+  const ok=await save();if(ok&&d&&d.brand)toast('已加入 Pipeline：'+d.brand);else if(!ok)toast('Pipeline 尚未儲存，請查看登入與連線狀態');return ok;}
+function delRow(i){if(!confirm('刪除這家廠商？'))return;ROWS.splice(i,1);save();renderPipe();renderDash();}
+function upd(i,k,v){ROWS[i][k]=v;if(k==='stage'&&v==='已寄信待回'&&!ROWS[i].sent)ROWS[i].sent=today();save();
+  if(k==='stage'){renderPipe();renderDash();}}
+function stageColor(s){return {'已確認':'#e3f6ec;color:#15724d','已結案':'#dff0fb;color:#155b86','曝光履約':'#e3f6ec;color:#15724d','素材收集':'#eef6e3;color:#4a6b15','婉拒':'#fde8e4;color:#a8412b','洽談中':'#fff3da;color:#8a6112','已寄信待回':'#eef2f9;color:#3a4a66','待寄信':'#f0f0f0;color:#777'}[s]||'#fff';}
+function renderPipe(){
+  const fs=document.getElementById('filterStage');
+  if(fs.options.length<=1)STAGES.forEach(s=>fs.add(new Option(s,s)));
+  const f=fs.value;
+  let h='<tr>'+COLS.map(c=>`<th style="${c.w?'width:'+c.w:''}">${c.t}</th>`).join('')+'<th></th></tr>';
+  ROWS.forEach((r,i)=>{
+    if(f&&r.stage!==f)return;
+    h+='<tr>'+COLS.map(c=>{
+      if(c.type==='ck')return `<td class="ck"><input type="checkbox" ${r[c.k]?'checked':''} onchange="upd(${i},'${c.k}',this.checked)"></td>`;
+      if(c.type==='sel')return `<td><select onchange="upd(${i},'${c.k}',this.value)" style="background:${stageColor(r[c.k])}">`+c.opts.map(o=>`<option ${r[c.k]===o?'selected':''}>${o}</option>`).join('')+`</select></td>`;
+      if(c.type==='date')return `<td><input type="date" value="${r[c.k]||''}" onchange="upd(${i},'${c.k}',this.value)"></td>`;
+      return `<td><input value="${esc(r[c.k]||'')}" oninput="upd(${i},'${c.k}',this.value)"></td>`;
+    }).join('')+`<td class="ck"><button class="ghost" style="padding:3px 7px" onclick="delRow(${i})">✕</button></td></tr>`;
+  });
+  document.getElementById('tbl').innerHTML=h;
+}
+function exportTSV(){
+  if(!ROWS.length){toast('沒有資料');return;}
+  const cell=v=>String(v==null?'':v).replace(/[\t\r\n]+/g,' ');
+  const head=COLS.map(c=>c.t).join('\t');
+  const body=ROWS.map(r=>COLS.map(c=>c.type==='ck'?(r[c.k]?'✔':''):cell(r[c.k])).join('\t')).join('\n');
+  copyText(head+'\n'+body);toast('已複製，可貼進 Google Sheet');
+}
+
+/* ============ MAIL ============ */
+let VER=1;
+function setVer(v){VER=v;document.getElementById('v1').classList.toggle('on',v===1);document.getElementById('v2').classList.toggle('on',v===2);document.getElementById('itemWrap').style.display=v===1?'block':'none';genMail();}
+const SF=['s_zh','s_en','s_role','s_email','s_phone','s_line'];
+function saveSender(){const o={};SF.forEach(k=>o[k]=document.getElementById(k).value);localStorage.setItem('itrc_pr_sender',JSON.stringify(o));}
+function loadSender(){let o={};try{o=JSON.parse(localStorage.getItem('itrc_pr_sender')||'{}')||{};}catch(e){}SF.forEach(k=>{if(o[k]!==undefined)document.getElementById(k).value=o[k];});}
+function fillPicker(){const sel=document.getElementById('pickVendor');sel.length=1;ROWS.forEach((r,i)=>{if(r.brand)sel.add(new Option(r.brand+(r.stage?` (${r.stage})`:''),i));});}
+function fillFromVendor(){const i=document.getElementById('pickVendor').value;if(i==='')return;const r=ROWS[i];document.getElementById('brand').value=r.brand||'';document.getElementById('items').value=r.items||'';genMail();}
+const INTRO=`【投資交易研究社 介紹】\n本社團成立宗旨是為了提供中山大學全體同學在課後接觸投資理財、金融商品交易的學習資源及自學環境，藉由邀請國內知名投資者/交易員演講，讓社員能吸收產業新知，並在課後進行模擬交易實作，累積實戰經驗。`;
+const OFFER=`【我們可以提供】\n線上宣傳：免費撰文，並可置入品牌期望或指定內容，加強品牌宣傳\n線下推廣：實體產品展示、DM介紹、發起團購與社企系列講座中曝光\n活動置入：活動、講座中產品以及品牌置入\n結案成果：感謝狀及成效報告書`;
+function genMail(){
+  const g=id=>document.getElementById(id).value;
+  const zh=g('s_zh')||'（中文名）',en=g('s_en'),role=g('s_role')||'專案管理公關';
+  const who=`${en?en+' ':''}${zh}`.trim();
+  const open=`您好，我是中山大學 投資交易研究社的${role} ${who}，寄此信主要想詢問您是否有機會能邀請貴公司成為中山大學 投資交易研究社 贊助夥伴的一份子？我們正在尋找同樣也致力於投資教育發展的企業，一同為社會責任努力！`;
+  let mid;
+  if(VER===1) mid=`本社團長期舉辦投資理財、金融相關講座與學生活動，參與對象以大學生為主，活動現場互動度高。我們也希望能與同樣關注年輕族群、重視品牌體驗的企業合作，透過活動接觸學生族群，共同創造正向的品牌形象與社會影響力。\n\n希望貴公司能提供 ${g('items')||'（品項）'} 作為活動抽獎獎品，作為回饋，我們將透過社群媒體與活動現場進行品牌曝光，協助宣傳並建立正向口碑，達成雙贏互惠的合作關係，也非常歡迎您提出其他合作構想。非常感謝您！`;
+  else mid=`贊助的大致方向為：產品抽獎、活動置入，我們將提供合作提案書做更詳細的說明，內容也可以再進一步討論。\n\n希望貴公司能給我們募款資金或者物資的機會，以回報，我們將會使用社群媒體為您宣傳並製造口碑，建立品牌的正面形象，達成雙贏互惠的局面，也歡迎您提出任何其他的合作提案。非常謝謝您～`;
+  const sign=`${zh}\n中山大學 投資交易研究社 － ${role}\nEmail: ${g('s_email')||'（你的信箱）'}\n電話: ${g('s_phone')||'（你的電話）'}\nLine id: ${g('s_line')||'（你的 Line）'}`;
+  document.getElementById('body').textContent=`${open}\n\n${mid}\n\n${INTRO}\nIG連結：${g('ig')}\n\n${OFFER}\n\n感謝您撥冗閱讀此信，若您有興趣或有任何疑問，歡迎與我們聯繫與討論。\n希望一切安好並期待您的回覆，謝謝！\n\n平安。順心\n\n並在此附上合作企劃書 非常謝謝您～\n${g('deck')||'（附上合作企劃書連結）'}\n\n${sign}`;
+}
+function addFromMail(){const b=document.getElementById('brand').value.trim();if(!b){toast('先填廠商名稱');return;}
+  addVendor({brand:b,items:document.getElementById('items').value.trim(),stage:'已寄信待回',sent:today()});fillPicker();}
+
+/* ============ REPORT ============ */
+function genReport(){
+  const g=id=>document.getElementById(id).value;
+  const other=g('r_other').split('\n').map(s=>s.trim()).filter(Boolean).map(s=>'・'+s).join('\n');
+  document.getElementById('r_out').textContent=`【ITRC 投資交易研究社 × ${g('r_brand')||'（廠商）'} 合作成效報告】\n\n合作活動：${g('r_event')}\n合作內容：${g('r_deal')||''}\n\n一、品牌曝光成果\n・IG 貼文 ${g('r_posts')||0} 篇`+(g('r_reach')?`，觸及約 ${g('r_reach')} 人`:'')+`\n・限時動態 ${g('r_story')||0} 則\n`+(other?other+'\n':'')+`\n二、抽獎回饋\n・提供獎品於活動中抽出，得獎社員 ${g('r_win')||0} 名\n\n三、結語\n感謝 ${g('r_brand')||'貴公司'} 對中山大學投資交易研究社的支持，讓本次活動更加圓滿。隨函附上感謝狀，期待未來持續合作，互惠雙贏。\n\n中山大學 投資交易研究社 公關組 敬上`;
+}
+
+/* ============ UTIL ============ */
+function copyEl(id){copyText(document.getElementById(id).textContent);}
+function copyText(t){navigator.clipboard.writeText(t).then(()=>toast('已複製')).catch(()=>{const ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();toast('已複製');});}
+function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1400);}
+
+/* ============ INIT ============ */
+loadSender();renderCands();renderPipe();fillPicker();genMail();genReport();genSearch();renderDash();initRecCloud();
+</script>
+</body>
+</html>

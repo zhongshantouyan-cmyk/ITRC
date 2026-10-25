@@ -20,7 +20,7 @@ export const auth = getAuth(app);
 export const db = getDatabase(app);
 
 // 救命索：這些信箱一律視為顧問級，不受 roles 名單影響（與 itrc-auth.js 一致）。
-const SUPER_ADMINS = ['zhongshantouyan@gmail.com', 'hades60414@gmail.com'];
+const SUPER_ADMINS = ['zhongshantouyan@gmail.com'];
 
 // 以 email 比對 roles 名單，回傳角色（chair/advisor/treasurer/officer），未授權回 ''。
 export async function resolveRole(email) {
@@ -30,12 +30,11 @@ export async function resolveRole(email) {
     try {
         const snap = await get(ref(db, 'roles'));
         const list = snap.val() || {};
-        let role = '';
-        Object.keys(list).forEach((k) => {
-            const r = list[k];
-            if (r && r.email && String(r.email).toLowerCase() === e) role = r.role || '';
-        });
-        return role;
+        const matches = Object.values(list).filter(r => r && String(r.email || '').trim().toLowerCase() === e);
+        if (!matches.length || matches.some(r => r.disabled === true || r.active === false ||
+            ['inactive', 'retired', 'disabled', '已卸任', '非當期名單', '暫停'].includes(String(r.status || '').trim().toLowerCase()))) return '';
+        const roles = new Set(matches.map(r => r.role || ''));
+        return roles.size === 1 && ['advisor', 'chair', 'treasurer', 'officer'].includes(matches[0].role) ? matches[0].role : '';
     } catch {
         return '';
     }

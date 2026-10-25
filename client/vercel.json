@@ -1,5 +1,14 @@
 {
+    "functions": {
+        "api/ops.js": {
+            "maxDuration": 60
+        }
+    },
     "rewrites": [
+        {
+            "source": "/api/ops/:path*",
+            "destination": "/api/ops?path=:path*"
+        },
         {
             "source": "/((?!assets/|images/|.*\\..*).*)",
             "destination": "/index.html"

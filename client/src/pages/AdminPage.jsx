@@ -3,6 +3,7 @@ import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../api';
 import Footer from '../components/Footer';
+import { sortActivitiesByDate } from '../utils/activityDates';
 
 // ===================== Shared Image Uploader Helper (single image) =====================
 function ImageUploader({ value, onChange, label = '上傳圖片', disabled = false }) {
@@ -387,15 +388,20 @@ function AchievementsEditor() {
 
 // ===================== Members Editor =====================
 function MembersEditor() {
+    const { role } = useAuth();
+    const canManage = ['advisor', 'chair', 'admin'].includes(role);
+    const [includeHistory, setIncludeHistory] = useState(false);
     const [items, setItems] = useState([]);
     const [form, setForm] = useState({ name: '', role: '', department: '', year: '', avatar_url: '' });
     const [editingId, setEditingId] = useState(null);
     const [msg, setMsg] = useState('');
 
     const fetchData = useCallback(async () => {
-        const res = await api.get('/members');
-        setItems(res.data);
-    }, []);
+        try {
+            const res = await api.get(canManage ? '/members/all' : '/members');
+            setItems(res.data);
+        } catch (err) { setMsg('讀取失敗：' + (err.response?.data?.error || err.message)); }
+    }, [canManage]);
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -422,16 +428,24 @@ function MembersEditor() {
         setForm({ name: item.name, role: item.role || '', department: item.department || '', year: item.year || '', avatar_url: item.avatar_url || '' });
     };
 
-    const handleDelete = async (id) => {
-        if (!window.confirm('確定要刪除嗎？')) return;
-        await api.delete(`/members/${id}`);
-        fetchData();
+    const handleArchive = async (item) => {
+        const restoring = !!item.archived_at;
+        if (!window.confirm(restoring ? `將 ${item.name} 恢復至公開幹部名單？登入權限仍需另外核對。` : `將 ${item.name} 移出現任名單？原資料與歷史紀錄會保留。`)) return;
+        try {
+            if (restoring) await api.post(`/members/${item.id}/restore`);
+            else await api.delete(`/members/${item.id}`);
+            setMsg(restoring ? '✓ 已恢復公開名單；請另核對登入權限。' : '✓ 已移出現任名單，歷史保留。');
+            await fetchData();
+        } catch (err) { setMsg('未完成：' + (err.response?.data?.error || err.message)); }
     };
 
     return (
         <div>
             <h2 className="mb-3">社團成員管理</h2>
-            <form className="admin-form card mb-4" onSubmit={handleSubmit} style={{ maxWidth: 700, padding: 24 }}>
+            <p className="text-secondary">官網只公開現任姓名、職稱與介紹。移出現任名單會保留原資料；內部人員狀態與登入權限需一併核對。</p>
+            {canManage && <label style={{ display: 'block', marginBottom: 16 }}><input type="checkbox" checked={includeHistory} onChange={e => setIncludeHistory(e.target.checked)} /> 顯示已卸任／封存資料</label>}
+            {msg && <p role="status">{msg}</p>}
+            {canManage && <form className="admin-form card mb-4" onSubmit={handleSubmit} style={{ maxWidth: 700, padding: 24 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                     <div className="form-group">
                         <label>姓名</label>
@@ -460,22 +474,23 @@ function MembersEditor() {
                     {editingId && <button type="button" className="btn btn-outline btn-sm" onClick={() => { setEditingId(null); setForm({ name: '', role: '', department: '', year: '', avatar_url: '' }); }}>取消</button>}
                     {msg && <span className="text-accent" style={{ fontSize: '0.85rem' }}>{msg}</span>}
                 </div>
-            </form>
+            </form>}
 
             <div className="admin-item-list">
-                {items.map(item => (
+                {items.filter(item => includeHistory || !item.archived_at).map(item => (
                     <div key={item.id} className="admin-item">
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                             {item.avatar_url && <img src={item.avatar_url} alt={item.name} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover' }} />}
                             <div>
                                 <strong>{item.name}</strong>
+                                {item.archived_at && <span style={{ marginLeft: 8 }}>已卸任／封存</span>}
                                 {item.role && <span className="text-accent" style={{ marginLeft: 8 }}>{item.role}</span>}
                                 {item.department && <span className="text-secondary" style={{ marginLeft: 8, fontSize: '0.85rem' }}>{item.department}</span>}
                             </div>
                         </div>
                         <div className="admin-item-actions">
-                            <button className="btn btn-outline btn-sm" onClick={() => handleEdit(item)}>編輯</button>
-                            <button className="btn btn-danger btn-sm" onClick={() => handleDelete(item.id)}>刪除</button>
+                            {canManage && <button className="btn btn-outline btn-sm" onClick={() => handleEdit(item)}>編輯</button>}
+                            {canManage && <button className="btn btn-danger btn-sm" onClick={() => handleArchive(item)}>{item.archived_at ? '恢復公開名單' : '移出現任名單'}</button>}
                         </div>
                     </div>
                 ))}
@@ -505,7 +520,7 @@ function SingleTypeActivitiesEditor({ activityType, title, subtitle }) {
         const params = { type: activityType };
         if (filterSemester) params.semester = filterSemester;
         const res = await api.get('/activities', { params });
-        setItems(res.data);
+        setItems(sortActivitiesByDate(res.data));
     }, [activityType, filterSemester]);
 
     useEffect(() => { fetchSemesters(); }, [fetchSemesters]);
@@ -768,13 +783,18 @@ const TABLE_LABELS = {
     members: '社團成員',
     activities: '活動 (規劃+紀錄)',
     experiences: '參與心得',
+    online_resources: '線上學習資源',
+    offline_resources: '書籍與離線資源',
 };
 
 function SnapshotsManager() {
+    const { role } = useAuth();
+    const canRestore = ['chair', 'advisor', 'admin'].includes(role);
     const [snapshots, setSnapshots] = useState([]);
     const [loading, setLoading] = useState(true);
     const [msg, setMsg] = useState('');
     const [creating, setCreating] = useState(false);
+    const [exportingSystem, setExportingSystem] = useState(false);
     const [newDesc, setNewDesc] = useState('');
     const [restoring, setRestoring] = useState(null);
     const [previewId, setPreviewId] = useState(null);
@@ -808,10 +828,30 @@ function SnapshotsManager() {
         }
     };
 
+    const handleSystemExport = async () => {
+        setExportingSystem(true); setMsg('');
+        try {
+            const response = await api.get('/system-backup/export', { responseType: 'blob', timeout: 60000 });
+            const url = URL.createObjectURL(response.data);
+            const anchor = document.createElement('a');
+            anchor.href = url;
+            anchor.download = `ITRC-system-data-backup-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}.json`;
+            anchor.click();
+            setTimeout(() => URL.revokeObjectURL(url), 10000);
+            setMsg('系統資料備份已產生並開始下載。請保存在僅限系統保管人存取的位置，並確認檔案已完整下載。');
+        } catch (err) {
+            let message = err.message;
+            if (err.response?.data instanceof Blob) {
+                try { message = JSON.parse(await err.response.data.text()).error || message; } catch { /* No raw error body in UI. */ }
+            } else message = err.response?.data?.error || message;
+            setMsg('備份未完成：' + message);
+        } finally { setExportingSystem(false); }
+    };
+
     const handleRestore = async (id) => {
         const snapshot = snapshots.find(s => s.id === id);
         const timeStr = new Date(snapshot.created_at).toLocaleString('zh-TW');
-        if (!window.confirm(`確定要還原到「${snapshot.description}」(${timeStr}) 嗎？\n\n⚠️ 所有目前的內容將被覆蓋！\n（系統會在還原前自動建立備份）`)) return;
+        if (!window.confirm(`確定要還原到「${snapshot.description}」(${timeStr}) 嗎？\n\n所選快照包含的官網內容將被覆蓋；未包含的資料維持原樣。\n系統會先建立備份，還原失敗時保留目前內容。`)) return;
 
         setRestoring(id);
         setMsg('');
@@ -855,8 +895,15 @@ function SnapshotsManager() {
         <div>
             <h2 className="mb-3">版本管理</h2>
             <p className="text-secondary mb-3">
-                系統會在每次修改內容時自動建立備份。如果內容被誤改，可以一鍵還原到任何歷史版本。
+                修改前會先保存官網內容，保留最近 50 份快照。範圍包含頁面、成果、成員介紹、活動、心得與學習資源；工作台、財務、幹部權限和外部檔案需另外備份。舊快照沒有包含的資料會保留原樣。
             </p>
+
+            {role === 'advisor' && <div className="card mb-4" style={{ maxWidth: 700, padding: 20 }}>
+                <h3 className="mb-2" style={{ fontSize: '1rem' }}>系統資料備份</h3>
+                <p className="text-secondary">下載官網與工作台資料、既有幹部權限、任務、財務、公關、講師與證書設定。含私人聯絡與帳務資料，僅供系統保管人保存。外部圖片、Drive、Canva 檔案及平台金鑰需另行保管。</p>
+                <button className="btn btn-primary btn-sm" onClick={handleSystemExport} disabled={exportingSystem}>{exportingSystem ? '正在核對備份範圍…' : '下載系統資料備份'}</button>
+                <p className="text-secondary" style={{ marginTop: 8, fontSize: '0.8rem' }}>還原先在全新隔離目錄驗證；此處不提供一鍵覆寫正式系統。</p>
+            </div>}
 
             {/* Manual snapshot creation */}
             <div className="card mb-4" style={{ maxWidth: 700, padding: 20 }}>
@@ -916,7 +963,8 @@ function SnapshotsManager() {
                                 <button
                                     className="btn btn-primary btn-sm"
                                     onClick={() => handleRestore(snap.id)}
-                                    disabled={restoring === snap.id}
+                                    disabled={!canRestore || restoring === snap.id}
+                                    title={canRestore ? '' : '還原需要社長、副社長或顧問權限'}
                                 >
                                     {restoring === snap.id ? '還原中...' : '還原'}
                                 </button>

@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ITRC 幹部工具站｜中山大學 投資交易研究社</title>
+<meta name="description" content="中山大學投資交易研究社 ITRC 幹部工具站：講師排程、任務看板、社群圖文、企業贊助、證書製發與財務站，一站式籌備學期社課。">
+<meta name="theme-color" content="#0f1f3d">
+<meta property="og:type" content="website">
+<meta property="og:title" content="ITRC 幹部工具站｜中山大學 投資交易研究社">
+<meta property="og:description" content="社課籌備一站式平台：講師排程、任務看板、社群圖文、贊助、證書與財務站。">
+<meta property="og:url" content="https://itrc-tools.vercel.app">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230f1f3d'/%3E%3Crect x='3' y='3' width='58' height='58' rx='12' fill='none' stroke='%23c9a14a' stroke-width='2'/%3E%3Ctext x='32' y='39' font-family='sans-serif' font-size='17' font-weight='800' text-anchor='middle' fill='%23e3c270'%3EITRC%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="itrc.css">
+<script src="itrc.js" defer></script>
+<style>
+  .lead{font-size:14px;color:var(--muted);text-align:center;margin:0 0 24px;line-height:1.6}
+
+  /* 首頁限定：頂部金線緩慢流光 */
+  @keyframes goldsweep{0%{background-position:-180% 0}100%{background-position:180% 0}}
+  header.itrc::after{background-size:200% 100%;animation:goldsweep 6.5s linear infinite}
+
+  /* 進場淡入（只動透明度，不影響卡片 hover 位移；reduced-motion 會自動停用） */
+  @keyframes itrcFade{from{opacity:0}to{opacity:1}}
+  .flow,.tool{animation:itrcFade .45s ease both}
+  .tool:nth-child(2){animation-delay:.05s} .tool:nth-child(3){animation-delay:.1s}
+  .tool:nth-child(4){animation-delay:.15s} .tool:nth-child(5){animation-delay:.2s} .tool:nth-child(6){animation-delay:.25s}
+  .tool:nth-child(7){animation-delay:.3s} .tool:nth-child(8){animation-delay:.35s}
+
+  /* 新學期流程 */
+  .flow{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);
+    padding:18px 20px;margin-bottom:26px;box-shadow:var(--sh-1)}
+  .flow h2{margin:0 0 14px;font-size:14px;color:var(--navy);display:flex;align-items:center;gap:8px;letter-spacing:.3px}
+  .flow h2 .dot{width:8px;height:8px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 3px rgba(201,161,74,.18)}
+  .steps{display:flex;gap:0;flex-wrap:wrap}
+  .step{flex:1;min-width:160px;position:relative;background:var(--bg-2);border:1px solid var(--line);
+    border-radius:var(--r);padding:13px 14px;margin:4px;transition:var(--ease)}
+  .step:hover{border-color:var(--gold);background:#fff;box-shadow:var(--sh-1);transform:translateY(-2px)}
+  .step .h{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+  .step .n{flex:none;width:22px;height:22px;background:var(--navy);color:#fff;border-radius:50%;
+    font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center}
+  .step:hover .n{background:var(--gold);color:var(--navy)}
+  .step b{font-size:13.5px;color:var(--navy)}
+  .step p{margin:0;font-size:12.5px;color:var(--muted);line-height:1.55}
+
+  /* 工具卡：flex 置中，最後一排不滿就置中，不缺角 */
+  .grid{display:flex;flex-wrap:wrap;justify-content:center;gap:15px}
+  .tool{flex:1 1 290px;max-width:336px;display:flex;flex-direction:column;background:var(--card);border:1px solid var(--line);
+    border-radius:var(--r-lg);padding:18px 18px 16px;border-top:4px solid var(--g);
+    box-shadow:var(--sh-1);transition:var(--ease)}
+  .tool:hover{transform:translateY(-3px);box-shadow:var(--sh-2);border-color:var(--g)}
+  .tool:focus-visible{border-radius:var(--r-lg)}
+  .step:focus-visible{border-radius:var(--r)}
+  .tool .top{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+  .tool .ic{flex:none;width:46px;height:46px;border-radius:12px;display:flex;align-items:center;
+    justify-content:center;color:var(--g);background:color-mix(in srgb,var(--g) 13%,#fff);
+    border:1px solid color-mix(in srgb,var(--g) 24%,#fff)}
+  .tool .ic .svgic{width:25px;height:25px;stroke-width:1.6}
+  .tool h3{margin:0;font-size:17px;color:var(--navy);letter-spacing:.2px}
+  .tool .tag{margin-top:4px;color:color-mix(in srgb,var(--g) 72%,#000);
+    background:color-mix(in srgb,var(--g) 14%,#fff);border:1px solid color-mix(in srgb,var(--g) 26%,#fff)}
+  .tool p{margin:2px 0 13px;font-size:13.5px;color:var(--ink-2);line-height:1.65;flex:1}
+  .tool .who{font-size:12px;color:var(--muted);border-top:1px dashed var(--line);padding-top:10px;
+    display:flex;justify-content:space-between;align-items:center;gap:10px}
+  .tool .who>span:first-child{min-width:0}
+  .tool .who b{color:var(--navy);font-weight:700}
+  .tool .go{flex:none;color:var(--gold-ink);font-weight:700;font-size:13px;display:inline-flex;
+    align-items:center;gap:3px;transition:var(--ease)}
+  .tool .go .svgic{width:15px;height:15px}
+  .tool:hover .go{transform:translateX(3px)}
+
+  footer{text-align:center;color:var(--muted);font-size:12px;padding:6px 18px 84px;line-height:1.75}
+  footer code{background:#e6eaf2;color:var(--ink-2);padding:1px 6px;border-radius:5px;font-size:11.5px}
+
+  /* 漂浮新手教學小助手（僅首頁常駐、可收合、記住狀態） */
+  .helpdock{position:fixed;right:20px;bottom:20px;z-index:60;display:flex;flex-direction:column;align-items:flex-end;gap:12px;pointer-events:none}
+  .help-fab{display:inline-flex;align-items:center;gap:8px;cursor:pointer;pointer-events:auto;
+    background:linear-gradient(135deg,var(--navy-2),var(--navy));color:var(--gold-2);
+    border:1px solid rgba(201,161,74,.5);border-radius:var(--pill);padding:11px 16px;
+    font:700 13.5px/1 inherit;box-shadow:var(--sh-3);transition:transform .18s,box-shadow .18s}
+  .help-fab:hover{transform:translateY(-2px)}
+  .help-fab .svgic{width:18px;height:18px}
+  .help-fab .ic-close{display:none}
+  .helpdock.open .help-fab .ic-q{display:none}
+  .helpdock.open .help-fab .ic-close{display:inline-block}
+  .help-panel{width:332px;max-width:calc(100vw - 40px);background:var(--card);border:1px solid var(--line);
+    border-radius:16px;box-shadow:var(--sh-3);overflow:hidden;transform-origin:bottom right;
+    opacity:0;transform:translateY(12px) scale(.97);pointer-events:none;transition:opacity .2s,transform .2s}
+  .helpdock.open .help-panel{opacity:1;transform:none;pointer-events:auto}
+  .hp-head{display:flex;align-items:center;justify-content:space-between;
+    background:linear-gradient(135deg,var(--navy),var(--navy-2));padding:12px 14px}
+  .hp-title{display:flex;align-items:center;gap:8px;font-weight:800;font-size:14.5px;color:var(--gold-2)}
+  .hp-title .svgic{width:17px;height:17px}
+  .hp-x{background:none;border:none;color:#cdd6e8;cursor:pointer;padding:4px;border-radius:8px;display:flex}
+  .hp-x:hover{background:rgba(255,255,255,.12);color:#fff}
+  .hp-x .svgic{width:16px;height:16px}
+  .hp-body{padding:14px 15px 15px;max-height:min(64vh,520px);overflow:auto;font-size:13px;color:var(--ink-2);line-height:1.6}
+  .hp-body>p{margin:0 0 10px}
+  .hp-body a{color:var(--gold-ink);font-weight:700}
+  .hp-body a:hover{text-decoration:underline}
+  .hp-step{display:flex;gap:10px;padding:9px 0;border-bottom:1px dashed var(--line)}
+  .hp-step .n{flex:none;width:22px;height:22px;border-radius:50%;background:var(--navy);color:#fff;
+    font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center}
+  .hp-step b{color:var(--navy)}
+  .hp-note{margin-top:11px;background:var(--bg-2);border:1px solid var(--line);border-radius:10px;
+    padding:10px 11px;font-size:12px;line-height:1.7}
+
+  @media (max-width:560px){
+    header.itrc h1{font-size:20px}
+    .tool{max-width:none}
+    .tool .ic{width:42px;height:42px;font-size:22px}
+    .helpdock{right:14px;bottom:14px}
+  }
+</style>
+</head>
+<body>
+<header class="itrc">
+  <div class="logo">ITRC<small>NSYSU</small></div>
+  <h1>幹部工具站</h1>
+  <div class="sub">中山大學 投資交易研究社 · 學期活動籌備一站式平台</div>
+  <a class="ig" href="https://www.instagram.com/nsysu_itrc" target="_blank" rel="noopener">@nsysu_itrc</a>
+</header>
+
+<div class="container">
+  <div class="flow" style="margin-top:24px">
+    <h2><span class="dot"></span>社務工作台</h2>
+    <p>活動與專案、宣傳審核、任務交件及幹部分工，從同一個入口開始。需要講師池、公關、財務或證書時，再開啟下方既有工具。</p>
+    <a class="btn gold" href="https://nsysu-itrc.vercel.app/ops">進入社務工作台 <svg class="svgic"><use href="#i-arrow"></use></svg></a>
+  </div>
+  <p class="lead">選擇工具進入。各工具頁面上方的深色導覽列，可隨時返回首頁或切換其他工具。幹部姓名與職稱以<a href="https://nsysu-itrc.vercel.app/" target="_blank" rel="noopener">官網幹部名單</a>為準。</p>
+
+  <div class="flow">
+    <h2><span class="dot"></span>學期籌備流程</h2>
+    <div class="steps">
+      <a class="step" href="ITRC活動組-講師池排程.html"><div class="h"><span class="n">1</span><b>活動組｜講師排程</b></div><p>建立講師候選池、拖曳排定優先序，敲定每週社課時間。</p></a>
+      <a class="step" href="ITRC管理組-任務看板.html"><div class="h"><span class="n">2</span><b>管理組｜任務追蹤</b></div><p>產生第 2–12 週社課，一鍵套用各組任務範本與截止日。</p></a>
+      <a class="step" href="ITRC圖文小幫手.html"><div class="h"><span class="n">3</span><b>行銷組｜社群圖文</b></div><p>依社課資訊生成預告貼文、限時動態與宣傳文案。</p></a>
+      <a class="step" href="ITRC公關拉贊助小幫手.html"><div class="h"><span class="n">4</span><b>公關組｜企業贊助</b></div><p>尋找廠商、產生洽談信件、追蹤進度並於現場置入品牌。</p></a>
+      <a class="step" href="ITRC證書產生器.html"><div class="h"><span class="n">5</span><b>結案｜證書製發</b></div><p>學期末批次製作社員、幹部證明與感謝狀。</p></a>
+    </div>
+  </div>
+
+  <div class="grid">
+    <!-- ① 社課籌備核心工具（依籌備流程：活動→管理→行銷→公關） -->
+    <a class="tool" style="--g:#2f8f93" href="ITRC活動組-講師池排程.html">
+      <div class="top"><span class="ic"><svg class="svgic"><use href="#i-mic"></use></svg></span><div><h3>講師池與排程</h3><span class="tag">活動組</span></div></div>
+      <p>講師候選排序、可行時段標註，敲定每週社課並輸出講者名單。</p>
+      <div class="who"><span><b>活動組</b>　依官網名單</span><span class="go">開啟<svg class="svgic"><use href="#i-arrow"></use></svg></span></div>
+    </a>
+
+    <a class="tool" style="--g:#356aa5" href="ITRC管理組-任務看板.html">
+      <div class="top"><span class="ic"><svg class="svgic"><use href="#i-board"></use></svg></span><div><h3>任務看板</h3><span class="tag">管理組</span></div></div>
+      <p>社課作戰表與看板雙視圖，雲端即時同步，全社共用單一進度表。</p>
+      <div class="who"><span><b>管理組</b>　依官網名單</span><span class="go">開啟<svg class="svgic"><use href="#i-arrow"></use></svg></span></div>
+    </a>
+
+    <a class="tool" style="--g:#a44f74" href="ITRC圖文小幫手.html">
+      <div class="top"><span class="ic"><svg class="svgic"><use href="#i-palette"></use></svg></span><div><h3>圖文小幫手</h3><span class="tag">行銷組</span></div></div>
+      <p>貼文文案生成、發文排程與作業流程，社課宣傳一次成稿。</p>
+      <div class="who"><span><b>行銷組</b>　依官網名單</span><span class="go">開啟<svg class="svgic"><use href="#i-arrow"></use></svg></span></div>
+    </a>
+
+    <a class="tool" style="--g:#4a8f6e" href="ITRC公關拉贊助小幫手.html">
+      <div class="top"><span class="ic"><svg class="svgic"><use href="#i-store"></use></svg></span><div><h3>贊助作戰中心</h3><span class="tag">公關組</span></div></div>
+      <p>廠商名單、洽談信件、進度管理與結案成效報告，一站完成。</p>
+      <div class="who"><span><b>公關組</b>　依官網名單</span><span class="go">開啟<svg class="svgic"><use href="#i-arrow"></use></svg></span></div>
+    </a>
+
+    <!-- ② 財務 -->
+    <a class="tool" style="--g:#c39a3c" href="ITRC財務站.html">
+      <div class="top"><span class="ic"><svg class="svgic"><use href="#i-chart"></use></svg></span><div><h3>財務站</h3><span class="tag">財務 · 已上線（需登入）</span></div></div>
+      <p>核銷申請 →（正副社長）簽核 → 財務長一鍵入帳，整合期初歷史收支。所有登入幹部都看得到收支表。</p>
+      <div class="who"><span><b>登入即可看收支表</b>　財務長記帳 · 正副社長簽核</span><span class="go">開啟<svg class="svgic"><use href="#i-arrow"></use></svg></span></div>
+    </a>
+
+    <!-- ③ 資訊組 · 對外網站與維運（後台→官網→維護手冊） -->
+    <a class="tool" style="--g:#3f74b0" href="https://nsysu-itrc.vercel.app/admin" target="_blank" rel="noopener">
+      <div class="top"><span class="ic"><svg class="svgic"><use href="#i-edit"></use></svg></span><div><h3>資訊組後台</h3><span class="tag">資訊組</span></div></div>
+      <p>官網內容管理後台：由資訊組登入，更新課程介紹、活動成果與報名資料。</p>
+      <div class="who"><span><b>資訊組</b>　登入維護內容</span><span class="go">進入後台<svg class="svgic"><use href="#i-arrow"></use></svg></span></div>
+    </a>
+
+    <a class="tool" style="--g:#4a86b8" href="https://nsysu-itrc.vercel.app" target="_blank" rel="noopener">
+      <div class="top"><span class="ic"><svg class="svgic"><use href="#i-external"></use></svg></span><div><h3>社團官方網站</h3><span class="tag">資訊組</span></div></div>
+      <p>招生與品牌形象官網：課程介紹、活動成果、報名資訊，對外公開的社團門面。</p>
+      <div class="who"><span><b>資訊組</b>　對外招生官網</span><span class="go">前往官網<svg class="svgic"><use href="#i-arrow"></use></svg></span></div>
+    </a>
+
+    <a class="tool" style="--g:#5a5fa8" href="ITRC資訊組維護手冊.html">
+      <div class="top"><span class="ic"><svg class="svgic"><use href="#i-file"></use></svg></span><div><h3>資訊組維護手冊</h3><span class="tag">資訊組 · 需登入</span></div></div>
+      <p>網站前端／後端、幹部工具站、快閃投資競賽的部署與維運總表：平台、網址、更新方式、環境變數名稱、排錯與帳號交接。限資訊組與社長／顧問登入查看。</p>
+      <div class="who"><span><b>資訊組</b>　維運交接總表</span><span class="go">開啟<svg class="svgic"><use href="#i-arrow"></use></svg></span></div>
+    </a>
+
+    <!-- ④ 幹部權限 · 證書 · 使用說明 -->
+    <a class="tool" style="--g:#b3623a" href="ITRC管理組-幹部與權限.html">
+      <div class="top"><span class="ic"><svg class="svgic"><use href="#i-user"></use></svg></span><div><h3>幹部與權限</h3><span class="tag">管理 · 需登入</span></div></div>
+      <p>編輯幹部名單、指派角色與權限、換屆封存名單。改完即時存雲端、無需重新部署。限社長／顧問登入編輯。</p>
+      <div class="who"><span><b>社長／顧問</b>　設定誰能登入與權限</span><span class="go">開啟<svg class="svgic"><use href="#i-arrow"></use></svg></span></div>
+    </a>
+
+    <a class="tool" style="--g:#bd8a3a" href="ITRC證書產生器.html">
+      <div class="top"><span class="ic"><svg class="svgic"><use href="#i-certificate"></use></svg></span><div><h3>證書與獎狀</h3><span class="tag">共用</span></div></div>
+      <p>匯入名單即批次製作社員／幹部證明、深研證書與感謝狀，可直接列印 PDF。</p>
+      <div class="who"><span><b>共用</b>　多由資訊組於結案時寄發</span><span class="go">開啟<svg class="svgic"><use href="#i-arrow"></use></svg></span></div>
+    </a>
+
+    <a class="tool" style="--g:#7a6a9c" href="使用說明.html">
+      <div class="top"><span class="ic"><svg class="svgic"><use href="#i-help"></use></svg></span><div><h3>使用說明書</h3><span class="tag">新手必看</span></div></div>
+      <p>整站操作手冊：角色權限、登入、核銷完整流程、換屆交接。看不懂可一鍵「複製全文給 AI」問怎麼操作。</p>
+      <div class="who"><span><b>全體幹部</b>　可整份貼給 AI 問操作</span><span class="go">開啟<svg class="svgic"><use href="#i-arrow"></use></svg></span></div>
+    </a>
+  </div>
+</div>
+
+<footer>
+  雲端即時同步、全社共用：管理組看板、活動組講師池與排程、公關組 Pipeline／候選庫／歷年贊助紀錄、證書產生器的疊字座標與背景模板。<br>
+  僅存各自瀏覽器本機（<code>localStorage</code>）：圖文小幫手的 SOP 勾選、公關組寄件人資料等個人偏好。更換電腦或清除快取前，本機資料請先用工具內的「匯出」備份。
+</footer>
+
+<div class="helpdock" id="helpdock">
+  <div class="help-panel" id="helpPanel" role="dialog" aria-label="新手教學">
+    <div class="hp-head">
+      <span class="hp-title"><svg class="svgic"><use href="#i-help"></use></svg>新手教學</span>
+      <button class="hp-x" id="helpClose" type="button" aria-label="關閉"><svg class="svgic"><use href="#i-x"></use></svg></button>
+    </div>
+    <div class="hp-body">
+      <p>歡迎接手 ITRC 幹部工具站，照下面順序走就會用：</p>
+      <div class="hp-step"><span class="n">1</span><div><b>講師排程</b>　活動組先在 <a href="ITRC活動組-講師池排程.html">講師池與排程</a> 敲定每週社課時間。</div></div>
+      <div class="hp-step"><span class="n">2</span><div><b>任務看板</b>　<a href="ITRC管理組-任務看板.html">任務看板</a> 一鍵產生第 2–12 週社課與各組任務、截止日。</div></div>
+      <div class="hp-step"><span class="n">3</span><div><b>社群圖文</b>　行銷組用 <a href="ITRC圖文小幫手.html">圖文小幫手</a> 生成貼文、限動與發文排程。</div></div>
+      <div class="hp-step"><span class="n">4</span><div><b>企業贊助</b>　公關組用 <a href="ITRC公關拉贊助小幫手.html">贊助作戰中心</a> 找廠商、發洽談信、追進度。</div></div>
+      <div class="hp-step"><span class="n">5</span><div><b>結案製證</b>　學期末用 <a href="ITRC證書產生器.html">證書與獎狀</a> 批次製發 PDF。</div></div>
+      <div class="hp-note"><b>使用說明：</b><a href="使用說明.html">完整說明書</a>，看不懂可複製全文丟給 AI 問操作。<br><b>財務：</b><a href="ITRC財務站.html">財務站</a> 管核銷與收支表（已上線，需登入）。<br><b>換屆交接：</b>到 <a href="ITRC管理組-幹部與權限.html">幹部與權限 → 換屆交接</a>，只換人、不動資料。<br><b>資料：</b>多數雲端即時同步、全社共用；個人勾選存各自瀏覽器。</div>
+    </div>
+  </div>
+  <button class="help-fab" id="helpFab" type="button" aria-label="開關新手教學" aria-expanded="false">
+    <svg class="svgic ic-q"><use href="#i-help"></use></svg>
+    <svg class="svgic ic-close"><use href="#i-x"></use></svg>
+    <span class="fab-label">新手教學</span>
+  </button>
+</div>
+
+<script>
+(function(){
+  var dock=document.getElementById('helpdock'); if(!dock) return;
+  var fab=document.getElementById('helpFab'), panel=document.getElementById('helpPanel'), KEY='itrc_help_open', stored=null;
+  try{stored=localStorage.getItem(KEY);}catch(e){}
+  var open = stored===null ? (window.innerWidth > 560) : stored==='1';   // 首訪自動展開介紹；手機首訪維持收合（避免固定面板蓋住工具卡），之後記住選擇
+  function apply(){
+    dock.classList.toggle('open',open);
+    fab.setAttribute('aria-expanded',open?'true':'false');
+    panel.setAttribute('aria-hidden',open?'false':'true');
+  }
+  function set(v){ open=v; apply(); try{localStorage.setItem(KEY,v?'1':'0');}catch(e){} }
+  apply();
+  fab.addEventListener('click',function(e){ e.stopPropagation(); set(!open); (open?document.getElementById('helpClose'):fab).focus(); });
+  document.getElementById('helpClose').addEventListener('click',function(){ set(false); fab.focus(); });
+  document.addEventListener('keydown',function(e){ if((e.key==='Escape'||e.key==='Esc')&&open){ set(false); fab.focus(); } });
+  document.addEventListener('click',function(e){ if(open && !dock.contains(e.target)) set(false); });
+})();
+</script>
+</body>
+</html>

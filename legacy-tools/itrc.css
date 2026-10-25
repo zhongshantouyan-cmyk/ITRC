@@ -1,0 +1,135 @@
+/* ITRC 幹部工具站 — 共用設計系統 (navy/gold)
+   色值對比皆已用 WCAG 算過：body ≥4.5、按鈕文字 ≥3。改色前請重算。 */
+
+:root{
+  /* brand */
+  --navy:#0f1f3d; --navy-2:#16294d; --navy-3:#1c3360;
+  --gold:#c9a14a; --gold-2:#e3c270; --gold-ink:#8a6a22; /* gold-ink = 金色「文字」用，壓白底達 5:1 */
+  /* text */
+  --ink:#16203a; --ink-2:#475067; --muted:#5b6678;
+  /* surfaces */
+  --bg:#eef1f7; --bg-2:#f5f7fb; --card:#fff;
+  --line:#e2e7f0; --line-2:#eef1f6;
+  /* status */
+  --ok:#2f9e6f; --ok-bg:#e7f5ee; --warn:#b9821a; --warn-bg:#fbf2dd;
+  --bad:#c4453f; --bad-bg:#fbe9e8; --info:#3a6ea5; --info-bg:#e9f1fa;
+  /* shape & depth */
+  --r-sm:8px; --r:12px; --r-lg:16px; --pill:999px;
+  --sh-1:0 1px 2px rgba(15,31,61,.05),0 1px 3px rgba(15,31,61,.07);
+  --sh-2:0 4px 14px rgba(15,31,61,.10);
+  --sh-3:0 12px 30px rgba(15,31,61,.15);
+  --ring:0 0 0 3px rgba(201,161,74,.50);
+  --ease:.16s cubic-bezier(.4,0,.2,1);
+  --maxw:1040px;
+}
+
+/* ---------- base ---------- */
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:"Segoe UI Variable Text","Segoe UI","Microsoft JhengHei","PingFang TC",system-ui,sans-serif;
+  font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+a{color:inherit;text-decoration:none}
+b,strong{font-weight:700}
+.svgic{display:inline-block;width:1.15em;height:1.15em;vertical-align:-.18em;flex:none;
+  stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+:focus-visible{outline:none;box-shadow:var(--ring);border-radius:var(--r-sm)}
+::selection{background:rgba(201,161,74,.30)}
+html{scroll-behavior:smooth}
+/* 原生控制項統一吃品牌金（核取方塊／單選／滑桿／進度） */
+:root{accent-color:var(--gold)}
+input,textarea{caret-color:var(--gold)}
+input[type=number]{font-variant-numeric:tabular-nums}
+/* 細緻捲軸，配合 navy 主題 */
+*{scrollbar-width:thin;scrollbar-color:#c2cbdc transparent}
+::-webkit-scrollbar{width:11px;height:11px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#c2cbdc;border:3px solid transparent;background-clip:padding-box;border-radius:99px}
+::-webkit-scrollbar-thumb:hover{background:#9aa6c0;border:3px solid transparent;background-clip:padding-box}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
+
+/* ---------- 共用頂部品牌列 (header) ---------- */
+header.itrc{background:linear-gradient(135deg,var(--navy),var(--navy-2) 60%,var(--navy-3));
+  color:#fff;padding:26px 22px 24px;text-align:center;position:relative;overflow:hidden}
+header.itrc::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;
+  background:linear-gradient(90deg,transparent,var(--gold),var(--gold-2),var(--gold),transparent)}
+header.itrc .logo{width:54px;height:54px;margin:0 auto 11px;border:2px solid var(--gold);
+  border-radius:13px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  color:var(--gold-2);font-weight:800;font-size:15px;line-height:1.05;box-shadow:0 2px 10px rgba(0,0,0,.25)}
+header.itrc .logo small{font-size:8px;font-weight:600;letter-spacing:1.5px}
+header.itrc h1{margin:0;font-size:23px;letter-spacing:.5px;font-weight:800}
+header.itrc .sub{color:#b3c0d8;font-size:13.5px;margin-top:6px}
+header.itrc .ig{display:inline-block;margin-top:13px;color:var(--gold-2);font-size:13px;
+  border:1px solid #33456b;padding:5px 13px;border-radius:var(--pill);transition:var(--ease)}
+header.itrc .ig:hover{background:rgba(255,255,255,.08);border-color:var(--gold);color:#fff}
+/* 工具內頁用的精簡工作列標題 (左對齊、可放右側狀態) */
+header.apphead{background:linear-gradient(135deg,var(--navy),var(--navy-2) 70%,var(--navy-3));
+  color:#fff;padding:13px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;position:relative}
+header.apphead::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;
+  background:linear-gradient(90deg,var(--gold),var(--gold-2),transparent)}
+header.apphead h1{margin:0;font-size:18px;font-weight:800;letter-spacing:.3px;
+  display:flex;align-items:center;gap:9px}
+header.apphead h1 .svgic{width:20px;height:20px;color:var(--gold-2)}
+header.apphead .sub{color:#aebbd6;font-size:13px}
+header.apphead .right{margin-left:auto;display:flex;align-items:center;gap:10px}
+
+/* ---------- 共用導覽列 (itrc.js 注入) ---------- */
+.sitebar{background:#0a1428;color:#cdd6e8;font-weight:600;font-size:13px;
+  display:flex;align-items:center;gap:4px;padding:0 14px;min-height:40px;flex-wrap:wrap}
+.sitebar a{color:#cdd6e8;padding:6px 10px;border-radius:var(--r-sm);transition:var(--ease)}
+.sitebar a:hover{background:#1c2c4d;color:#fff}
+.sitebar .home{display:inline-flex;align-items:center;gap:5px;color:var(--gold);font-weight:700;margin-right:4px;border:1px solid rgba(201,161,74,.5);background:rgba(201,161,74,.14);border-radius:var(--r-sm)}
+.sitebar .home:hover{color:#0a1428;background:var(--gold)}
+.sitebar .home .svgic{width:14px;height:14px}
+.sitebar .bar{color:#33446b;padding:0 2px}
+.sitebar .cur{color:#0a1428;background:var(--gold);font-weight:700;padding:6px 10px;border-radius:var(--r-sm)}
+
+/* ---------- 容器與標題 ---------- */
+.container{max-width:var(--maxw);margin:0 auto;padding:24px 18px 56px}
+
+/* ---------- 表單控制項 ---------- */
+label{display:block;font-size:12.5px;font-weight:700;color:var(--ink-2);margin:0 0 5px}
+input,select,textarea,button{font-family:inherit;font-size:14px}
+input[type=text],input[type=number],input[type=date],input[type=email],input[type=search],
+input:not([type]),select,textarea{
+  padding:9px 11px;border:1px solid var(--line);border-radius:var(--r-sm);
+  background:#fff;color:var(--ink);transition:border-color var(--ease),box-shadow var(--ease)}
+input:hover:not(:disabled),select:hover:not(:disabled),textarea:hover:not(:disabled){border-color:#c7d0e0}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--gold);box-shadow:var(--ring)}
+textarea{resize:vertical;line-height:1.6}
+::placeholder{color:#9aa5b8}
+
+/* ---------- 按鈕 ---------- */
+.btn,button.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  font-size:13.5px;font-weight:700;line-height:1;cursor:pointer;border:1px solid transparent;
+  border-radius:var(--r-sm);padding:10px 15px;min-height:38px;transition:var(--ease);
+  background:var(--navy);color:#fff;white-space:nowrap}
+.btn:hover{background:var(--navy-3);box-shadow:var(--sh-2);transform:translateY(-1px)}
+.btn:active{transform:translateY(1px);box-shadow:var(--sh-1)}
+.btn.gold{background:var(--gold);color:var(--navy)}      /* 金底配深藍字 (6.76:1) */
+.btn.gold:hover{background:var(--gold-2)}
+.btn.ghost{background:#fff;color:var(--navy);border-color:var(--line)}
+.btn.ghost:hover{background:var(--bg-2);border-color:#c7d0e0}
+.btn.sm{padding:6px 11px;min-height:32px;font-size:12.5px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+
+/* ---------- 區塊 (用 .surface 以避開各工具自有的 .card / .panel) ---------- */
+.surface{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);
+  padding:18px;box-shadow:var(--sh-1)}
+
+/* ---------- 標籤 / 徽章 / 提示 ---------- */
+.tag{display:inline-block;font-size:11px;font-weight:700;color:#fff;background:var(--navy-2);
+  padding:2px 9px;border-radius:var(--pill);line-height:1.7}
+.badge{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:var(--pill);line-height:1.7}
+.badge.ok{color:var(--ok);background:var(--ok-bg)} .badge.warn{color:var(--warn);background:var(--warn-bg)}
+.badge.bad{color:var(--bad);background:var(--bad-bg)} .badge.info{color:var(--info);background:var(--info-bg)}
+.hint{font-size:12.5px;color:var(--muted);line-height:1.6}
+
+/* ---------- toast (共用) ---------- */
+.itrc-toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(10px);
+  background:var(--navy);color:#fff;padding:11px 18px;border-radius:var(--pill);font-size:13.5px;
+  font-weight:600;box-shadow:var(--sh-3);opacity:0;pointer-events:none;transition:var(--ease);z-index:9999}
+.itrc-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ---------- 觸控目標 ≥44px ---------- */
+@media (pointer:coarse){.btn,button.btn{min-height:44px}.sitebar a,.sitebar .cur{padding:9px 11px}}

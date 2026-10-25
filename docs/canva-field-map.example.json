@@ -1,0 +1,16 @@
+{
+  "PAGE_1_HEADING": {"type":"text","path":"post.slides.0.heading","maxLength":8},
+  "PAGE_1_BODY": {"type":"text","path":"post.slides.0.body","maxLength":42},
+  "PAGE_2_HEADING": {"type":"text","path":"post.slides.1.heading","maxLength":8},
+  "PAGE_2_BODY": {"type":"text","path":"post.slides.1.body","maxLength":84},
+  "PAGE_3_HEADING": {"type":"text","path":"post.slides.2.heading","maxLength":8},
+  "PAGE_3_BODY": {"type":"text","path":"post.slides.2.body","maxLength":84},
+  "TITLE": {"type":"text","path":"event.title","maxLength":22},
+  "DATE": {"type":"text","path":"event.date","maxLength":16},
+  "TIME": {"type":"text","path":"event.time","maxLength":30},
+  "VENUE": {"type":"text","path":"event.venue","maxLength":18},
+  "SPEAKER": {"type":"text","path":"event.speaker","maxLength":16},
+  "CTA": {"type":"text","path":"post.cta","maxLength":18},
+  "AUDIENCE": {"type":"text","path":"post.audience","maxLength":20},
+  "FEE": {"type":"text","path":"event.fee","maxLength":12}
+}
