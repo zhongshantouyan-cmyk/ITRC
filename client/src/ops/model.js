@@ -76,3 +76,37 @@ export function parseImportText(input, kind = 'events') {
   if (records.length > 200) throw new Error('每次最多匯入 200 筆，請分批處理。');
   return { events: kind === 'events' ? records : [], posts: kind === 'posts' ? records : [], tasks: kind === 'tasks' ? records : [] };
 }
+
+// Explicit export allowlist: never serialize the full state or integration configuration.
+export function exportPostsCsv({ posts = [], events = [] }) {
+  const slideCount = Math.min(10, Math.max(3, ...posts.map(post => post.slides?.length || 0)));
+  const columns = [
+    ['宣傳ID', post => post.id], ['活動ID', post => post.eventId], ['專案ID', post => post.projectId],
+    ['活動標題', (_post, event) => event.title], ['活動日期', (_post, event) => event.date],
+    ['宣傳名稱', post => post.title], ['宣傳目的', post => post.purpose], ['宣傳對象', post => post.audience],
+    ['宣傳重點', post => post.highlights], ['希望採取行動', post => post.cta], ['發布管道', post => post.channel],
+    ['預計發布時間', post => post.scheduledAt], ['文案', post => post.caption],
+    ...Array.from({ length: slideCount }, (_, i) => [
+      [`輪播${i + 1}標題`, post => post.slides?.[i]?.heading], [`輪播${i + 1}內文`, post => post.slides?.[i]?.body],
+    ]).flat(),
+    ['流程階段', post => STAGES[post.stage]?.[0] || post.stage], ['流程代碼', post => post.stage],
+    ['資料版本', post => post.version], ['文案版本', post => post.copyVersion], ['核准版本', post => post.approvedVersion],
+    ['核准人', post => post.approvedBy], ['核准時間', post => post.approvedAt], ['設計文案版本', post => post.designCopyVersion],
+    ['Canva編輯連結', post => post.canvaEditUrl], ['發布連結', post => post.publishedUrl], ['發布時間', post => post.publishedAt],
+    ['負責人信箱', post => post.ownerEmail], ['來源網址', post => post.sourceUrl], ['來源檔名', post => post.sourceLabel],
+    ['來源日期', post => post.sourceDate], ['來源版本', post => post.sourceRevision], ['來源鍵', post => post.sourceKey],
+    ['活動來源網址', (_post, event) => event.sourceUrl], ['活動來源檔名', (_post, event) => event.sourceLabel],
+    ['活動來源版本', (_post, event) => event.sourceRevision], ['活動資料版本', post => post.sourceEventVersion],
+  ];
+  const cell = value => {
+    let text = value == null ? '' : String(value);
+    // Quoting alone does not stop spreadsheet formulas. Prefix text that could be interpreted as one.
+    if (/^[\s\uFEFF]*[=+\-@]/u.test(text) || /^[\t\r\n]/u.test(text)) text = `'${text}`;
+    return `"${text.replaceAll('"', '""')}"`;
+  };
+  const eventMap = new Map(events.map(event => [event.id, event]));
+  return '\uFEFF' + [columns.map(([label]) => cell(label)).join(','), ...posts.map(post => {
+    const event = eventMap.get(post.eventId) || {};
+    return columns.map(([, read]) => cell(read(post, event))).join(',');
+  })].join('\r\n') + '\r\n';
+}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import api from '../api';
-import { ACTION_LABELS, CHANNELS, EVENT_STATES, JOB_STATES, STAGES, TABS, TASK_STATES, canOwn, dateText, isAdviser, nextStep, parseImportText, safeLink } from '../ops/model';
+import { ACTION_LABELS, CHANNELS, EVENT_STATES, JOB_STATES, STAGES, TABS, TASK_STATES, canOwn, dateText, exportPostsCsv, isAdviser, nextStep, parseImportText, safeLink } from '../ops/model';
 import { changeDemoActor, DEMO_ACTORS, loadDemo, performDemoAction, resetDemo } from '../ops/demo';
 import './ops.css';
 
@@ -215,8 +215,14 @@ function Posts({ data, selectedId, setSelectedId, busy, openForm, run, openActio
   const list = data.posts.filter(post => (filter === 'all' || post.stage === filter) && `${post.title} ${post.caption || ''}`.toLowerCase().includes(query.toLowerCase()));
   const selected = list.find(p => p.id === selectedId) || list[0];
   const batchCount = Math.min(20, data.posts.filter(post => post.stage === 'brief' && !post.caption && canOwn(data.actor, post, data.projects)).length);
+  const exportPosts = () => {
+    const url = URL.createObjectURL(new Blob([exportPostsCsv(data)], { type: 'text/csv;charset=utf-8;' }));
+    const link = document.createElement('a'); link.href = url;
+    link.download = `ITRC_宣傳總表_${data.settings.mode === 'demo' ? '示範資料_' : ''}${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
   return <>
-    <div className="ops-section-heading"><div><h2>宣傳製作</h2><p className="ops-muted">一次一個版本，從需求一路交到發布紀錄。</p></div><button className="ops-button primary" disabled={busy || !data.events.length} onClick={() => openForm('post')}>＋ 新增宣傳</button></div>
+    <div className="ops-section-heading"><div><h2>宣傳製作</h2><p className="ops-muted">一次一個版本，從需求一路交到發布紀錄。</p></div><div className="ops-button-row"><button className="ops-button quiet" disabled={!data.posts.length} onClick={exportPosts}>匯出宣傳總表</button><button className="ops-button primary" disabled={busy || !data.events.length} onClick={() => openForm('post')}>＋ 新增宣傳</button></div></div>
     {!data.events.length && <p className="ops-note">先到「活動與專案」新增活動，才能建立宣傳需求。</p>}
     {batchCount > 0 && <div className="ops-batch-panel"><div><strong>把待製作需求一次整理成草稿</strong><p>這次最多 {batchCount} 則；{data.settings.mode === 'demo' ? '使用示範規則草稿' : data.settings.integrations?.drafting?.configured ? '使用已設定的 AI 服務' : '使用規則草稿'}。產生後仍逐則送審，已有文案的版本會保留。</p></div><button className="ops-button quiet" disabled={busy} onClick={batchGenerate}>批次產生待製作文案（{batchCount}）</button></div>}
     {batchProgress && <div className="ops-batch-progress" role="status"><strong>{batchProgress.running ? '正在逐則產生草稿' : '這一批已處理'} · {batchProgress.done} / {batchProgress.total}</strong><p>完成 {batchProgress.done - batchProgress.failures.length} 則；需要處理 {batchProgress.failures.length} 則。</p>{batchProgress.failures.length > 0 && <ul>{batchProgress.failures.map((item, index) => <li key={index}>{item.title}：{item.message}</li>)}</ul>}</div>}

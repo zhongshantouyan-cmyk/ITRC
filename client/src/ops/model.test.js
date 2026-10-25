@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseImportText, canOwn } from './model.js';
+import { parseImportText, canOwn, exportPostsCsv } from './model.js';
 import { loadDemo, performDemoAction, changeDemoActor, DEMO_ACTORS } from './demo.js';
 
 test('spreadsheet import preserves quoted multiline copy and maps Chinese post headers', () => {
@@ -59,4 +59,28 @@ test('post CSV import deduplicates stable source keys and keeps every imported p
   assert.equal(state.posts.filter(item => item.sourceKey === 'post-2').length, 1);
   assert.equal(post.stage, 'brief');
   assert.equal(post.approvedVersion, undefined);
+});
+
+test('post export keeps multiline copy in one cell, includes stable provenance and escapes formulas without leaking configuration', () => {
+  const csv = exportPostsCsv({
+    settings: { secret: 'must-not-appear' },
+    events: [{ id: 'event-1', title: '活動,範例', date: '2026-11-30', sourceUrl: 'https://example.org/semester' }],
+    posts: [{ id: 'post-1', eventId: 'event-1', title: '=SUM(1,2)', caption: '第一行,"引號"\n第二行',
+      slides: [{ heading: '@FORMULA', body: '+123' }, { heading: '一般標題', body: ' -123' }, { heading: '第三頁', body: '內容' }, { heading: '第四頁仍保留', body: '額外內容' }],
+      stage: 'draft', copyVersion: 3, sourceKey: 'stable-post-1', sourceLabel: 'semester.csv', secret: 'must-not-appear' }],
+  });
+  assert.equal(csv.charCodeAt(0), 0xfeff);
+  assert.match(csv, /"第一行,""引號""\n第二行"/);
+  assert.equal(csv.includes('must-not-appear'), false);
+  const result = parseImportText(csv, 'posts').posts;
+  assert.equal(result.length, 1);
+  assert.equal(result[0].caption, '第一行,"引號"\n第二行');
+  assert.equal(result[0].title, "'=SUM(1,2)");
+  assert.equal(result[0]['輪播1標題'], "'@FORMULA");
+  assert.equal(result[0]['輪播1內文'], "'+123");
+  assert.equal(result[0]['輪播2內文'], "' -123");
+  assert.equal(result[0]['輪播4標題'], '第四頁仍保留');
+  assert.equal(result[0]['宣傳ID'], 'post-1');
+  assert.equal(result[0].sourceKey, 'stable-post-1');
+  assert.equal(result[0]['活動標題'], '活動,範例');
 });
