@@ -148,14 +148,19 @@ test('published evidence remains immutable and fact changes create a correction 
 
 test('task dependency cycles, missing references and missing deliverables are rejected',async t => {
   const f = await fixture(t);
-  const first = (await f.command('task.create',{title:'前置任務'})).record;
-  const second = (await f.command('task.create',{title:'後續任務',dependsOn:[first.id]})).record;
+  const people = [{personId:'ITRC-P0001',name:'示範驗收人',email:outsider.email,status:'active'}];
+  const preview = (await f.command('people.import-preview',{people},null,admin)).record;
+  await f.command('people.import-apply',{people,previewToken:preview.previewToken},null,admin);
+  const first = (await f.command('task.create',{title:'前置任務',ownerEmail:owner.email,reviewerPersonId:'ITRC-P0001',acceptanceCriteria:'成果可開啟並包含完整內容'})).record;
+  const second = (await f.command('task.create',{title:'後續任務',ownerEmail:owner.email,dependsOn:[first.id]})).record;
   await assert.rejects(f.command('task.update',{dependsOn:[second.id]},first),{code:'DEPENDENCY_CYCLE'});
   await assert.rejects(f.command('task.update',{dependsOn:['missing']},first),{code:'DEPENDENCY_MISSING'});
   await assert.rejects(f.command('task.update',{status:'doing'},second),{code:'DEPENDENCY_BLOCKED'});
-  await assert.rejects(f.command('task.update',{status:'done'},first),{code:'DELIVERABLE_REQUIRED'});
+  await assert.rejects(f.command('task.update',{status:'done'},first),{code:'TASK_REVIEW_ACTION_REQUIRED'});
+  await assert.rejects(f.command('task.deliver',{},first),{code:'INVALID_URL'});
   await assert.rejects(f.command('task.update',{status:'blocked'},first),{code:'BLOCKER_REQUIRED'});
-  const done = (await f.command('task.update',{status:'done',deliverableUrl:'https://example.org/result'},first)).record;
+  const delivered = (await f.command('task.deliver',{deliverableUrl:'https://example.org/result'},first)).record;
+  const done = (await f.command('task.accept-delivery',{},delivered,outsider)).record;
   assert.equal(done.status,'done');
   const doing = (await f.command('task.update',{status:'doing'},second)).record; assert.equal(doing.status,'doing');
 });
@@ -198,6 +203,36 @@ test('records and audit survive a fresh database connection',async t => {
   t.after(() => db2.close());
   const reopened = createOpsService({db:db2,providers,env});
   const state = await reopened.bootstrap(owner); assert.equal(state.projects[0].id,created.id); assert.equal(state.audit.length,1);
+});
+
+test('people, accepted deliveries and complete source-linked copy history persist across reconnection',async t => {
+  const f = await fixture(t);
+  const people = [
+    {personId:'ITRC-P0001',name:'示範承辦人',email:owner.email,status:'active'},
+    {personId:'ITRC-P0002',name:'示範驗收人',email:outsider.email,status:'active'},
+  ];
+  const preview = (await f.command('people.import-preview',{people},null,admin)).record;
+  await f.command('people.import-apply',{people,previewToken:preview.previewToken},null,admin);
+  let task = (await f.command('task.create',{title:'持久化交件',ownerPersonId:'ITRC-P0001',reviewerPersonId:'ITRC-P0002',acceptanceCriteria:'完整交付證據'},null,admin)).record;
+  task = (await f.command('task.deliver',{deliverableUrl:'https://example.org/result'},task,owner)).record;
+  task = (await f.command('task.accept-delivery',{},task,outsider)).record;
+  let {post,event} = await approvedPost(f);
+  const approved = post.history.find(row => row.action === 'post.approve');
+  post = (await f.command('post.update',{caption:'需保留的新版本'},post,owner)).record;
+  const db2 = createClient({url:`file:${path.join(f.dir,'test.db')}`});
+  t.after(() => db2.close());
+  const reopened = createOpsService({db:db2,providers,env});
+  const state = await reopened.bootstrap(owner);
+  assert.equal(state.people.length,2);
+  assert.equal(state.tasks.find(row => row.id === task.id).reviewIdentityMode,'individual_account');
+  assert.equal(state.tasks.find(row => row.id === task.id).deliveryHistory.at(-1).deliverableUrl,'https://example.org/result');
+  const saved = state.posts.find(row => row.id === post.id);
+  assert.equal(saved.caption,'需保留的新版本');
+  assert.equal(saved.approvedVersion,undefined);
+  const savedApproval = saved.history.find(row => row.id === approved.id);
+  assert.equal(savedApproval.caption,'已核對的活動資訊');
+  assert.equal(savedApproval.sourceEventSnapshot.id,event.id);
+  assert.equal(savedApproval.approvedBy,approver.email);
 });
 
 test('manual design attachments cannot use lookalike domains or bypass final approval',async t => {

@@ -1,19 +1,21 @@
 # 社務工作台：啟用與維護手冊
 
-這一版把活動事實、學期宣傳需求、文案版本、人工審核、Canva 交件與跨組任務放進既有網站。先用展示頁確認操作，再設定正式工作區的登入、資料庫與外部連線。部署與真實服務是否可用，須以對應環境的驗收結果為準。
+這一版把活動事實、學期宣傳需求、文案版本、人工審核、Canva 交件與跨組任務放進既有網站。幹部姓名、職稱與當期名單依官網核對，內部 MAIL、固定幹部 ID 和歷史任務保留在私有來源及工作台。更新日期：2026-10-26（Asia/Taipei）。
+
+受保護 Preview 的 Google 登入、後端讀取、角色判斷及同網域 gateway 已完成實際連通驗證；本輪新增程式、正式部署及真實人員匯入仍需按各自的驗收結果判定。詳見 [ops-validation.md](ops-validation.md)。
 
 ## 1. 入口與已提供的功能
 
 | 入口／區塊 | 用途 |
 | --- | --- |
 | `/ops-demo` | 虛構資料的互動展示；資料只存在目前瀏覽器，可切換示範角色與重設；不呼叫正式後端、AI 或 Canva。 |
-| `/ops` | 幹部正式工作區；需要既有 Google／Firebase 登入與角色授權。 |
+| `/ops` | 連接真實後端的工作台；目前在受保護 Preview 驗收，需要既有 Google／Firebase 登入與角色授權。 |
 | 工作總覽、活動與專案 | 建立負責人、目標、活動資料及贊助要求，查看尚待確認或交付的工作。 |
 | 宣傳製作 | 一列需求對應一則宣傳；產生文案與輪播短文、單位確認、終審、設計與發布證據。 |
-| 我的任務 | 負責人、截止日、上層任務、前置依賴、卡關原因、成果網址及驗收標準。 |
+| 我的任務 | 固定幹部 ID 指派承辦人及驗收人、期限、上層／前置任務、交件、驗收、退回與交付證據。 |
 | 審核與紀錄、系統連線 | 查看審核歷程、自動工作結果、連線狀態與資料匯入。 |
 
-後端沿用既有 Express、Firebase 與 Turso／libSQL。工作台使用獨立的 `ops_*` 資料表；不會把流程草稿直接寫進官網的公開活動、社員或財務資料。Google Sheets 匯入保留來源，沒有自動寫回來源表的功能。更完整的 API 與資料欄位見 [ops-contract.md](ops-contract.md)。
+後端沿用既有 Express、Firebase 與 Turso／libSQL。工作台使用獨立的 `ops_*` 資料表保存流程草稿、版本、佇列與人員對照，不會把私有聯絡資料寫進官網公開的 `members` 表。既有 FileOS／指定主表仍是正式業務來源；工作台修改尚未自動回寫來源表，不可把匯入快照當成另一套正式主檔。共用更新佇列、來源版本檢查與核准回寫仍待完整接合。既有 API 與資料欄位見 [ops-contract.md](ops-contract.md)，本輪人員及交付操作補充見下文。
 
 ## 2. 日常流程
 
@@ -27,6 +29,22 @@
 
 修改文案、活動事實或實質贊助要求，會使相關未發布內容的先前核准失效。已發布記錄保留原始證據，另產生修正任務。系統不會自行同意文案、寄信給合作方或發布社群貼文。
 
+### 人員對照與任務交付
+
+「系統連線」的人員對照接受幹部主表的姓名、職稱、MAIL、LINE 名稱、組別、固定幹部 ID、任期及在任狀態。先預覽差異，再明確套用；預覽後來源或既有人員資料改變時，必須重新預覽。固定 ID 沿用 `ITRC-P0001` 格式，不能按職稱、姓名或新排序換發。沒有 MAIL 的人可以先保留空白；未列入當期官網的人保留歷史，不能據此推斷已離任。名單更新不會自動改變 Firebase 登入角色或終審權限。
+
+任務沒有實際承辦人時保持「待指派」。建立者只在仍未指派時保有整理權限；管理者改派後，原建立者不因建立紀錄而永久保有操作權。有幹部 ID 時以人員對照授權；不接受同時指向另一人的舊負責信箱。
+
+1. 指定承辦人、不同於承辦人的驗收人，填寫驗收標準。
+2. 承辦人附成果連結並「交件」，狀態變為待驗收。
+3. 指定驗收人通過或附原因退回。使用共用社團帳號代登錄時，社長／顧問須確認外部驗收並附證據，紀錄明確標為代登錄。
+4. 必要前置／子任務未驗收時不能完成交付；專案必要任務全部通過且有結案標準，才可結案。承辦人不能自行清除專案／上層關聯繞過結案要求。
+5. 修改待驗收任務需要重新交件；已驗收任務須附原因重新開啟。交付與驗收證據保留在 `deliveryHistory`。
+
+文案完整歷史保存在 `post.history`，含文案、各頁文字、來源活動快照、核准與設計關聯。回復歷史內容會建立新草稿，先前核准不會復活。新功能無法重建啟用前已遺失的版本。
+
+後端操作為 `people.import-preview`／`people.import-apply`（套用需相同 `previewToken`）、`task.deliver`、`task.accept-delivery`、`task.return-delivery`、`task.reopen`、`post.restore-version`。交件、驗收及回復都沿用資料版本與操作識別檢查。
+
 ## 3. 整學期資料匯入
 
 在「系統連線」選擇活動、宣傳需求或任務，可下載 CSV 範本、上傳 CSV／TSV／JSON，或直接貼上含標題列的表格。Excel 請先另存為 UTF-8 CSV，或複製儲存格貼上；此版不直接解析 `.xlsx`。
@@ -37,7 +55,7 @@
 | --- | --- | --- |
 | 活動 | `title`；送審前另補齊 `date`、`speaker`、`venue` | 建議填固定 `sourceKey`，如 `course-001`。 |
 | 宣傳需求 | `title`、活動關聯；可另填 `purpose`、`audience`、`highlights`、`cta`、`channel`、`scheduledAt` | 使用既有 `eventId`，或以 `eventSourceKey` 對應活動的 `sourceKey`。每則宣傳有自己的 `sourceKey`。 |
-| 任務 | `title`；建議填 `ownerEmail`、`dueDate`、`acceptanceCriteria` | 可連結既有專案、活動或貼文。交付／完成時須附成果網址。 |
+| 任務 | `title`；建議填 `ownerPersonId`、`reviewerPersonId`、`dueDate`、`acceptanceCriteria` | 可連結既有專案、活動或貼文。空白承辦人保持待指派；交件與驗收分開。 |
 
 每列需保留 `sourceUrl` 或 `sourceLabel`；上傳本機檔案時，介面會保留原始檔名，不需要把私有檔案公開。可另填 `sourceDate`、`sourceRevision`。相同來源鍵再次匯入會略過，不會覆寫已修改或已核准的記錄。未填來源鍵時，系統依來源及內容計算識別；為避免改標題後被視為另一筆，建議一開始就訂固定鍵。
 
@@ -79,15 +97,15 @@
 | `OPS_BACKEND_ORIGIN`（前端伺服器） | gateway 固定的後端 origin，例如 `https://backend-preview.vercel.app`；只接受單一 HTTPS `*.vercel.app` origin，不含 `/api`、query、帳密或非預設連接埠。不可加 `VITE_` 前綴。 |
 | `VITE_API_URL`（既有前端 CMS） | 保留原既有值；使用工作台專用基址時，不需為工作台改動其他 CMS 的 API 位置。 |
 
-角色與核准權限由伺服器核對，不接受瀏覽器傳來的角色或核准旗標。工作台只接受已驗證 Firebase 身分；既有官網若仍接受舊密碼 JWT，也不能用它進入工作台 API。示範頁的角色切換不會取得正式權限。
+角色與核准權限由伺服器核對，不接受瀏覽器傳來的角色或核准旗標。工作台只接受已驗證 Firebase 身分；既有官網若仍接受舊密碼 JWT，也不能用它進入工作台 API。新程式在 `JWT_SECRET` 缺少或仍是公開範例值時停用 legacy JWT；`ALLOW_LEGACY_JWT=false` 可明確停用。示範頁的角色切換不會取得正式權限。
 
 ### 受保護 Preview 的同網域 gateway
 
-本輪 gateway 已部署並證實會呼叫固定後端，仍待授權與實際連通驗收：瀏覽器透過同網域 `/api/ops/*` 呼叫前端伺服器函式，再由函式呼叫固定後端。gateway 僅允許 `GET bootstrap`、`POST actions`、`GET connections/canva`、`POST connections/canva/start`；不代理 callback 或 cron，不跟隨上游重新導向，也不轉送 Cookie。
+既有 gateway 已部署，且已完成 Preview 的授權與實際讀取驗收：瀏覽器透過同網域 `/api/ops/*` 呼叫前端伺服器函式，再由函式呼叫固定後端。gateway 僅允許 `GET bootstrap`、`POST actions`、`GET connections/canva`、`POST connections/canva/start`；不代理 callback 或 cron，不跟隨上游重新導向，也不轉送 Cookie。
 
 函式使用 `@vercel/oidc@4.0.3` 的 `getVercelOidcToken()`，每次取得短期 OIDC 並放入 `x-vercel-trusted-oidc-idp-token`。前端專案的 Secure Backend Access with OIDC Federation 須開啟；後端 Trusted Sources 須允許相符的呼叫專案及環境。OIDC 處理部署保護，原本的 Firebase Bearer 仍交後端驗證身分與角色。參考 [Vercel Trusted Sources](https://vercel.com/docs/deployment-protection/methods-to-bypass-deployment-protection/trusted-sources)。
 
-截至 2026-10-25，後端仍是 Standard Protection／Require Log In 開啟、OPTIONS Allowlist 關閉、Trusted Sources 僅自身；`nsysu-itrc` Preview → `itrc` Preview 的規則僅準備，尚待使用者確認與提交。前端已完成 Firebase 授權網域及 Google 登入；跨網域呼叫出現 Network Error，改經 gateway 後則觀察到上游 401，仍未取得後端授權與資料。最新證據見 [ops-validation.md](ops-validation.md)。
+使用者已批准並完成 `nsysu-itrc` Preview → `itrc` Preview 的 Trusted Sources 規則；Standard Protection／Require Log In 仍開啟。Firebase 穩定 Preview 網域、Google 登入、後端讀取及角色能力已實際驗證。前端分支專用 `VITE_API_URL` 的暫時覆寫也已移除，既有 CMS 回到原設定；工作台使用獨立 `VITE_OPS_API_URL=/api` 與固定 `OPS_BACKEND_ORIGIN`。早期的 Network Error／上游 401 已被後續成功連通證據取代，不是目前尚待批准的事項。此 Preview 授權不涵蓋 Production，詳見 [ops-validation.md](ops-validation.md)。
 
 ## 5. Canva：連線與分層母版
 
@@ -197,7 +215,7 @@ Authorization: Bearer <OPS_CRON_SECRET>
 
 2026-10-25 實際 UI 顯示後端 Production Branch 為 `feat/vercel-serverless-migration`，本輪未變更。**合併 `main` 不等於後端正式部署**；正式發布前，須核對前後端各自的 Production Branch、部署提交及環境配對。
 
-首次啟動伺服器可能建立／遷移資料表；`OPS_WORKER_ENABLED=true` 也可能啟動工作處理。因此即使只呼叫 `/api/health`，也不能把整個程序啟動宣稱為完全零寫入。測試前確認資料庫及工作執行設定；本輪未匯入真實業務資料。
+首次啟動伺服器可能建立／遷移資料表；`OPS_WORKER_ENABLED=true` 也可能啟動工作處理。因此即使只呼叫 `/api/health`，也不能把整個程序啟動宣稱為完全零寫入。測試前確認資料庫及工作執行設定。本輪新版部署與真實 17 筆人員匯入尚須以部署後回讀確認，本文件不將準備工作記為完成。
 
 1. **先建立 Preview。** 前端與後端必須包含相容且已核對的程式版本，並確認各自部署分支。Preview 指向測試資料庫；正式環境才使用既有正式資料庫，避免測試記錄進入正式流程。
 2. **設定該環境的 API 與身分。** 使用 gateway 時，前端設 `VITE_OPS_API_URL=/api`，前端伺服器的 `OPS_BACKEND_ORIGIN` 指向對應後端 origin，保留其他 CMS 的 `VITE_API_URL`。核對所需的 Trusted Sources 環境規則；後端配置 Firebase 與 Turso。確認穩定 Preview 網域已列入 Firebase 授權網域，並分別驗收 Google 登入與後端角色。
@@ -211,14 +229,15 @@ Authorization: Bearer <OPS_CRON_SECRET>
 
 ## 9. 本機驗證與目前範圍
 
-在程式庫根目錄執行：
+使用 **Node.js 22.20.0**，在程式庫根目錄執行；CI 已固定同一版本。本環境的 Node 24 曾在 libSQL 原生模組崩潰，因此不以該 runtime 的崩潰判斷業務測試失敗。
 
 ```bash
 npm --prefix server ci --ignore-scripts --no-audit --no-fund
 npm --prefix server test
 npm --prefix client ci --ignore-scripts --no-audit --no-fund
-node --test client/src/ops/model.test.js
-node --test --test-isolation=none client/server/ops-proxy.test.mjs
+node --test --experimental-test-isolation=none client/src/ops/*.test.js
+node --test --experimental-test-isolation=none client/src/utils/courseInfo.test.js
+node --test --experimental-test-isolation=none client/server/ops-proxy.test.mjs
 npm --prefix client run build
 ```
 
@@ -226,4 +245,6 @@ npm --prefix client run build
 
 本機啟動可分別執行 `npm --prefix server start` 與 `npm --prefix client run dev`。只看 `/ops-demo` 時可單獨啟動前端；正式 `/ops` 仍需有效身分及後端設定。
 
-目前提供活動、宣傳、審核與跨組交付的共同流程；**社員名冊、會費／帳務、報帳核銷、收款及教育培訓系統尚未建置**。人像／活動照片需由人員選定並放入 Canva 資產或設計，這版不會自動尋人像、上傳照片或逐活動挑圖。Canva 文字與圖層仍需行銷校對；文案每一版仍需人工核准。既有官網與其他社務工具可繼續使用，後續整合以實際需求及資料權責另行擴充。
+目前提供活動、宣傳、審核與跨組交付的共同流程。**舊工具站已具備財務申請／審批／入帳、公關 CRM、講師排程、幹部權限與批次證書；Google 表單／試算表也已有社員、繳費與簽到來源，新工作台尚未完成這些工具的資料接合。** 後續以指定主來源及固定 ID 整合，不重建另一套財務或社員主檔。教育訓練內容由使用者自行處理。
+
+人像／活動照片仍需由人員選定並放入 Canva 資產或設計；這版不會自動尋人像、上傳照片或逐活動挑圖。Canva 文字與圖層仍需羽蓉及相關負責人校對，文案每一版仍需人工核准。CMS 快照已補資源表、欄位允許清單及交易式還原，但不包含整個工作台、RTDB、Cloudinary 圖片及外部 Drive／Canva；全系統備份與隔離還原仍須另行驗收。

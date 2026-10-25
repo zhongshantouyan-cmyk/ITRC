@@ -10,8 +10,8 @@ const db = require('./db');
 const _firebaseOk = require('./firebase').initFirebase();
 // 自鎖守衛：若舊 JWT 已關閉（cutover）但 Firebase 沒初始化成功，
 // 則此刻沒有任何可用的登入路徑 —— 大聲示警，避免無聲把後台鎖死。
-if (!_firebaseOk && String(process.env.ALLOW_LEGACY_JWT ?? '').trim().toLowerCase() === 'false') {
-    console.error('[FATAL] ALLOW_LEGACY_JWT=false 但 Firebase 未初始化 — 目前沒有任何登入路徑可用！請設定 FIREBASE_SERVICE_ACCOUNT 或暫時重新開啟舊 JWT。');
+if (!_firebaseOk && !require('./middleware/auth').legacyJwtEnabled) {
+    console.error('[FATAL] Firebase 未初始化，舊 JWT 亦未有有效設定或已停用 — 目前沒有可用的後台登入路徑。請檢查服務設定。');
 }
 
 const app = express();

@@ -209,6 +209,53 @@
 .ops-dependency { display:inline-block; padding:4px 7px; border:1px solid #e3e8df; border-radius:4px; color:#8c9b80; background:#f7f9f5; }
 .ops-dependency.done { color:#85a17c; border-color:#e1ebdc; background:#f5f9f2; }
 .ops-task-main>a { font-size:11px; }
+.ops-task-viewer { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:14px 16px; background:#f2f6f5; border:1px solid #dce6e2; border-radius:8px; }
+.ops-task-viewer>label { color:#59786a; font-size:12px; }
+.ops-task-viewer>select { max-width:100%; }
+.ops-task-viewer>span { flex:1; min-width:210px; font-size:11px; }
+.ops-required-task { display:inline-block; margin-left:10px; padding:2px 7px; border-radius:4px; color:#6e7c68; background:#edf3e8; font-size:10px; }
+.ops-reviewer-label { margin-left:18px; }
+.ops-task-side .ops-action { align-items:flex-end; text-align:right; }
+.ops-table-scroll { overflow-x:auto; max-width:100%; margin:16px 0; }
+.ops-root .ops-table-scroll table { width:100%; border-collapse:collapse; text-align:left; font-size:12px; }
+.ops-root .ops-table-scroll th { padding:10px 12px; font-weight:600; color:#5d776e; background:#f2f6f3; white-space:nowrap; border-bottom:1px solid #dfe7e0; }
+.ops-root .ops-table-scroll td { padding:13px 12px; border-bottom:1px solid #e8eeea; vertical-align:top; overflow-wrap:anywhere; }
+.ops-root .ops-table-scroll td small { display:block; font-size:10px; color:#79887e; margin-top:5px; }
+.ops-people-table { min-width:610px; }
+.ops-people-table td:first-child { min-width:125px; }
+.ops-people-table td:nth-child(3) { min-width:190px; }
+.ops-people-import { padding-top:15px; border-top:1px solid #e6ece8; }
+.ops-people-import>summary { color:#58796c; font-weight:600; font-size:12px; }
+.ops-people-import>.ops-button-row { margin-top:15px; }
+.ops-people-import>input { width:100%; max-width:440px; }
+.ops-person-diff { list-style:none; padding:0; margin:0; min-width:210px; }
+.ops-person-diff li { margin:0 0 6px; font-size:11px; }
+.ops-import-preview>.ops-checkbox { margin:15px 0; display:flex; gap:9px; align-items:flex-start; color:#526d58; font-size:12px; }
+.ops-history { border-top:1px solid #e4ece7; padding-top:18px; margin-top:18px; font-size:12px; }
+.ops-history>summary { color:#58786d; font-weight:600; }
+.ops-history-controls { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin:17px 0; }
+.ops-history-controls>select { max-width:100%; flex:1; min-width:180px; }
+.ops-history-comparison { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+.ops-history-comparison h4 { margin:0 0 10px; color:#637b70; font-size:12px; }
+.ops-history-comparison .ops-caption { padding:14px; font-size:11px; }
+.ops-history-slide { padding:12px; border:1px solid #e5ece6; background:#f7faf6; border-radius:6px; margin-top:8px; }
+.ops-history-slide strong { font-size:11px; color:#637b67; }
+.ops-history-slide p { font-size:11px; margin-top:6px; color:#7a8b7a; }
+.ops-history-meta { margin:0 0 12px; font-size:11px; }
+.ops-history-meta>div { margin:8px 0; }
+.ops-history-meta dt { color:#6b8075; font-size:10px; }
+.ops-history-meta dd { margin:3px 0 0; color:#596e61; white-space:pre-wrap; overflow-wrap:anywhere; }
+.ops-delivery-history { margin-top:16px; border-top:1px solid #e6ece6; padding-top:12px; font-size:11px; }
+.ops-delivery-history summary { color:#617c69; }
+.ops-delivery-history>div { padding:12px 0 2px; }
+.ops-delivery-history strong { font-size:11px; color:#617563; }
+.ops-delivery-history small { display:block; font-size:10px; color:#81917e; margin-top:4px; }
+.ops-delivery-history p { font-size:11px; margin-top:6px; color:#796f5f; }
+@media (max-width:700px) {
+  .ops-history-comparison { grid-template-columns:minmax(0,1fr); }
+  .ops-reviewer-label { margin-left:10px; }
+  .ops-task-side .ops-action { align-items:flex-start; text-align:left; }
+}
 .ops-timeline { margin:18px 0 0; padding:0; list-style:none; }
 .ops-timeline li { display:flex; gap:18px; padding:0 0 24px; position:relative; }
 .ops-timeline li:not(:last-child):before { content:""; position:absolute; left:4px; top:12px; bottom:0; width:1px; background:#e3e9e6; }

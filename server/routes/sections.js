@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { authMiddleware } = require('../middleware/auth');
+const { publicSection, validateSectionContent } = require('../public-content');
 
 const router = express.Router();
 
@@ -8,7 +9,7 @@ const router = express.Router();
 router.get('/', async (req, res) => {
     try {
         const result = await db.execute('SELECT * FROM sections ORDER BY id');
-        res.json(result.rows);
+        res.json(result.rows.map(publicSection));
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -23,7 +24,7 @@ router.get('/:key', async (req, res) => {
         });
         const section = result.rows[0];
         if (!section) return res.status(404).json({ error: '找不到此區塊' });
-        res.json(section);
+        res.json(publicSection(section));
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -31,7 +32,12 @@ router.get('/:key', async (req, res) => {
 
 // PUT /api/sections/:key — update section (admin)
 router.put('/:key', authMiddleware, async (req, res) => {
-    const { title, content } = req.body;
+    const { title } = req.body;
+    let content = req.body.content;
+    if (content != null) {
+        try { content = validateSectionContent(req.params.key, content); }
+        catch (error) { return res.status(400).json({ error: error.message }); }
+    }
     try {
         const existingResult = await db.execute({
             sql: 'SELECT * FROM sections WHERE key = ?',
@@ -55,7 +61,7 @@ router.put('/:key', authMiddleware, async (req, res) => {
             sql: 'SELECT * FROM sections WHERE key = ?',
             args: [req.params.key]
         });
-        res.json(sectionResult.rows[0]);
+        res.json(publicSection(sectionResult.rows[0]));
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: err.message });

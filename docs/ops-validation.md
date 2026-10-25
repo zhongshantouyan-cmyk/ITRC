@@ -1,69 +1,86 @@
 # 工作台驗收紀錄
 
-日期：2026-10-25（Asia/Taipei）。
+更新日期：2026-10-26（Asia/Taipei）。本文件分開記錄已確認的部署基礎、本輪程式驗證，以及仍待實際交付的項目。前輪可用的 Preview 不代表本輪新程式已部署；人員匯入也需以實際套用後回讀為準。
 
-## 已完成
+## 1. 本輪程式驗證
 
-| 項目 | 結果 |
+本輪使用 Node.js **22.20.0**，後端測試採獨立暫存 SQLite／libSQL、短暫 localhost HTTP 伺服器及模擬外部服務。前端與 gateway 測試不會發送真實 Canva、AI 或社群請求。
+
+| 測試範圍 | 最新結果 | 驗證內容 |
+| --- | --- | --- |
+| 後端全部測試 | **94／94 通過** | 身分、持久化、版本、交件驗收、來源匯入、OAuth、排程、公開資料、交易式快照還原及安全設定。 |
+| 前端工作台資料／流程 | **16／16 通過** | 人員對照、CSV 中文及空白標題、待指派、角色／父任務管理、交件、示範流程與匯出。 |
+| 前端公開課程資訊 | **2／2 通過** | 舊 API 回傳的內部欄位／回覆表不會顯示，報名連結必須是 Google Forms 填寫入口。 |
+| 同網域 gateway | **23／23 通過** | 路由、固定目標、OIDC、請求及回應大小、憑證／header 邊界、逾時與錯誤契約。 |
+| 合計 | **135 項通過** | 這是程式測試總數，不是正式系統完成百分比。 |
+
+本環境的預設 Node 24 在既有 libSQL 原生模組中發生 assertion crash；改用官方 Node 22.20.0，並核對官方 SHA-256 後，完整測試已通過。CI 已固定 Node 22.20.0。最新提交的 CI／前端建置及部署仍以 [PR #2](https://github.com/zhongshantouyan-cmyk/ITRC/pull/2) 的檢查結果為準。
+
+### 新增能力與驗收邊界
+
+| 項目 | 已驗證的程式行為 | 尚未以本機測試取代的工作 |
+| --- | --- | --- |
+| 私有人員對照 | 固定幹部 ID、預覽再套用、過期預覽拒絕、MAIL 保留、身份衝突拒絕、不自動變更登入角色。 | 真實 17 筆人員資料的部署後匯入與回讀，由本輪實作流程接續完成。 |
+| 待指派與改派權限 | 空白承辦人保持待指派；建立者只在未指派時保有整理權；改派後不能靠 createdBy 繼續更新、交件或重開。 | 幹部以實際帳號／共用帳號操作的跨裝置驗收。 |
+| 交件與獨立驗收 | 需要承辦人、不同驗收人、標準與成果連結；不可直接 done；代登錄須確認與證據，明確區分個人帳號和代登錄。 | 真實成果由指定驗收人確認，不能以測試中的虛構證據代替。 |
+| 結案與拆分任務 | 必要前置／子任務／專案任務未驗收即阻擋；一般承辦人不能移除專案／上層關係繞過結案。 | 實際專案的必要成果及驗收人需由管理者確認。 |
+| 完整文案歷史 | 保存文案、輪播、來源活動快照、核准／設計關聯；回復產生新草稿且舊核准失效；SQLite 重連後仍可讀取。 | 啟用前已遺失的舊版內容不能由此功能重建。 |
+| 公開資料防護 | 官網課程資訊採允許欄位及填寫網址；搜尋不回傳舊回覆表；公開幹部資料不因新增內部欄位而洩漏聯絡資料。 | 正式 CMS 原值與 Google 分享設定須另外修改、讀回確認。 |
+| CMS 快照 | 納入線上／線下資源表、欄位允許清單、行政角色限制及交易式還原；失敗會整筆回滾。 | 仍非全系統備份，不涵蓋 ops、RTDB、Cloudinary 檔案或外部 Drive／Canva；真實還原須在隔離環境測試。 |
+| Legacy JWT | 未設定或仍使用公開範例金鑰時不啟用；明確停用設定優先；工作台仍只接受 Firebase 身分。 | 新程式與實際部署設定須配對，不能把本機通過當成正式環境已更新。 |
+| RTDB 規則準備 | 規則產生器與相容性單元測試覆蓋根層拒絕、未知／未驗證帳號及既有管理／財務邊界。 | 規則發布、Firebase 端驗證與既有工具功能回歸另行確認；單元測試不是正式資料庫部署證據。 |
+| 測試資料庫檢查 | 新增連線身分指紋比較，不輸出金鑰或原始連線網址。 | 此檢查不會自動建立隔離資料庫；仍須核實實際資料庫歸屬及備份還原。 |
+
+## 2. 已完成的 Preview 連通與設定
+
+以下是上一輪已取得、並在全盤盤點時重新確認的環境證據。舊文件中「Trusted Sources 等待批准」「暫時 VITE_API_URL 尚未清理」的敘述已過期。
+
+| 項目 | 已確認狀態 |
 | --- | --- |
-| 後端自動測試 | 59 項通過，包含真實本機 libSQL 持久化與 HTTP 身分／排程驗證；外部供應服務使用模擬回應。 |
-| 前端資料處理測試 | 本輪重跑 6 項全部通過，包含 CSV 引號、換行、中文欄位、示範角色、去重及匯出公式防護。 |
-| 同網域 gateway 測試 | 23 項通過，包含路由／方法、原始及 rewrite URL、固定 origin、請求與回應大小、OIDC 來源、憑證回顯防護、重新導向阻擋、逾時不重試，以及區分工作台與平台的 401／403 錯誤；全部使用模擬上游，未發送外部請求。 |
-| 正式前端建置 | 本輪以 `VITE_OPS_API_URL=/api` 建置通過；工作台採用獨立載入，瀏覽器 assets 未見 OIDC／server-only env 字串。此結果不代表後端已連通。 |
-| 獨立交叉檢查 | 已修正已發布內容遭舊工作覆寫、專案贊助要求漏帶、跨負責人活動關聯及展示模式判斷問題。 |
-| GitHub 自動檢查 | gateway 提交 `ff8ffc19c5b71c32a2f15c47559504416d66186c` 的 Operations checks 通過。後續提交以 PR 最新檢查為準。 |
-| Vercel Preview | 前端 gateway 部署 `8f5itazNVR6GW3fwzfcVZm3An7Pv` 為 Ready，對應 `ff8ffc19`；部署完成不代表工作台 API 已連通。 |
-| Firebase 授權網域 | 使用者明確批准後，已新增前端穩定分支網域 `nsysu-itrc-git-feature-it-9eeefc-zhongshantouyan-4688s-projects.vercel.app`。 |
+| Firebase 授權網域 | 使用者已批准並加入穩定前端分支網域 `nsysu-itrc-git-feature-it-9eeefc-zhongshantouyan-4688s-projects.vercel.app`。 |
+| Google 登入及後端身分 | 實際 `/ops` 已成功使用 Google 帳號登入並讀取後端資料及角色；目前共用社團帳號顯示文案終審與設計能力。這不是僅憑前端登入按鈕推測。 |
+| Trusted Sources | 使用者已批准並完成 `nsysu-itrc` Preview → `itrc` Preview 信任規則；後端部署保護保持開啟。 |
+| 同網域 gateway | 實際工作台已經由 `/api/ops/*` 讀到相符後端。早期上游 401／Network Error 不能再描述成現行阻塞。 |
+| 工作台專用設定 | 前端分支使用 `VITE_OPS_API_URL=/api`，伺服器的 `OPS_BACKEND_ORIGIN` 指向既有對應後端 Preview。 |
+| 既有 CMS 設定清理 | 本輪早期加入的分支專用 `VITE_API_URL` 暫時覆寫已刪除；既有 CMS 回到原 All Environments 設定。沒有輪替其他共用設定。 |
+| 真實資料與外部服務 | 前輪實際工作區仍是空的，AI／Canva／Sheets 顯示等待設定。畫面「正式資料」僅表示連接真實後端，不表示正式 Production 上線。 |
+| 前後端部署分支 | 後端 Production Branch 曾實際確認為 `feat/vercel-serverless-migration`，前端為 `main`；合併 `main` 不等於後端正式上線。正式發布時仍須重新核對兩者提交。 |
 
-## 桌面瀏覽器展示流程
+既有成功讀取的工作台基礎版本為 `21a3261e0d950ed2f1301dc84fca3785f4edc5a2`。本輪人員、交件、歷史與安全改動需以新的部署提交驗收，不能沿用舊 SHA 的成功結果。
 
-使用者完成 Vercel 登入後，已在受保護 Preview 的 `/ops-demo` 驗證以下操作，對應提交為 `23a49b10aa8d5693229de52ce8e9fea242cf9163`。測試使用虛構資料與示範角色，資料只留在瀏覽器；未呼叫真實 AI、Canva 或社群發布服務，也未變更或繞過 Preview 保護設定。
+Preview 的授權範圍不包含 Production。gateway 只代理四條 JSON API，不代理 Canva callback 或 cron。OIDC 用於通過部署保護，Firebase Bearer 仍由後端驗證身分；OAuth 回跳、排程與外部服務仍需各自驗收。原理參考 [Vercel Trusted Sources](https://vercel.com/docs/deployment-protection/methods-to-bypass-deployment-protection/trusted-sources)。
 
-| 檢查 | 實際結果 |
-| --- | --- |
-| 文案草稿 | 產生規則草稿 v2，包含 3 頁輪播文字。 |
-| 單位確認與終審權限 | 活動角色送交並完成單位確認；終審按鈕保持停用，顯示「由指定終審帳號核准」。切換指定示範終審角色後，可核准 v2，建立 1 項設計工作。 |
-| 設計交件 | 切換示範設計角色，登錄測試用 Canva 網址，完成設計校對。 |
-| 贊助審稿與發布證據 | 贊助要求在明確登錄測試同意證據前持續阻擋下一階段；完成後登錄測試發布網址與日期，狀態顯示「已發布」。 |
-| 宣傳總表下載 | 實際下載 CSV，解析為 1 筆資料、40 欄；多行文案保留在同一格，版本、Canva 與發布證據欄位符合畫面紀錄。 |
-| 瀏覽器本機保存 | 重新載入後仍保留示範設計角色，宣傳 01 保持「已發布」，流程總覽顯示已發布 1 則。此結果僅驗證展示資料的瀏覽器本機保存。 |
-| 展示稽核紀錄 | 頁面依序列出產生草稿、送單位確認、單位通過、終審通過、登錄設計、設計通過、贊助同意證據及發布等 8 項操作，包含操作者、時間及記錄版本由 v1 至 v9 的遞增。 |
+## 3. 先前展示頁證據
 
-## 真實環境檢查與已授權設定變更
+先前在受保護 Preview 的 `/ops-demo`，已用虛構資料完成規則文案、單位確認、指定終審、測試 Canva 連結、設計校對、贊助同意證據與測試發布紀錄。重新載入後仍保留示範狀態；下載的 CSV 保留多行文案、版本、來源與證據欄位。
 
-同日檢查分支 Preview 與專案設定，並完成使用者已批准的 Firebase 授權網域設定。以下區分登入、部署及後端連通的證據。
+這些展示操作對應較早提交 `23a49b10aa8d5693229de52ce8e9fea242cf9163`，資料只存在該瀏覽器。它們驗證展示流程，不證明真實 Canva 產圖、社群發布、真實業務持久化或本輪新交件流程已實際驗收。
 
-| 檢查 | 實際結果與範圍 |
-| --- | --- |
-| 後端 HTTP 健康端點 | 直接開啟後端分支 Preview 的 `/api/health`，於 `2026-10-25T09:39:13Z` 取得 JSON `status: ok`。此結果只證明該 HTTP 健康端點可回應，未驗證工作台 API 或資料庫持久化。首次伺服器冷啟動可能建表／遷移；若 `OPS_WORKER_ENABLED=true`，程序也可能自動執行既有工作，因此不能宣稱這次 HTTP 檢查完全零寫入。 |
-| 真實帳號登入 | 初次出現 `auth/unauthorized-domain`；完成上述網域授權後，既有 Google 帳號已成功登入 `/ops`，可見登出與後台入口。這些前端訊號尚未證明後端角色或終審權限。 |
-| 後端變數清單 | Vercel 後端專案在 All Types／All Variables 篩選下顯示 8 個既有變數，包含 `FIREBASE_SERVICE_ACCOUNT`、`TURSO_DATABASE_URL`、`TURSO_AUTH_TOKEN`；該清單未顯示 `OPS_`、`CANVA_`、`OPENAI_`、`GOOGLE_SHEETS_` 前綴的變數。未據此判定所有共用或繼承設定均不存在。 |
-| 最初 API 404 | Vercel request logs 證實前端仍呼叫舊正式位置 `https://itrc-eight.vercel.app/api/ops/bootstrap`，未連到本輪後端 Preview。 |
-| 改址與重新部署 | 前端分支專用 `VITE_API_URL` 改為 `https://itrc-git-feature-itrc-int-159353-zhongshantouyan-4688s-projects.vercel.app/api`，重新部署 `CTczcExgoUK7qP4Atw3U2frAH9jk` 為 Ready；畫面仍顯示 Network Error，後端 request logs 未見新的應用請求。尚不能據此判定工作台 API 已接通。 |
-| 後端 Deployment Protection | 實際設定為 Standard Protection／Require Log In 開啟、OPTIONS Allowlist 關閉、Trusted Sources 僅自身專案。尚未修改保護設定；前端登入不會自動授權跨專案服務呼叫。 |
-| 同網域 gateway | 已完成並部署 `client/api/ops.js` 與 helper；只代理四條 JSON API，使用短期 OIDC，仍保留後端 Firebase 驗證。於 `2026-10-25T10:22:00Z`，前端 Vercel request details 顯示 `/api/ops` 函式已執行，External APIs 確認 GET 指向預定後端 Preview 的 `/api/ops/bootstrap`，結果為 401；同時間後端應用 request logs 未見該請求，且信任規則尚未新增。這證明代理入口與固定目標已運作，不能視為後端已授權或角色已通過。 |
-| 平台錯誤顯示修正 | 初次 gateway 的 401 被前端顯示為登入失效；因此補上後端錯誤契約檢查，只有已知 `{error, code}` 的工作台 401／403 才透傳，其他 JSON 授權拒絕改為 502 部署連線錯誤。新增回歸測試後共 23 項通過；最新部署及畫面結果以 PR 驗收補充為準。 |
-| 工作台專用前端設定 | 已儲存 `VITE_OPS_API_URL=/api`，以及 `OPS_BACKEND_ORIGIN=https://itrc-git-feature-itrc-int-159353-zhongshantouyan-4688s-projects.vercel.app`；兩者僅適用 `feature/itrc-integrated-ops-20261025` 分支，已由上述函式請求證實採用。前端 OIDC 安全頁原已顯示 Team issuer，本輪未改動。 |
-| 待確認的信任規則 | 僅準備 `nsysu-itrc` 的 Preview → `itrc` 的 Preview，等待使用者確認，尚未提交。不得把這項準備記為已授權或已連通。 |
-| 正式部署分支 | Vercel 後端 Production Branch 顯示 `feat/vercel-serverless-migration`，本輪未改動。合併 `main` 不等於後端正式部署；上線前須核對前後端各自的部署分支與版本。 |
+## 4. 正式交付前仍需完成
 
-工作台將獨立使用 `VITE_OPS_API_URL=/api`，由前端伺服器的 `OPS_BACKEND_ORIGIN` 固定指向對應後端 origin；未設定專用值時才回退到 `VITE_API_URL`。其他 CMS 的程式仍沿用 `VITE_API_URL`，但本輪暫設的分支覆寫仍指向受保護後端，尚未移除／恢復；Vercel Edit 要求電子郵件重新驗證，Rotate 可能影響其他適用範圍，已取消。待處理項目是僅移除此輪新增的分支專用覆寫，回到原 All Environments 設定，尚未執行。信任規則與 OIDC 用法參考 [Vercel Trusted Sources](https://vercel.com/docs/deployment-protection/methods-to-bypass-deployment-protection/trusted-sources)。
+- 本輪新版的前後端部署、相容版本與實際畫面確認。
+- 官網為準的 17 筆人員來源資料預覽、套用、回讀；當期人員與保留歷史的標記需正確，不能新增公開聯絡資料。
+- 明確的測試資料庫隔離、完整備份範圍與隔離還原驗證。
+- 一個活動的來源核對、指定版本審核、可編輯 Canva、羽蓉校對及發布證據；另用一個持續專案驗證交件、退回與驗收。
+- FileOS 單一正式來源、共用更新佇列、來源版本檢查與核准回寫。現行匯入是來源快照，不能當成原表已同步。
+- 真實 AI／Canva／Sheets 憑證及能力、Canva 母版／欄位、OAuth callback 與返回 origin 的配對。
+- 背景排程的實際啟用及執行紀錄、通知收件人與不同幹部裝置操作。
+- 現有財務、CRM、講師、社員／出席及證書工具的資料接合。這些既有工具並非尚未建置；新工作台還未把它們整合完成。
 
-本輪沒有匯入真實業務資料；這不等於保證伺服器啟動或既有背景工作完全沒有資料庫寫入。
+截至這份修訂，正式部署與真實 17 人匯入仍由本輪實作流程接續執行，尚未在此列為完成。真實財務審批／入帳、對外社群發布及整套還原沒有在本機測試中執行。
 
-## 尚不能標記完成
+## 5. 重現
 
-手機畫面與操作仍待驗證。真實 Firebase 登入已成功，但後端角色權限、同網域 gateway、Preview 信任規則、前後端環境配對、工作台 API 及真實資料庫持久化仍待實際驗收。示範角色切換不能取代這些驗收。
-
-正式帳號權限、Canva OAuth 與母版欄位、選用 AI／Sheets 憑證及工作排程，仍需完成部署設定與實際驗收。gateway 不代理 Canva callback 或 cron；Canva 的後端 `CANVA_REDIRECT_URI` 與 `OPS_FRONTEND_ORIGIN` 仍須配對，OIDC 代理通過不代表 OAuth 回跳可用。展示流程與自動測試通過不代表外部服務已連接，測試網址也不代表已產生真實設計或對外發布。
-
-## 重現
+使用 Node.js 22.20.0，在程式庫根目錄執行：
 
 ```bash
 npm --prefix server test
-node client/src/ops/model.test.js
-node --test --test-isolation=none client/server/ops-proxy.test.mjs
+node --test --experimental-test-isolation=none client/src/ops/*.test.js
+node --test --experimental-test-isolation=none client/src/utils/courseInfo.test.js
+node --test --experimental-test-isolation=none client/server/ops-proxy.test.mjs
 VITE_OPS_API_URL=/api npm --prefix client run build
 ```
 
-完整啟用流程見 [ops-runbook.md](ops-runbook.md)。變更與最新自動檢查見 [PR #2](https://github.com/zhongshantouyan-cmyk/ITRC/pull/2)。
+本機 HTTP 測試需要允許綁定 localhost；資料庫使用獨立暫存檔，外部供應服務用模擬回應。伺服器實際啟動則可能建表／遷移，且啟用 `OPS_WORKER_ENABLED` 時可能自動處理既有工作，因此不能把呼叫 `/api/health` 視為整個程序完全零寫入。
+
+完整啟用流程見 [ops-runbook.md](ops-runbook.md)。最新程式提交、CI 與部署檢查見 [PR #2](https://github.com/zhongshantouyan-cmyk/ITRC/pull/2)。

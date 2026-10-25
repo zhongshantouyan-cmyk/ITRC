@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '22.20.0'
           cache: npm
           cache-dependency-path: |
             client/package-lock.json
@@ -37,7 +37,7 @@ jobs:
         run: npm --prefix client ci --ignore-scripts --no-audit --no-fund
       - name: Build production frontend
         run: npm --prefix client run build
-      - name: Verify CSV mapping and demonstration boundaries
-        run: node --test client/src/ops/model.test.js
+      - name: Verify people, delivery, CSV mapping and demonstration boundaries
+        run: node --test --experimental-test-isolation=none client/src/ops/*.test.js client/src/utils/courseInfo.test.js
       - name: Verify protected operations proxy boundaries
-        run: node --test --test-isolation=none client/server/ops-proxy.test.mjs
+        run: node --test --experimental-test-isolation=none client/server/ops-proxy.test.mjs

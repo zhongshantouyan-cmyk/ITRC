@@ -1,13 +1,15 @@
 const express = require('express');
 const db = require('../db');
 const { authMiddleware } = require('../middleware/auth');
+const { PUBLIC_MEMBER_COLUMNS } = require('../public-content');
+const memberColumns = PUBLIC_MEMBER_COLUMNS.join(', ');
 
 const router = express.Router();
 
 // GET /api/members
 router.get('/', async (req, res) => {
     try {
-        const result = await db.execute('SELECT * FROM members ORDER BY order_num ASC, id ASC');
+        const result = await db.execute(`SELECT ${memberColumns} FROM members ORDER BY order_num ASC, id ASC`);
         res.json(result.rows);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -23,7 +25,7 @@ router.post('/', authMiddleware, async (req, res) => {
             args: [name, role || null, department || null, year || null, avatar_url || null, order_num || 0]
         });
         const memberResult = await db.execute({
-            sql: 'SELECT * FROM members WHERE id = ?',
+            sql: `SELECT ${memberColumns} FROM members WHERE id = ?`,
             args: [result.lastInsertRowid.toString()]
         });
         res.status(201).json(memberResult.rows[0]);
@@ -41,7 +43,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
             args: [name ?? null, role ?? null, department ?? null, year ?? null, avatar_url ?? null, order_num ?? null, req.params.id]
         });
         const memberResult = await db.execute({
-            sql: 'SELECT * FROM members WHERE id = ?',
+            sql: `SELECT ${memberColumns} FROM members WHERE id = ?`,
             args: [req.params.id]
         });
         if (memberResult.rows.length === 0) return res.status(404).json({ error: '找不到此成員' });

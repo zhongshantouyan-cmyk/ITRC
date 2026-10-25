@@ -1,170 +1,58 @@
 const express = require('express');
 const db = require('../db');
 const { authMiddleware } = require('../middleware/auth');
-
+const { createSnapshot, restoreSnapshot, SNAPSHOT_SCOPE, canRestoreSnapshot } = require('../content-snapshots');
 const router = express.Router();
 
-// Tables to include in snapshots (all content tables, NOT users)
-const CONTENT_TABLES = ['sections', 'achievements', 'members', 'activities', 'experiences'];
-const MAX_SNAPSHOTS = 50; // Keep at most 50 snapshots
-
-// BigInt-safe JSON serializer (Turso returns integer columns as BigInt)
-function safeStringify(obj) {
-    return JSON.stringify(obj, (key, value) =>
-        typeof value === 'bigint' ? Number(value) : value
-    );
-}
-
-// ==================== Helper: Capture current state ====================
-async function captureSnapshot() {
-    const data = {};
-    for (const table of CONTENT_TABLES) {
-        const result = await db.execute(`SELECT * FROM ${table}`);
-        data[table] = result.rows;
-    }
-    return data;
-}
-
-// ==================== Helper: Create a snapshot ====================
-async function createSnapshot(description, createdBy = 'system', isAuto = false) {
-    const data = await captureSnapshot();
-    const result = await db.execute({
-        sql: 'INSERT INTO content_snapshots (snapshot_data, description, created_by, is_auto) VALUES (?, ?, ?, ?)',
-        args: [safeStringify(data), description, createdBy, isAuto ? 1 : 0]
-    });
-
-    // Auto-cleanup: keep only the latest MAX_SNAPSHOTS
-    await db.execute({
-        sql: `DELETE FROM content_snapshots WHERE id NOT IN (
-            SELECT id FROM content_snapshots ORDER BY created_at DESC LIMIT ?
-        )`,
-        args: [MAX_SNAPSHOTS]
-    });
-
-    return result.lastInsertRowid;
-}
-
-// ==================== Auto-Snapshot Middleware ====================
-// Attaches to POST/PUT/DELETE on content routes to auto-backup before changes
-let lastAutoSnapshotTime = 0;
-const AUTO_SNAPSHOT_COOLDOWN = 2 * 60 * 1000; // 2 minutes cooldown
-
+// Mounted before content routes: authenticate and finish the pre-change backup first.
 function autoSnapshotMiddleware(req, res, next) {
-    // Only trigger on write operations
-    if (!['POST', 'PUT', 'DELETE'].includes(req.method)) {
-        return next();
-    }
-
-    const now = Date.now();
-    if (now - lastAutoSnapshotTime < AUTO_SNAPSHOT_COOLDOWN) {
-        // Skip if a snapshot was recently taken
-        return next();
-    }
-
-    lastAutoSnapshotTime = now;
-
-    // Create snapshot in background (don't block the request)
-    const username = req.user?.username || 'system';
-    const routePath = req.baseUrl + req.path;
-    createSnapshot(
-        `自動備份 (${req.method} ${routePath})`,
-        username,
-        true
-    ).catch(err => console.error('Auto-snapshot failed:', err));
-
-    next();
+    if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return next();
+    return authMiddleware(req, res, async () => {
+        try {
+            await createSnapshot(db, `自動備份 (${req.method} ${req.baseUrl + req.path})`,
+                req.user?.email || req.user?.username || 'admin', true);
+            return next();
+        } catch (error) {
+            console.error('Auto-snapshot failed:', error);
+            return res.status(503).json({ error: '修改前備份未完成，內容尚未變更。請稍後重試。' });
+        }
+    });
 }
 
-// ==================== Routes ====================
-
-// GET /api/snapshots - List all snapshots (without the heavy data blob)
-router.get('/', authMiddleware, async (req, res) => {
+router.get('/', authMiddleware, async (_req, res) => {
     try {
-        const result = await db.execute(
-            'SELECT id, description, created_by, is_auto, created_at FROM content_snapshots ORDER BY created_at DESC'
-        );
+        const result = await db.execute('SELECT id, description, created_by, is_auto, created_at FROM content_snapshots ORDER BY id DESC');
         res.json(result.rows);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-// GET /api/snapshots/:id - Get a single snapshot with full data (for preview)
 router.get('/:id', authMiddleware, async (req, res) => {
     try {
-        const result = await db.execute({
-            sql: 'SELECT * FROM content_snapshots WHERE id = ?',
-            args: [req.params.id]
-        });
-        if (result.rows.length === 0) return res.status(404).json({ error: '找不到此快照' });
-
+        const result = await db.execute({ sql: 'SELECT * FROM content_snapshots WHERE id = ?', args: [req.params.id] });
+        if (!result.rows.length) return res.status(404).json({ error: '找不到此快照' });
         const snapshot = result.rows[0];
-        snapshot.snapshot_data = JSON.parse(snapshot.snapshot_data);
-        res.json(snapshot);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+        res.json({ ...snapshot, snapshot_data: JSON.parse(snapshot.snapshot_data), scope: SNAPSHOT_SCOPE });
+    } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-// POST /api/snapshots - Create a manual snapshot
 router.post('/', authMiddleware, async (req, res) => {
-    const { description } = req.body;
     try {
-        const id = await createSnapshot(
-            description || '手動備份',
-            req.user?.email || req.user?.username || 'admin',
-            false
-        );
-        res.status(201).json({ id, message: '快照建立成功' });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+        const id = await createSnapshot(db, req.body.description || '手動備份', req.user?.email || req.user?.username || 'admin');
+        res.status(201).json({ id, message: '官網內容快照建立成功', scope: SNAPSHOT_SCOPE });
+    } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-// POST /api/snapshots/:id/restore - Restore from a snapshot
 router.post('/:id/restore', authMiddleware, async (req, res) => {
+    if (!canRestoreSnapshot(req.user)) return res.status(403).json({ error: '只有社長、副社長或顧問可還原官網內容。' });
     try {
-        // 1. Fetch the target snapshot
-        const result = await db.execute({
-            sql: 'SELECT * FROM content_snapshots WHERE id = ?',
-            args: [req.params.id]
-        });
-        if (result.rows.length === 0) return res.status(404).json({ error: '找不到此快照' });
-
-        const snapshotData = JSON.parse(result.rows[0].snapshot_data);
-
-        // 2. Create a "before restore" backup first
-        await createSnapshot(
-            `還原前自動備份 (還原至快照 #${req.params.id})`,
-            req.user?.email || req.user?.username || 'admin',
-            true
-        );
-
-        // 3. Restore each table
-        for (const table of CONTENT_TABLES) {
-            const rows = snapshotData[table];
-            if (!rows) continue;
-
-            // Clear current data
-            await db.execute(`DELETE FROM ${table}`);
-
-            // Re-insert all rows from snapshot
-            for (const row of rows) {
-                const columns = Object.keys(row);
-                const placeholders = columns.map(() => '?').join(', ');
-                const values = columns.map(col => row[col]);
-
-                await db.execute({
-                    sql: `INSERT INTO ${table} (${columns.join(', ')}) VALUES (${placeholders})`,
-                    args: values
-                });
-            }
-        }
-
-        res.json({ message: '還原成功！所有內容已恢復至所選版本。' });
-    } catch (err) {
-        console.error('Restore error:', err);
-        res.status(500).json({ error: '還原失敗: ' + err.message });
+        const result = await restoreSnapshot(db, req.params.id, req.user?.email || req.user?.username || 'admin');
+        res.json({ message: `已還原 ${result.restoredTables.length} 類官網內容。${result.preservedTables.length ? '舊快照未包含的資料維持原樣。' : ''}`,
+            ...result, scope: SNAPSHOT_SCOPE });
+    } catch (error) {
+        console.error('Restore error:', error);
+        const prefix = error.rollbackConfirmed ? '還原未完成，原有內容已保留：'
+            : '還原結果尚待確認，請先重新讀取內容與版本紀錄：';
+        res.status(error.status || 500).json({ error: prefix + error.message });
     }
 });
 

@@ -1,7 +1,7 @@
 'use strict';
 
 const { assert } = require('./errors');
-const KINDS = ['projects', 'events', 'posts', 'tasks', 'obligations', 'jobs'];
+const KINDS = ['projects', 'events', 'posts', 'tasks', 'obligations', 'jobs', 'people'];
 const emptyState = () => Object.fromEntries([...KINDS, 'audit'].map(kind => [kind, []]));
 
 function createOpsStore(db) {

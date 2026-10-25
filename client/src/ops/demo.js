@@ -1,4 +1,5 @@
 import { canOwn, isAdviser } from './model.js';
+import { hasAssignee, personById, projectPendingTasks, taskDeliveryReason } from './people.js';
 
 const KEY = 'itrc-ops-fictional-demo-v1';
 const uuid = () => globalThis.crypto?.randomUUID?.() || `demo-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -9,11 +10,23 @@ export const DEMO_ACTORS = [
   { email: 'design@example.invalid', name: '行銷負責人（示範）', role: 'officer', canApprove: false, canDesign: true },
   { email: 'adviser@example.invalid', name: '管理顧問（示範）', role: 'advisor', canApprove: false, canDesign: false },
 ];
+function demoPeople() {
+  return DEMO_ACTORS.map((actor, index) => ({ personId: `DEMO-P${String(index + 1).padStart(4, '0')}`, name: actor.name, email: actor.email, title: actor.name.replace('（示範）', ''), group: ['活動組', '管理組', '行銷組', '管理組'][index], status: 'active', term: '虛構示範學期', lineName: '', sourceUrl: 'https://example.org/demo-roster', sourceRevision: '虛構示範 v1' }));
+}
+function addDemoPeople(state) {
+  state.people ||= demoPeople();
+  for (const collection of ['projects', 'events', 'posts', 'tasks', 'obligations']) for (const record of state[collection]) {
+    record.createdByEmail ||= record.ownerEmail || DEMO_ACTORS[3].email;
+    if (record.ownerPersonId === undefined) record.ownerPersonId = state.people.find(person => person.email === record.ownerEmail)?.personId || '';
+    if (collection === 'tasks') { record.requiredForCompletion ??= true; record.reviewerPersonId ??= state.people.find(person => person.email === DEMO_ACTORS[1].email)?.personId || ''; }
+  }
+  return state;
+}
 function seeded() {
   const now = new Date().toISOString();
   const day = offset => { const date = new Date(); date.setDate(date.getDate() + offset); return date.toISOString().slice(0, 10); };
   const base = { version: 1, createdAt: now, updatedAt: now };
-  return {
+  return addDemoPeople({
     schemaVersion: 1, actor: DEMO_ACTORS[0],
     projects: [{ ...base, id: 'demo-project', title: '秋季交流活動（虛構示範）', objective: '練習將活動資料、宣傳與現場交付接起來。', ownerEmail: DEMO_ACTORS[0].email, adviserEmail: DEMO_ACTORS[3].email, status: 'active', dueDate: day(21), completionCriteria: '活動完成、宣傳留存、場務與收支交件。' }],
     events: [{ ...base, id: 'demo-event', projectId: 'demo-project', title: '從研究到表達：交流工作坊（示範）', speaker: '示範講者', date: day(14), time: '18:30', venue: '示範教室 A', audience: '對研究與交流有興趣的同學', fee: '免費（示範）', registrationUrl: 'https://example.org/demo-registration', highlights: '用一張圖整理想法\n分組交換研究觀察\n帶走自己的簡報草稿', ownerEmail: DEMO_ACTORS[0].email, confirmationStatus: 'confirmed', sourceUrl: '', sourceDate: day(0), sourceRevision: '虛構示範 v1' }],
@@ -29,10 +42,10 @@ function seeded() {
     obligations: [{ ...base, id: 'demo-obligation', projectId: 'demo-project', eventId: 'demo-event', title: '合作露出檢查（虛構）', requirements: '發布前確認合作標示位置；現場照片於結案時交付。', channel: 'instagram', requiresSponsorReview: true, status: 'active', ownerEmail: DEMO_ACTORS[0].email, sourceUrl: '' }],
     jobs: [], audit: [],
     settings: { mode: 'demo', approverConfigured: true, designerConfigured: true, sources: [], integrations: { drafting: { status: 'demo', configured: false, message: '使用本機規則草稿；未呼叫 AI。' }, canva: { status: 'demo', configured: false, message: '展示模式不建立外部設計；可體驗交件與校對欄位。' }, sheets: { status: 'demo', configured: false, message: '可試用 CSV / TSV / JSON 匯入；資料只留在此瀏覽器。' } } },
-  };
+  });
 }
 export function loadDemo() {
-  try { const state = JSON.parse(localStorage.getItem(KEY)); if (state?.schemaVersion === 1 && Array.isArray(state.posts)) return state; } catch { /* corrupt / inaccessible browser storage falls back visibly */ }
+  try { const state = JSON.parse(localStorage.getItem(KEY)); if (state?.schemaVersion === 1 && Array.isArray(state.posts)) return addDemoPeople(state); } catch { /* corrupt / inaccessible browser storage falls back visibly */ }
   const state = seeded(); saveDemo(state); return state;
 }
 export function saveDemo(state) { localStorage.setItem(KEY, JSON.stringify(state)); }
@@ -40,16 +53,22 @@ export function resetDemo() { const state = seeded(); saveDemo(state); return st
 export function changeDemoActor(state, email) { const next = { ...state, actor: DEMO_ACTORS.find(a => a.email === email) || DEMO_ACTORS[0] }; saveDemo(next); return next; }
 
 export function performDemoAction(current, command) {
-  const state = clone(current); const { action, id, expectedVersion, payload = {} } = command;
+  const state = addDemoPeople(clone(current)); const { action, id, expectedVersion, payload = {} } = command;
   const actor = state.actor; const now = new Date().toISOString();
   const kind = action.split('.')[0]; const collection = { project: 'projects', event: 'events', post: 'posts', task: 'tasks', obligation: 'obligations', job: 'jobs' }[kind];
   let record = collection && state[collection].find(item => item.id === id);
   if (id && !record) throw new Error('找不到這筆示範紀錄，請重新整理。');
   if (record && expectedVersion !== record.version) throw new Error('這筆資料已有新版本，請重新整理再操作。');
   const need = (ok, message) => { if (!ok) throw new Error(message); };
-  const owner = () => need(canOwn(actor, record, state.projects), '請由負責人或管理顧問操作。');
+  const owner = () => need(canOwn(actor, record, state.projects, state.people, state.tasks), '請由負責人或管理顧問操作。');
   const touch = item => { item.version = (item.version || 0) + 1; item.updatedAt = now; };
+  const saveHistory = (post, actionName = action) => {
+    const { history, ...snapshot } = clone(post);
+    post.history ||= [];
+    post.history.push({ ...snapshot, id: uuid(), postVersion: post.version, sourceEventSnapshot: clone(state.events.find(event => event.id === post.eventId) || {}), action: actionName, actorEmail: actor.email, createdAt: now });
+  };
   const invalidate = post => {
+    saveHistory(post, 'post.snapshot');
     if (post.stage === 'published') {
       state.tasks.push({ id: uuid(), version: 1, createdAt: now, updatedAt: now, title: `核對已發布資訊：${post.title}`, projectId: post.projectId, eventId: post.eventId, postId: post.id, ownerEmail: post.ownerEmail, status: 'todo', dependsOn: [], acceptanceCriteria: '核對已發布內容與最新資料，留下更正紀錄。' }); return;
     }
@@ -67,7 +86,24 @@ export function performDemoAction(current, command) {
     if (!existing) state.jobs.push({ id: uuid(), version: 1, postId: post.id, copyVersion: post.copyVersion, type: 'canva', status: 'blocked_configuration', attempts: 0, lastError: '展示模式沒有外部 Canva 連線，沒有建立設計。', createdAt: now, updatedAt: now });
     post.stage = 'design_pending';
   };
-  if (action.startsWith('import.')) {
+  if (action.startsWith('people.')) {
+    need(isAdviser(actor), '請由管理顧問確認人員對照。');
+    const fields = ['personId', 'name', 'email', 'title', 'group', 'lineName', 'term', 'status', 'sourceUrl', 'sourceRevision', 'contactSourceUrl'];
+    need(Array.isArray(payload.people) && payload.people.length > 0 && payload.people.length <= 200, '每次更新 1–200 人。');
+    const ids = new Set();
+    const people = payload.people.map(row => {
+      need(row.personId?.trim() && row.name?.trim(), '每人需要姓名與固定幹部 ID。'); need(!ids.has(row.personId), '幹部 ID 不能重複。'); ids.add(row.personId);
+      need(Object.keys(row).every(key => fields.includes(key)), '名單只接受人員欄位；不接受權限設定。');
+      const existing = personById(state.people, row.personId) || {};
+      return { status: 'pending', ...existing, ...row };
+    });
+    const previewToken = JSON.stringify({ current: state.people, people });
+    const changes = people.map(person => { const before = personById(state.people, person.personId); const changedFields = fields.filter(field => field !== 'personId' && (before?.[field] || '') !== (person[field] || '')); return { personId: person.personId, name: person.name, change: !before ? 'create' : changedFields.length ? 'update' : 'unchanged', changedFields }; });
+    if (action === 'people.import-preview') return { state: current, result: { ok: true, record: { people, changes, previewToken, warnings: ['展示模式只更新此瀏覽器的虛構人員對照。'] } } };
+    need(action === 'people.import-apply' && payload.previewToken === previewToken, '名單已更新，請重新預覽差異。');
+    for (const person of people) { const index = state.people.findIndex(item => item.personId === person.personId); if (index < 0) state.people.push(person); else state.people[index] = person; }
+    record = { id: 'people', version: 1, title: `${people.length} 筆人員對照更新` };
+  } else if (action.startsWith('import.')) {
     const rows = [...(payload.events || []), ...(payload.posts || []), ...(payload.tasks || [])];
     need(rows.length > 0 && rows.length <= 200, '每次匯入 1–200 筆資料。');
     rows.forEach(row => need(row.title?.trim(), '每筆資料都需要標題。'));
@@ -78,21 +114,25 @@ export function performDemoAction(current, command) {
       const sourceKey = row.sourceKey || `${row.sourceUrl || row.sourceLabel || 'manual'}:${row.title}:${row.date || row.dueDate || ''}:${row.eventId || row.eventSourceKey || ''}:${row.channel || ''}`;
       if (state[entity].some(item => item.sourceKey === sourceKey)) continue;
       const event = entity === 'posts' ? state.events.find(item => item.id === row.eventId || row.eventSourceKey && item.sourceKey === row.eventSourceKey) : null;
-      state[entity].push({ ...row, id: uuid(), version: 1, createdAt: now, updatedAt: now, sourceKey, ownerEmail: row.ownerEmail || actor.email, ...(entity === 'events' ? { confirmationStatus: 'draft' } : entity === 'posts' ? { eventId: event.id, projectId: event.projectId, stage: 'brief', copyVersion: 1, sourceEventVersion: event.version, caption: row.caption || '', slides: row.slides || [], channel: row.channel || 'instagram' } : { status: 'todo', dependsOn: [] }) });
+      state[entity].push({ ...row, id: uuid(), version: 1, createdAt: now, updatedAt: now, sourceKey, ownerEmail: row.ownerEmail || '', createdByEmail: actor.email, ...(entity === 'events' ? { confirmationStatus: 'draft' } : entity === 'posts' ? { eventId: event.id, projectId: event.projectId, stage: 'brief', copyVersion: 1, sourceEventVersion: event.version, caption: row.caption || '', slides: row.slides || [], channel: row.channel || 'instagram' } : { status: row.ownerPersonId || row.ownerEmail ? 'todo' : 'unassigned', dependsOn: [], requiredForCompletion: true }) });
     }
     record = { id: 'import', version: 1, title: `${rows.length} 筆匯入資料` };
   } else if (action.endsWith('.create')) {
     need(payload.title?.trim(), '請填寫標題。');
-    record = { ...payload, id: uuid(), version: 1, createdAt: now, updatedAt: now, ownerEmail: payload.ownerEmail || actor.email };
+    record = { ...payload, id: uuid(), version: 1, createdAt: now, updatedAt: now, ownerEmail: payload.ownerEmail || '', createdByEmail: actor.email };
     if (kind === 'event') record.confirmationStatus = 'draft';
-    if (kind === 'task') { record.status ||= 'todo'; record.dependsOn ||= []; }
+    if (kind === 'task') { need(!['delivered', 'done'].includes(record.status), '請先建立任務，再交件與驗收。'); record.status = hasAssignee(record) ? record.status === 'unassigned' ? 'todo' : record.status || 'todo' : 'unassigned'; record.dependsOn ||= []; record.requiredForCompletion ??= true; }
     if (kind === 'post') { need(state.events.some(e => e.id === record.eventId), '請先選擇一個活動。'); Object.assign(record, { caption: payload.caption || '', slides: payload.slides || [], stage: payload.caption ? 'draft' : 'brief', copyVersion: 1, sourceEventVersion: state.events.find(e => e.id === record.eventId)?.version }); }
     state[collection].push(record);
   } else if (action.endsWith('.update')) {
     owner();
     if (kind === 'post') { need(record.stage !== 'published', '已發布文案需另開修訂需求，保留原發布證據。'); invalidate(record); }
     if (kind === 'event' || kind === 'obligation') state.posts.filter(post => kind === 'event' ? post.eventId === record.id : (record.eventId ? post.eventId === record.eventId : post.projectId === record.projectId)).forEach(invalidate);
+    if (kind === 'project' && payload.status === 'completed') need(projectPendingTasks(record.id, state.tasks).length === 0, '結案必要任務尚未全部通過驗收。');
     if (kind === 'task') {
+      need(record.status !== 'done', '已驗收任務需先重新開啟。');
+      need(!['delivered', 'done'].includes(payload.status), '請使用交件與驗收動作。');
+      if (record.status === 'delivered') payload.status = 'doing';
       const proposed = state.tasks.map(t => t.id === id ? { ...t, ...payload } : t);
       const check = (taskId, path = []) => { need(!path.includes(taskId), '任務不能形成循環依賴。'); const task = proposed.find(t => t.id === taskId); need(!!task, '找不到相依任務。'); for (const dependency of [...(task.dependsOn || []), ...(task.parentId ? [task.parentId] : [])]) check(dependency, [...path, taskId]); };
       check(id);
@@ -102,9 +142,26 @@ export function performDemoAction(current, command) {
       if (status === 'blocked') need(payload.blocker || record.blocker, '請填寫卡點。');
     }
     Object.assign(record, payload);
+    if (kind === 'task' && !hasAssignee(record)) record.status = 'unassigned';
     if (kind === 'event') record.confirmationStatus = record.confirmationStatus === 'confirmed' ? 'changed' : 'draft';
     if (kind === 'post') record.stage = 'draft';
     touch(record);
+  } else if (action === 'task.deliver') {
+    owner(); need(!['done', 'delivered', 'cancelled'].includes(record.status), '目前任務不可交件。'); need(!taskDeliveryReason(record, state.tasks, state.people), taskDeliveryReason(record, state.tasks, state.people)); need(/^https:\/\//.test(payload.deliverableUrl || record.deliverableUrl || ''), '請填入有效的 https 成果連結。');
+    Object.assign(record, { status: 'delivered', deliverableUrl: payload.deliverableUrl || record.deliverableUrl, deliveredBy: actor.email, deliveredAt: now, returnReason: '' }); touch(record);
+  } else if (['task.accept-delivery', 'task.return-delivery', 'task.reopen'].includes(action)) {
+    const reviewer = personById(state.people, record.reviewerPersonId);
+    const personal = !!reviewer?.email && reviewer.email === actor.email && (action !== 'task.accept-delivery' || record.deliveredBy !== actor.email);
+    need(personal || isAdviser(actor) || action === 'task.reopen' && canOwn(actor, record, state.projects, state.people), '請由指定驗收人或管理顧問操作。');
+    if (action === 'task.reopen') { need(['done', 'cancelled'].includes(record.status) && payload.reason?.trim(), '重新開啟需要已驗收或已取消任務與原因。'); record.status = 'todo'; record.returnReason = payload.reason; }
+    else {
+      need(record.status === 'delivered', '請先交件。');
+      if (action === 'task.return-delivery') { need(payload.reason?.trim(), '請填寫退回原因。'); record.status = 'doing'; record.returnReason = payload.reason; }
+      else { need(!taskDeliveryReason(record, state.tasks, state.people), taskDeliveryReason(record, state.tasks, state.people)); need(personal || payload.confirmedExternalReview && /^https:\/\//.test(payload.evidenceUrl || ''), '代登錄驗收需要驗收人確認與證據連結。'); Object.assign(record, { status: 'done', acceptedBy: actor.email, acceptedAt: now, acceptedReviewerPersonId: record.reviewerPersonId, reviewIdentityMode: personal ? 'individual_account' : 'recorded_external_review', reviewEvidenceUrl: personal ? '' : payload.evidenceUrl }); }
+    }
+    touch(record);
+  } else if (action === 'post.restore-version') {
+    owner(); need(record.stage !== 'published', '已發布紀錄不能直接還原。'); const saved = record.history?.find(version => version.id === payload.historyId); need(saved, '找不到已保存版本。'); invalidate(record); for (const key of ['title', 'purpose', 'audience', 'highlights', 'cta', 'channel', 'caption', 'slides']) record[key] = clone(saved[key] ?? (key === 'slides' ? [] : '')); record.stage = 'draft';
   } else if (action === 'event.confirm') {
     owner(); need(record.date && record.speaker && record.venue, '需要日期、講者與地點才能確認。'); record.confirmationStatus = 'confirmed'; touch(record); state.posts.filter(post => post.eventId === record.id).forEach(invalidate);
   } else if (action === 'post.generate') {
@@ -116,11 +173,11 @@ export function performDemoAction(current, command) {
   } else if (action === 'post.submit') {
     owner(); confirmed(record); need(record.caption?.trim() && record.slides?.length, '請先填寫文案與輪播文字。'); need(['draft', 'needs_revision'].includes(record.stage), '目前不在可送審階段。'); record.stage = 'unit_review'; touch(record);
   } else if (action === 'post.unit-review') {
-    need(canOwn(actor, record, state.projects) || canOwn(actor, state.events.find(event => event.id === record.eventId), state.projects), '請由活動負責人或顧問確認。'); confirmed(record); need(record.stage === 'unit_review', '目前不在單位確認階段。'); record.unitReviewedVersion = record.copyVersion; record.stage = 'approval'; touch(record);
+    need(canOwn(actor, record, state.projects, state.people) || canOwn(actor, state.events.find(event => event.id === record.eventId), state.projects, state.people), '請由活動負責人或顧問確認。'); confirmed(record); need(record.stage === 'unit_review', '目前不在單位確認階段。'); record.unitReviewedVersion = record.copyVersion; record.stage = 'approval'; touch(record);
   } else if (action === 'post.approve') {
     need(actor.canApprove, '請切換最終審核者示範身分。'); confirmed(record); need(record.stage === 'approval' && record.unitReviewedVersion === record.copyVersion, '需要當前版本的單位確認。'); Object.assign(record, { approvedVersion: record.copyVersion, approvedBy: actor.email, approvedAt: now }); addJob(record); touch(record);
   } else if (action === 'post.reject') {
-    need(canOwn(actor, record, state.projects) || actor.canApprove || actor.canDesign, '目前身分不能退回這筆文案。'); need(payload.reason?.trim(), '請填寫退回原因。'); need(record.stage !== 'published', '已發布紀錄需另開修正任務。'); invalidate(record); record.rejectionReason = payload.reason;
+    need(canOwn(actor, record, state.projects, state.people) || actor.canApprove || actor.canDesign, '目前身分不能退回這筆文案。'); need(payload.reason?.trim(), '請填寫退回原因。'); need(record.stage !== 'published', '已發布紀錄需另開修正任務。'); invalidate(record); record.rejectionReason = payload.reason;
   } else if (action === 'post.request-design') {
     approved(record); addJob(record); touch(record);
   } else if (action === 'post.attach-design') {
@@ -132,15 +189,16 @@ export function performDemoAction(current, command) {
   } else if (action === 'post.design-review') {
     need(actor.canDesign || isAdviser(actor), '請由行銷負責人或管理顧問校對。'); approved(record); need(record.designCopyVersion === record.copyVersion && record.stage === 'design_review', '請先登錄當前版本的設計。'); record.designApprovedBy = actor.email; record.stage = state.obligations.some(o => (o.eventId === record.eventId || (!o.eventId && o.projectId === record.projectId)) && o.requiresSponsorReview && o.status !== 'cancelled') ? 'sponsor_review' : 'ready'; touch(record);
   } else if (action === 'post.sponsor-review') {
-    need(actor.canDesign || canOwn(actor, record, state.projects) || canOwn(actor, state.events.find(event => event.id === record.eventId), state.projects), '請由負責人或行銷人員記錄。'); need(record.stage === 'sponsor_review' && payload.confirmed && /^https:\/\//.test(payload.evidenceUrl || ''), '需要確認勾選與 https 證據連結。'); record.sponsorApprovedVersion = record.copyVersion; record.sponsorEvidenceUrl = payload.evidenceUrl; record.stage = 'ready'; touch(record);
+    need(actor.canDesign || canOwn(actor, record, state.projects, state.people) || canOwn(actor, state.events.find(event => event.id === record.eventId), state.projects, state.people), '請由負責人或行銷人員記錄。'); need(record.stage === 'sponsor_review' && payload.confirmed && /^https:\/\//.test(payload.evidenceUrl || ''), '需要確認勾選與 https 證據連結。'); record.sponsorApprovedVersion = record.copyVersion; record.sponsorEvidenceUrl = payload.evidenceUrl; record.stage = 'ready'; touch(record);
   } else if (action === 'post.publish') {
-    need(actor.canDesign || canOwn(actor, record, state.projects), '請由發布負責人登錄。'); approved(record); need(record.stage === 'ready' && /^https:\/\//.test(payload.publishedUrl || ''), '需要通過設計校對與有效的 https 發布連結。'); Object.assign(record, { publishedUrl: payload.publishedUrl, publishedAt: payload.publishedAt || now, stage: 'published' }); touch(record);
+    need(actor.canDesign || canOwn(actor, record, state.projects, state.people), '請由發布負責人登錄。'); approved(record); need(record.stage === 'ready' && /^https:\/\//.test(payload.publishedUrl || ''), '需要通過設計校對與有效的 https 發布連結。'); Object.assign(record, { publishedUrl: payload.publishedUrl, publishedAt: payload.publishedAt || now, stage: 'published' }); touch(record);
   } else if (action === 'job.retry' || action === 'jobs.run') {
     need(isAdviser(actor), '請由管理顧問處理工作。');
     if (record) need(record.status !== 'needs_reconciliation', '先核對外部結果，不能直接重試。');
     for (const job of record ? [record] : state.jobs.filter(j => !['succeeded', 'obsolete', 'needs_reconciliation'].includes(j.status))) { job.status = 'blocked_configuration'; job.lastError = '展示模式不會呼叫外部服務。'; touch(job); }
     record ||= { id: 'jobs', version: 1, title: '展示模式工作檢查' };
   } else throw new Error('此展示操作尚未支援。');
+  if (kind === 'post' && record) saveHistory(record);
   state.audit.unshift({ id: uuid(), action, actorEmail: actor.email, entityId: record.id, fromVersion: expectedVersion || null, toVersion: record.version, createdAt: now, summary: record.title || action });
   saveDemo(state);
   return { state, result: { ok: true, record } };

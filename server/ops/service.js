@@ -4,7 +4,7 @@ const { createHash, randomUUID } = require('node:crypto');
 const { createOpsStore } = require('./store');
 const { OpsError, assert } = require('./errors');
 const { emails } = require('./auth');
-const { executeAction, isAdvisor, find, touch, audit, relevantObligations, clearApproval, obsoleteJobs, httpsUrl, cleanFields } = require('./domain');
+const { executeAction, isAdvisor, find, touch, audit, relevantObligations, clearApproval, obsoleteJobs, httpsUrl, cleanFields, capturePostRevision } = require('./domain');
 
 const SYSTEM = {email:'system@itrc.local',name:'工作台排程',role:'advisor',canApprove:false,canDesign:false};
 const safeError = error => {
@@ -169,13 +169,16 @@ function createOpsService({ db, store = createOpsStore(db), providers, env = pro
         // Validate provider output before touching a user record.
         const output = cleanFields('posts',{caption:result.caption,slides:result.slides});
         assert(output.caption && output.slides.length,502,'INVALID_PROVIDER_RESPONSE','產生結果沒有完整文案。');
+        capturePostRevision(state,post,actor,stamp,'post.before-generated-copy');
         clearApproval(post); obsoleteJobs(state,post,stamp);
         post.caption = output.caption; post.slides = output.slides; post.copyVersion += 1; post.stage = 'draft'; post.sourceEventVersion = claim.event.version;
         post.generationMethod = String(result.generationMethod || 'provider'); touch(post,stamp);
+        capturePostRevision(state,post,actor,stamp,'post.generated-copy');
         job.status = 'succeeded'; job.result = {postId:post.id,copyVersion:post.copyVersion,generationMethod:post.generationMethod}; job.lastError = '';
       } else if (['success','succeeded'].includes(result.status) && result.canvaEditUrl) {
         httpsUrl(result.canvaEditUrl,'Canva 編輯網址',{canva:true,optional:false});
         post.canvaEditUrl = result.canvaEditUrl; post.canvaDesignId = result.canvaDesignId || ''; post.designCopyVersion = job.copyVersion; post.stage = 'design_review'; touch(post,stamp);
+        capturePostRevision(state,post,actor,stamp,'post.generated-design');
         job.status = 'succeeded'; job.result = {canvaEditUrl:post.canvaEditUrl,canvaDesignId:post.canvaDesignId}; job.lastError = '';
       } else if (['failed','failure'].includes(result.status)) {
         job.status = 'failed'; job.errorCode = 'PROVIDER_JOB_FAILED'; job.lastError = 'Canva 已回報設計產生失敗，請檢查模板後重試。';

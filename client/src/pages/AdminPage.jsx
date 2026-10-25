@@ -769,9 +769,13 @@ const TABLE_LABELS = {
     members: '社團成員',
     activities: '活動 (規劃+紀錄)',
     experiences: '參與心得',
+    online_resources: '線上學習資源',
+    offline_resources: '書籍與離線資源',
 };
 
 function SnapshotsManager() {
+    const { role } = useAuth();
+    const canRestore = ['chair', 'advisor', 'admin'].includes(role);
     const [snapshots, setSnapshots] = useState([]);
     const [loading, setLoading] = useState(true);
     const [msg, setMsg] = useState('');
@@ -812,7 +816,7 @@ function SnapshotsManager() {
     const handleRestore = async (id) => {
         const snapshot = snapshots.find(s => s.id === id);
         const timeStr = new Date(snapshot.created_at).toLocaleString('zh-TW');
-        if (!window.confirm(`確定要還原到「${snapshot.description}」(${timeStr}) 嗎？\n\n⚠️ 所有目前的內容將被覆蓋！\n（系統會在還原前自動建立備份）`)) return;
+        if (!window.confirm(`確定要還原到「${snapshot.description}」(${timeStr}) 嗎？\n\n所選快照包含的官網內容將被覆蓋；未包含的資料維持原樣。\n系統會先建立備份，還原失敗時保留目前內容。`)) return;
 
         setRestoring(id);
         setMsg('');
@@ -856,7 +860,7 @@ function SnapshotsManager() {
         <div>
             <h2 className="mb-3">版本管理</h2>
             <p className="text-secondary mb-3">
-                系統會在每次修改內容時自動建立備份。如果內容被誤改，可以一鍵還原到任何歷史版本。
+                修改前會先保存官網內容，保留最近 50 份快照。範圍包含頁面、成果、成員介紹、活動、心得與學習資源；工作台、財務、幹部權限和外部檔案需另外備份。舊快照沒有包含的資料會保留原樣。
             </p>
 
             {/* Manual snapshot creation */}
@@ -917,7 +921,8 @@ function SnapshotsManager() {
                                 <button
                                     className="btn btn-primary btn-sm"
                                     onClick={() => handleRestore(snap.id)}
-                                    disabled={restoring === snap.id}
+                                    disabled={!canRestore || restoring === snap.id}
+                                    title={canRestore ? '' : '還原需要社長、副社長或顧問權限'}
                                 >
                                     {restoring === snap.id ? '還原中...' : '還原'}
                                 </button>

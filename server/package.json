@@ -4,7 +4,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "test": "node --test --test-isolation=none ops/*.test.js *.test.js"
+    "test": "node --test --experimental-test-isolation=none ops/*.test.js *.test.js"
   },
   "keywords": [],
   "author": "",
