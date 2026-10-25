@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <script src="itrc-auth.js"></script>
+<script src="itrc-finance.js"></script>
 <style>
   .container{max-width:1000px}
   .who{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:13px;color:#cdd6e8}
@@ -62,6 +63,8 @@
 
 <!-- 工作區（登入且有角色才顯示） -->
 <template id="tpl-app">
+  <p class="muted" id="financeStatus" role="status" aria-live="polite">連線中，請稍候…</p>
+  <p class="muted">核銷由申請人送出、另一位正副社長簽核，再交財務長入帳。共用帳號不能用來自核准；收據與收款帳戶只供申請人及財務處理人員查看。</p>
   <div class="tabs" id="tabs"></div>
 
   <!-- 申請核銷 -->
@@ -135,10 +138,13 @@
 /* FINANCE_LIVE：Google 登入啟用後改成 true，財務站才正式開放（需登入）。
    false＝顯示「即將開放」；本機 ?dev=1 / localhost 仍可用測試模式試跑流程。 */
 var FINANCE_LIVE = true;
-var LEDGER=[], REIMB=[], fbLedger=null, fbReimb=null, ACTIVE='', seeded=false;
+var LEDGER=[], REIMB=[], fbLedger=null, fbReimb=null, ACTIVE='';
+var financeGeneration=0, financeConnected=false, financeLoaded={ledger:false,reimb:false}, financeListeners=[], financeBusy=false;
+var financeFailure='', pendingClaimId='';
 var ME=function(){return ITRCAuth.user||{};};
 function $(id){return document.getElementById(id);}
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(m){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]);});}
+function eventId(value){return esc(JSON.stringify(String(value)).slice(1,-1).replace(/'/g,'\\u0027').replace(/</g,'\\u003c').replace(/>/g,'\\u003e'));}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
 function arr(v){return Array.isArray(v)?v.filter(Boolean):(v?Object.values(v).filter(Boolean):[]);}
 function money(n){return '$'+(Number(n)||0).toLocaleString('en-US');}
@@ -150,7 +156,28 @@ var SEED_LEDGER=[]; // Historical entries remain only in the authorized database
 
 /* ───── 啟動 ───── */
 ITRCAuth.init({onChange:onAuth});
-function onAuth(user){ renderWho(); renderGate(); }
+function onAuth(user){ stopFinance(); renderWho(); renderGate(); }
+function stopFinance(){
+  financeGeneration++; financeListeners.forEach(function(x){x.ref.off('value',x.fn);}); financeListeners=[];
+  LEDGER=[];REIMB=[];fbLedger=null;fbReimb=null;financeConnected=false;financeLoaded={ledger:false,reimb:false};financeBusy=false;financeFailure='';pendingClaimId='';
+  var app=$('app');if(app)app.innerHTML='';
+}
+function financeStatus(message){var el=$('financeStatus');if(el)el.textContent=message;}
+function financeReady(){return ITRCAuth.isDev() || (financeConnected&&financeLoaded.ledger&&financeLoaded.reimb);}
+function updateFinanceStatus(){financeStatus(financeFailure || (financeBusy?'正在儲存，請勿重複送出…':(ITRCAuth.isDev()?'測試模式：資料只保存在本機。':(!financeConnected?'尚未連上雲端，暫停送出。':(financeReady()?'共用資料已載入。':'正在載入共用資料，暫停送出。')))));}
+function financeWatch(ref,read){
+  var generation=financeGeneration;
+  var fn=function(s){if(generation!==financeGeneration)return;read(s);updateFinanceStatus();};
+  ref.on('value',fn,function(){if(generation!==financeGeneration)return;financeGeneration++;financeListeners.forEach(function(x){x.ref.off('value',x.fn);});financeListeners=[];LEDGER=[];REIMB=[];financeLoaded={ledger:false,reimb:false};financeBusy=false;financeFailure='讀取被拒絕或中斷；未切換成其他資料。請重新登入或聯絡資訊組。';financeConnected=false;renderAll();updateFinanceStatus();});
+  financeListeners.push({ref:ref,fn:fn});
+}
+async function financeWrite(action,success){
+  if(!ME().role||!financeReady()){alert('請先登入，並等候共用資料完整載入。');return false;}
+  if(financeBusy){alert('上一筆正在儲存，請稍候。');return false;}
+  var generation=financeGeneration;financeBusy=true;financeFailure='';updateFinanceStatus();
+  try{await action();if(generation!==financeGeneration)return false;financeBusy=false;updateFinanceStatus();if(window.itrcToast)itrcToast(success);return true;}
+  catch(e){if(generation!==financeGeneration)return false;financeBusy=false;financeFailure='尚未儲存：'+(e.message||'雲端拒絕寫入')+'。內容已保留，請核對連線與權限後重試。';updateFinanceStatus();alert(financeFailure);return false;}
+}
 
 function renderWho(){
   var u=ITRCAuth.user, el=$('who');
@@ -211,20 +238,21 @@ function initData(){
   if(ITRCAuth.isDev()){
     try{LEDGER=JSON.parse(localStorage.getItem('itrc_fin_ledger')||'[]');}catch(e){LEDGER=[];}
     try{REIMB=JSON.parse(localStorage.getItem('itrc_fin_reimb')||'[]');}catch(e){REIMB=[];}
-    if(!LEDGER.length){ LEDGER=SEED_LEDGER.slice(); localStorage.setItem('itrc_fin_ledger',JSON.stringify(LEDGER)); } // 收支表空白→帶入期初歷史
-    renderAll();
+    LEDGER=ITRCFinance.rows(LEDGER);REIMB=ITRCFinance.rows(REIMB);renderAll();updateFinanceStatus();
   }else{
     var db=ITRCAuth.db;
     fbLedger=db.ref('finance/ledger'); fbReimb=db.ref('finance/reimbursements');
-    fbLedger.on('value',function(s){
-      LEDGER=arr(s.val());
-      renderAll();
-    });
-    fbReimb.on('value',function(s){REIMB=arr(s.val());renderAll();});
+    financeWatch(db.ref('.info/connected'),function(s){financeConnected=s.val()===true;});
+    financeWatch(fbLedger,function(s){LEDGER=ITRCFinance.rows(s.val());financeLoaded.ledger=true;renderAll();});
+    // 一般幹部只查自己的收款帳戶與收據，審核／入帳人員才讀取完整核銷清單。
+    var query=(ITRCAuth.can('approve')||ITRCAuth.can('treasury'))?fbReimb:fbReimb.orderByChild('byUid').equalTo(ME().uid);
+    financeWatch(query,function(s){REIMB=ITRCFinance.rows(s.val());financeLoaded.reimb=true;renderAll();});
   }
 }
-function saveLedger(){ if(ITRCAuth.isDev()){localStorage.setItem('itrc_fin_ledger',JSON.stringify(LEDGER));renderAll();} else {fbLedger.set(LEDGER);} }
-function saveReimb(){ if(ITRCAuth.isDev()){localStorage.setItem('itrc_fin_reimb',JSON.stringify(REIMB));renderAll();} else {fbReimb.set(REIMB);} }
+function saveLocalFinance(){localStorage.setItem('itrc_fin_ledger',JSON.stringify(LEDGER));localStorage.setItem('itrc_fin_reimb',JSON.stringify(REIMB));renderAll();}
+function replaceLocal(list,key,row){var at=list.findIndex(function(x){return (x._key||x.id)===key;});var value=Object.assign({},row,{_key:key});if(at<0)list.push(value);else list[at]=value;}
+function writeClaim(key,row){if(ITRCAuth.isDev()){replaceLocal(REIMB,key,row);saveLocalFinance();return Promise.resolve();}return fbReimb.child(key).set(row);}
+function writeLedger(key,row){if(ITRCAuth.isDev()){replaceLocal(LEDGER,key,row);saveLocalFinance();return Promise.resolve();}return fbLedger.child(key).set(row);}
 
 /* ───── 申請核銷 ───── */
 var pendingReceipt='';
@@ -237,22 +265,16 @@ if(document.addEventListener) document.addEventListener('change',function(e){
   }
 });
 function togglePay(){ var w=$('ap_acctwrap'); if(w) w.style.display=($('ap_pay')&&$('ap_pay').value==='cash')?'none':''; }
-function submitReimb(){
-  var amt=Math.round(Number($('ap_amount').value));   // Number 避免 parseInt 把 1e9 吃成 1、小數無聲截斷
-  var item=$('ap_item').value.trim(), cat=$('ap_cat').value.trim();
-  var pay=$('ap_pay')?$('ap_pay').value:'transfer', acct=$('ap_acct')?$('ap_acct').value.trim():'';
-  if(!isFinite(amt)||amt<=0){alert('請填有效金額（正整數）');return;}
-  if(!item){alert('請填項目／用途');return;}
-  if(pay==='transfer'&&!acct){alert('匯款需填收款帳戶（或改選「現金」）');return;}
-  REIMB.push({id:uid(), created:new Date().toISOString(), date:$('ap_date').value||today(),
-    byUid:ME().uid, byName:ME().name, amount:amt, cat:cat, item:item, note:$('ap_note').value.trim(),
-    payMethod:pay, account:(pay==='transfer'?acct:''),
-    receipt:pendingReceipt||'', status:'submitted', approver:'', approvedAt:'', rejectReason:'', postedAt:''});
-  saveReimb();
+async function submitReimb(){
+  if(!ITRCAuth.can('apply'))return;
+  if(!pendingClaimId)pendingClaimId=ITRCAuth.isDev()?uid():fbReimb&&fbReimb.push().key;
+  var row;try{row=ITRCFinance.claim({amount:$('ap_amount').value,item:$('ap_item').value,cat:$('ap_cat').value,
+    date:$('ap_date').value||today(),payMethod:$('ap_pay').value,account:$('ap_acct').value,note:$('ap_note').value,receipt:pendingReceipt},ME(),pendingClaimId,new Date().toISOString());}catch(e){alert(e.message);return;}
+  if(!await financeWrite(function(){return writeClaim(pendingClaimId,row);},'已送出核銷申請'))return;
+  pendingClaimId='';
   $('ap_amount').value='';$('ap_item').value='';$('ap_note').value='';$('ap_cat').value='';
   if($('ap_acct'))$('ap_acct').value='';
   $('ap_file').value='';pendingReceipt='';$('ap_fileinfo').textContent='';
-  if(window.itrcToast)itrcToast('已送出核銷申請');
 }
 
 /* ───── 渲染 ───── */
@@ -262,9 +284,9 @@ function renderAll(){
   if(ACTIVE==='review') renderReview();
   if(ACTIVE==='ledger'){ var ed=ITRCAuth.can('treasury'); if($('ledgerAdd'))$('ledgerAdd').style.display=ed?'':'none'; renderSummary(); renderPendingPost(); renderLedger(); renderFinAdmin(ed); }
 }
-function statusPill(s){return '<span class="pill s-'+s+'">'+(STATUS_LABEL[s]||s)+'</span>';}
+function statusPill(s){var known=Object.prototype.hasOwnProperty.call(STATUS_LABEL,s);return '<span class="pill s-'+(known?s:'unknown')+'">'+(known?STATUS_LABEL[s]:'未知狀態')+'</span>';}
 function payText(r){ if(!r.payMethod)return '（未註明）'; if(r.payMethod==='cash')return '現金（已支付）'; return '匯款 · '+esc(r.account||'（未填帳戶）'); }
-function receiptCell(r){return r.receipt?'<img class="receipt" src="'+esc(r.receipt)+'" onclick="viewReceipt(\''+r.id+'\')">':'<span class="muted">—</span>';}
+function receiptCell(r){return r.receipt?'<img class="receipt" src="'+esc(r.receipt)+'" onclick="viewReceipt(\''+eventId(r.id)+'\')">':'<span class="muted">—</span>';}
 function viewReceipt(id){
   var r=REIMB.find(function(x){return x.id===id;}); if(!r||!r.receipt)return;
   var w=window.open('','_blank');                       // data: URL 無法當作頂層網址直接開，改用包一層 HTML
@@ -296,28 +318,29 @@ function renderReview(){
       +(r.note?'<div class="muted" style="margin-top:4px">備註：'+esc(r.note)+'</div>':'')
       +'<div class="muted" style="margin-top:4px">付款：'+payText(r)+'</div>'
       +(r.receipt?'<div style="margin-top:8px">'+receiptCell(r)+'</div>':'')
-      +'<div style="margin-top:12px;display:flex;gap:8px"><button class="btn gold sm" onclick="approve(\''+r.id+'\')">核准</button>'
-      +'<button class="btn ghost sm" onclick="reject(\''+r.id+'\')">退回</button></div></div>';
+      +(r.byUid===ME().uid?'<div class="muted" style="margin-top:12px">這是你的申請，請由另一位正副社長使用自己的帳號簽核。</div>'
+      :'<div style="margin-top:12px;display:flex;gap:8px"><button class="btn gold sm" onclick="approve(\''+eventId(r.id)+'\')">核准</button>'
+      +'<button class="btn ghost sm" onclick="reject(\''+eventId(r.id)+'\')">退回</button></div>')+'</div>';
   }).join('') : '<div class="empty">目前沒有待簽核的申請。</div>';
 }
-function approve(id){
+async function approve(id){
   if(!ITRCAuth.can('approve'))return;
-  var r=REIMB.find(function(x){return x.id===id;}); if(!r||r.status!=='submitted')return;   // 只有待簽核可核准，防狀態回退
-  r.status='approved'; r.approver=ME().name; r.approvedAt=new Date().toISOString();
-  saveReimb(); if(window.itrcToast)itrcToast('已核准');
+  var r=REIMB.find(function(x){return x.id===id;}),next;
+  try{next=ITRCFinance.review(r,ME(),true,'',new Date().toISOString());}catch(e){alert(e.message);return;}
+  await financeWrite(function(){return writeClaim(r._key||r.id,next);},'已核准');
 }
-function reject(id){
+async function reject(id){
   if(!ITRCAuth.can('approve'))return;
-  var r=REIMB.find(function(x){return x.id===id;}); if(!r||r.status!=='submitted')return;   // 只有待簽核可退回
+  var r=REIMB.find(function(x){return x.id===id;}),next;
+  if(!r||r.status!=='submitted')return;
   var why=prompt('退回原因（會讓申請人看到）：',''); if(why===null)return;
-  r.status='rejected'; r.rejectReason=why; r.approver=ME().name;
-  saveReimb(); if(window.itrcToast)itrcToast('已退回');
+  try{next=ITRCFinance.review(r,ME(),false,why,new Date().toISOString());}catch(e){alert(e.message);return;}
+  await financeWrite(function(){return writeClaim(r._key||r.id,next);},'已退回');
 }
 
 /* ───── 收支表（財務） ───── */
 function renderSummary(){
-  var inc=0,out=0;
-  LEDGER.forEach(function(e){ if(e.type==='in')inc+=Number(e.amount)||0; else out+=Number(e.amount)||0; });
+  var total=ITRCFinance.totals(LEDGER),inc=total.income,out=total.expense;
   var bal=inc-out;
   $('s_in').textContent=money(inc); $('s_out').textContent=money(out);
   $('s_bal').textContent=(bal<0?'-':'')+money(Math.abs(bal));   // 負結餘顯示 -$xxx
@@ -329,51 +352,54 @@ function renderPendingPost(){
   $('pendingPost').innerHTML = list.length ? '<div class="surface" style="margin-bottom:6px"><h3 style="margin:0 0 8px;color:var(--navy);font-size:15px">已核准 · 待入帳</h3>'
     + table(['日期','類別','項目','申請人','付款','金額','操作'], list.map(function(r){
       return '<tr><td>'+esc(r.date)+'</td><td>'+esc(r.cat)+'</td><td>'+esc(r.item)+'</td><td>'+esc(r.byName)
-        +'</td><td class="muted">'+payText(r)+(r.receipt?' · '+receiptCell(r):'')+'</td><td class="num">'+money(r.amount)+'</td><td><button class="btn gold sm" onclick="postToLedger(\''+r.id+'\')">一鍵入帳</button></td></tr>';
+        +'</td><td class="muted">'+payText(r)+(r.receipt?' · '+receiptCell(r):'')+'</td><td class="num">'+money(r.amount)+'</td><td><button class="btn gold sm" onclick="postToLedger(\''+eventId(r.id)+'\')">一鍵入帳</button></td></tr>';
     }).join('')) + '</div>' : '';
 }
-function postToLedger(id){
+async function postToLedger(id){
   if(!ITRCAuth.can('treasury'))return;
-  var r=REIMB.find(function(x){return x.id===id;}); if(!r||r.status!=='approved')return;
-  if(LEDGER.some(function(e){return e.ref===r.id;}))return;   // 防重複入帳：同一筆核銷已有對應收支列就不再 push
-  LEDGER.push({id:uid(), date:r.date||today(), type:'out', cat:r.cat||'核銷', item:r.item,
-    amount:r.amount, note:'核銷·'+r.byName+(r.payMethod==='cash'?'／現金':(r.payMethod==='transfer'?'／匯款':''))+(r.approver?'／核准:'+r.approver:''), by:ME().name, ref:r.id});
-  r.status='posted'; r.postedAt=new Date().toISOString();
-  saveLedger(); saveReimb();   // 兩個都存
-  if(window.itrcToast)itrcToast('已轉入收支表');
+  var r=REIMB.find(function(x){return x.id===id;}),change;
+  try{change=ITRCFinance.posting(r,LEDGER,ME(),new Date().toISOString());}catch(e){alert(e.message);return;}
+  await financeWrite(async function(){
+    if(ITRCAuth.isDev()){replaceLocal(LEDGER,change.ledgerKey,change.ledger);replaceLocal(REIMB,change.claimKey,change.claim);saveLocalFinance();return;}
+    try{await ITRCAuth.db.ref().update(change.updates);}
+    catch(error){
+      // 重送或連線中斷：核對同一確定性單號，只有兩邊皆存在且互相對應才當成已成功。
+      var results=await Promise.all([fbLedger.child(change.ledgerKey).once('value'),fbReimb.child(change.claimKey).once('value')]);
+      var entry=results[0].val(),claim=results[1].val();
+      if(entry&&claim&&entry.ref===r.id&&entry.claimKey===change.claimKey&&entry.amount===r.amount&&claim.status==='posted'&&claim.ledgerKey===change.ledgerKey)return;
+      throw error;
+    }
+  },'已原子入帳：收支與核銷狀態皆已儲存');
 }
-function addLedger(){
+async function addLedger(){
   if(!ITRCAuth.can('treasury'))return;
-  var amt=Math.round(Number($('ld_amount').value));   // 同上：用 Number 取代 parseInt
-  if(!isFinite(amt)||amt<=0){alert('請填有效金額（正整數）');return;}
-  LEDGER.push({id:uid(), date:$('ld_date').value||today(), type:$('ld_type').value,
-    cat:$('ld_cat').value.trim(), item:$('ld_item').value.trim(), amount:amt, note:'', by:ME().name, ref:''});
-  saveLedger();
+  var key=ITRCAuth.isDev()?uid():fbLedger&&fbLedger.push().key,next;
+  try{next=ITRCFinance.manual({amount:$('ld_amount').value,date:$('ld_date').value||today(),type:$('ld_type').value,cat:$('ld_cat').value,item:$('ld_item').value},ME(),key,new Date().toISOString());}catch(e){alert(e.message);return;}
+  if(!await financeWrite(function(){return writeLedger(key,next);},'已加入收支表'))return;
   $('ld_amount').value='';$('ld_cat').value='';$('ld_item').value='';
-  if(window.itrcToast)itrcToast('已加入收支表');
 }
-function delLedger(id){
+async function delLedger(id){
   if(!ITRCAuth.can('treasury'))return;
-  if(!confirm('刪除這筆收支？（已入帳的核銷不會退回狀態）'))return;
-  LEDGER=LEDGER.filter(function(e){return e.id!==id;}); saveLedger();
+  var row=LEDGER.find(function(x){return x.id===id;});if(!row||row.voidedAt)return;
+  if(row.ref){alert('核銷入帳保留原始紀錄；請新增調整分錄，註明原單號及更正原因。');return;}
+  var reason=prompt('作廢原因（會保留原始明細，不再計入總額）：','');if(reason===null)return;
+  var next;try{next=ITRCFinance.voidEntry(row,ME(),reason,new Date().toISOString());}catch(e){alert(e.message);return;}
+  await financeWrite(function(){return writeLedger(row._key||row.id,next);},'已作廢並保留原始明細');
 }
-/* 換屆清理：刪「已入帳／已退回」核銷申請與附圖，釋放雲端空間。收支表（明細數字）不動。 */
+/* 保留核銷證據；備份包含收據與收款資訊，限財務處理者下載。 */
 function renderFinAdmin(ed){
   var el=$('finAdmin'); if(!el)return;
   if(!ed){ el.innerHTML=''; return; }
-  var done=REIMB.filter(function(r){return r.status==='posted'||r.status==='rejected';}).length;
-  el.innerHTML='<div class="surface"><h3 style="margin:0 0 6px;color:var(--navy);font-size:15px">換屆清理</h3>'
-    +'<div class="muted" style="margin-bottom:10px">學期末釋放雲端空間：刪除「已入帳／已退回」的核銷申請與其發票圖（共 '+done+' 筆）。<b>收支表的收支數字不受影響</b>，待簽核／待入帳的申請也會保留。</div>'
-    +'<button class="btn ghost sm"'+(done?'':' disabled')+' onclick="purgeReimb()">清除已結案核銷（'+done+'）</button></div>';
+  el.innerHTML='<div class="surface"><h3 style="margin:0 0 6px;color:var(--navy);font-size:15px">財務備份與交接</h3>'
+    +'<div class="muted" style="margin-bottom:10px">核銷與收據保留作為原始證據。下載檔包含收款帳戶及收據，請存放在社團限制存取的位置。這是本頁財務資料快照，並非全系統備份；還原須先在隔離環境核對。</div>'
+    +'<button class="btn ghost sm" onclick="exportFinanceBackup()">下載財務資料快照</button></div>';
 }
-function purgeReimb(){
-  if(!ITRCAuth.can('treasury'))return;
-  var done=REIMB.filter(function(r){return r.status==='posted'||r.status==='rejected';});
-  if(!done.length){alert('沒有可清除的已結案核銷。');return;}
-  if(!confirm('確定刪除 '+done.length+' 筆「已入帳／已退回」核銷紀錄與其發票圖？\n\n收支表（收支明細）數字不受影響，但這些核銷的申請資料與圖片會永久消失、無法復原。')) return;
-  REIMB=REIMB.filter(function(r){return r.status!=='posted'&&r.status!=='rejected';});
-  saveReimb();
-  if(window.itrcToast)itrcToast('已清除 '+done.length+' 筆結案核銷');
+function exportFinanceBackup(){
+  if(!ITRCAuth.can('treasury')||!financeReady())return;
+  function keyed(rows){var out={};rows.forEach(function(row){out[row._key||row.id]=ITRCFinance.clean(row);});return out;}
+  var backup={schema:'itrc-finance-snapshot-v1',createdAt:new Date().toISOString(),environment:ITRCAuth.isDev()?'local-test':'production',finance:{ledger:keyed(LEDGER),reimbursements:keyed(REIMB)}};
+  var url=URL.createObjectURL(new Blob([JSON.stringify(backup,null,2)],{type:'application/json'}));
+  var link=document.createElement('a');link.href=url;link.download='ITRC財務快照_'+today()+'.json';link.click();setTimeout(function(){URL.revokeObjectURL(url);},1000);
 }
 function renderLedger(){
   var ed=ITRCAuth.can('treasury');
@@ -382,9 +408,9 @@ function renderLedger(){
   $('ledgerList').innerHTML = rows.length ? table(cols,
     rows.map(function(e){
       return '<tr><td>'+esc(e.date)+'</td><td>'+(e.type==='in'?'<span class="pill s-posted">收入</span>':'<span class="pill s-rejected">支出</span>')
-        +'</td><td>'+esc(e.cat)+'</td><td>'+esc(e.item)+(e.note?'<div class="muted">'+esc(e.note)+'</div>':'')
+        +'</td><td>'+esc(e.cat)+'</td><td>'+esc(e.item)+(e.note?'<div class="muted">'+esc(e.note)+'</div>':'')+(e.voidedAt?'<div class="muted">已作廢：'+esc(e.voidReason)+' · '+esc(e.voidedBy)+'</div>':'')
         +'</td><td class="num">'+(e.type==='in'?'+':'−')+money(e.amount).slice(1)+'</td><td>'+esc(e.by||'')
-        +'</td>'+(ed?'<td><button class="btn ghost sm" onclick="delLedger(\''+e.id+'\')">刪</button></td>':'')+'</tr>';
+        +'</td>'+(ed?'<td>'+(!e.voidedAt&&!e.ref?'<button class="btn ghost sm" onclick="delLedger(\''+eventId(e.id)+'\')">作廢</button>':'')+'</td>':'')+'</tr>';
     }).join('')) : '<div class="empty">'+(ed?'收支表還是空的。核准的核銷可從上方「一鍵入帳」，或手動新增。':'收支表目前沒有資料。')+'</div>';
 }
 function csvCell(c){
@@ -393,9 +419,9 @@ function csvCell(c){
   return /[",\n\r]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c;
 }
 function exportCSV(){
-  var head=['日期','類型','類別','項目','金額','經手','備註'];
+  var head=['單號','日期','類型','類別','項目','金額','經手','備註','作廢時間','作廢原因'];
   var lines=[head.join(',')].concat(LEDGER.slice().sort(function(a,b){return (a.date||'').localeCompare(b.date||'');}).map(function(e){
-    return [e.date,(e.type==='in'?'收入':'支出'),e.cat,e.item,e.amount,e.by,e.note].map(csvCell).join(',');
+    return [e.id,e.date,(e.type==='in'?'收入':'支出'),e.cat,e.item,e.amount,e.by,e.note,e.voidedAt||'',e.voidReason||''].map(csvCell).join(',');
   }));
   var blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
   var url=URL.createObjectURL(blob);

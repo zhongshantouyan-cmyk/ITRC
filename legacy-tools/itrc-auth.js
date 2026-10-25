@@ -43,6 +43,7 @@
              || location.hostname==='::1' || location.protocol==='file:';
   var isDev = isLocal;
   var authGeneration = 0;
+  var roleWatch = null;
 
   var A = window.ITRCAuth = {
     user:null, mode:null, db:null,
@@ -74,20 +75,30 @@
     A.db=firebase.database();
     firebase.auth().onAuthStateChanged(function(u){
       var generation=++authGeneration;
+      if(roleWatch){roleWatch.ref.off('value',roleWatch.fn);roleWatch=null;}
       if(!u){ A.user=null; emit(); return; }
+      if(u.emailVerified===false){A.user={uid:u.uid,name:u.displayName||u.email,role:null,email:u.email};emit();return;}
       // 角色以 email 在 roles 名單比對（可在登入前就由管理組指派）
-      A.db.ref('roles').once('value').then(function(s){
+      var ref=A.db.ref('roles');
+      var accept=function(s){
         if(generation!==authGeneration) return;
-        var list=s.val()||{}, email=(u.email||'').toLowerCase(), found=null;
+        var list=s.val()||{}, email=(u.email||'').toLowerCase(), matches=[];
         if(SUPER_ADMINS.indexOf(email)>=0){ // 救命索：永遠顧問級顯示，superAdmin 短路所有能力（全權）
-          A.user={uid:u.uid, name:u.displayName||u.email, role:'advisor', email:u.email, superAdmin:true}; emit(); return;
+          var superUser={uid:u.uid, name:u.displayName||u.email, role:'advisor', email:u.email, superAdmin:true};
+          if(JSON.stringify(A.user)!==JSON.stringify(superUser)){A.user=superUser;emit();}return;
         }
-        Object.keys(list).forEach(function(k){ var r=list[k]; if(r&&r.email&&String(r.email).toLowerCase()===email) found=r; });
-        A.user = (found&&found.role)
+        Object.keys(list).forEach(function(k){ var r=list[k];
+          if(r&&r.email&&String(r.email).toLowerCase()===email&&r.disabled!==true&&r.active!==false&&!/^(inactive|retired|已卸任|離任|非當期名單|暫停)$/i.test(String(r.status||''))&&ROLES.indexOf(r.role)>=0)matches.push(r);
+        });
+        var found=matches.length===1?matches[0]:null;
+        var next = found
           ? {uid:u.uid, name:found.name||u.displayName||u.email, role:found.role, title:found.title||'', email:u.email}
           : {uid:u.uid, name:u.displayName||u.email, role:null, email:u.email}; // 已登入、尚未授權
-        emit();
-      }).catch(function(){ if(generation!==authGeneration)return; A.user={uid:u.uid,name:u.displayName||u.email,role:null,email:u.email}; emit(); });
+        if(JSON.stringify(A.user)!==JSON.stringify(next)){A.user=next;emit();}
+      };
+      var denied=function(){if(generation!==authGeneration)return;A.user={uid:u.uid,name:u.displayName||u.email,role:null,email:u.email};emit();};
+      if(typeof ref.on==='function'){roleWatch={ref:ref,fn:accept};ref.on('value',accept,denied);}
+      else ref.once('value').then(accept).catch(denied);
     });
   }
 
