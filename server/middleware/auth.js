@@ -1,10 +1,8 @@
 const jwt = require('jsonwebtoken');
 const { verifyFirebaseToken, resolveRole, isSuperAdmin } = require('../firebase');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'itrc-secret-key-change-in-production';
-// 過渡期預設接受舊密碼 JWT；cutover 後在 Render 設 ALLOW_LEGACY_JWT='false' 即關閉。
-// 先 trim + 轉小寫再比對，讓 'FALSE'/' false ' 等變體也能確實關閉（避免打錯字時 fail-open）。
-const ALLOW_LEGACY_JWT = String(process.env.ALLOW_LEGACY_JWT ?? '').trim().toLowerCase() !== 'false';
+const { legacyAuthPolicy } = require('../legacy-auth-policy');
+const { secret: JWT_SECRET, enabled: ALLOW_LEGACY_JWT } = legacyAuthPolicy();
 
 async function authMiddleware(req, res, next) {
     const authHeader = req.headers.authorization;
@@ -16,8 +14,9 @@ async function authMiddleware(req, res, next) {
     // 1) 先當作 Firebase Google ID token 驗證（新的統一登入）
     try {
         const decoded = await verifyFirebaseToken(token);
+        if (decoded.email_verified !== true) return res.status(401).json({ error: '請使用已驗證的 Google 帳號。' });
         const email = decoded.email || '';
-        const role = resolveRole(email);
+        const role = await resolveRole(email);
         if (!role) {
             return res.status(403).json({ error: '此帳號尚未被授權存取管理後台', email });
         }
@@ -47,4 +46,4 @@ async function authMiddleware(req, res, next) {
     return res.status(401).json({ error: 'Token 無效或已過期' });
 }
 
-module.exports = { authMiddleware, JWT_SECRET };
+module.exports = { authMiddleware, JWT_SECRET, legacyJwtEnabled: ALLOW_LEGACY_JWT };

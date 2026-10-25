@@ -1,0 +1,43 @@
+name: Operations checks
+
+on:
+  pull_request:
+    paths:
+      - 'client/**'
+      - 'server/**'
+      - '.github/workflows/ops-checks.yml'
+  push:
+    branches: [main, 'feature/itrc-integrated-ops-*']
+    paths:
+      - 'client/**'
+      - 'server/**'
+      - '.github/workflows/ops-checks.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.20.0'
+          cache: npm
+          cache-dependency-path: |
+            client/package-lock.json
+            server/package-lock.json
+      - name: Install server dependencies
+        run: npm --prefix server ci --ignore-scripts --no-audit --no-fund
+      - name: Verify durable workflow, identity, provider and connection boundaries
+        run: npm --prefix server test
+      - name: Install client dependencies
+        run: npm --prefix client ci --ignore-scripts --no-audit --no-fund
+      - name: Build production frontend
+        run: npm --prefix client run build
+      - name: Verify people, delivery, CSV mapping and demonstration boundaries
+        run: node --test --experimental-test-isolation=none client/src/ops/*.test.js client/src/utils/courseInfo.test.js
+      - name: Verify protected operations proxy boundaries
+        run: node --test --experimental-test-isolation=none client/server/ops-proxy.test.mjs

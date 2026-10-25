@@ -1,0 +1,54 @@
+name: Process approved operations jobs
+
+# Only this exact main-branch workflow is trusted by the backend. The runner
+# requests a short-lived OIDC identity; no permanent API key is stored in GitHub.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+
+permissions: {}
+
+concurrency:
+  group: operations-queue
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    if: ${{ github.repository_id == '1285692408' && vars.OPS_DISABLE_QUEUE != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      id-token: write
+    steps:
+      - name: Process already approved jobs
+        shell: bash
+        run: |
+          node <<'NODE'
+          (async () => {
+            const endpoint = 'https://itrc-eight.vercel.app/api/ops/jobs/tick';
+            const request = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
+            if (request.protocol !== 'https:') throw new Error('OIDC provider unavailable');
+            request.searchParams.set('audience', endpoint);
+            const identity = await fetch(request, {
+              redirect: 'error',
+              headers: { Authorization: 'Bearer ' + process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN },
+              signal: AbortSignal.timeout(15000),
+            });
+            if (!identity.ok) throw new Error('OIDC identity unavailable');
+            const { value } = await identity.json();
+            if (typeof value !== 'string' || !value) throw new Error('OIDC identity unavailable');
+            const response = await fetch(endpoint, {
+              method: 'POST', redirect: 'error',
+              headers: { Authorization: 'Bearer ' + value },
+              signal: AbortSignal.timeout(90000),
+            });
+            if (!response.ok) throw new Error('Operations endpoint returned HTTP ' + response.status);
+            const result = await response.json();
+            if (result.ok !== true || !Number.isInteger(result.processed) || result.processed < 0 || result.processed > 3) throw new Error('Unexpected operations response');
+            console.log('Processed approved jobs:', result.processed);
+          })().catch(error => {
+            console.error(error.message.startsWith('Operations endpoint returned HTTP ') ? error.message : 'Queue check did not complete. Inspect the workspace job states before retrying.');
+            process.exitCode = 1;
+          });
+          NODE

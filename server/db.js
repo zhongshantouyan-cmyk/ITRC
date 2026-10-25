@@ -2,8 +2,12 @@ const { createClient } = require('@libsql/client');
 require('dotenv').config({ path: '../.env' }); // Load from root dir
 
 // 優先使用環境變數中的連線資訊，如果沒有則使用本地端 SQLite (fallback for local development if not provided)
+const databaseUrl = process.env.TURSO_DATABASE_URL;
+if (!databaseUrl && (process.env.VERCEL || process.env.NODE_ENV === 'production')) {
+  throw new Error('TURSO_DATABASE_URL is required for a hosted backend.');
+}
 const db = createClient({
-  url: process.env.TURSO_DATABASE_URL || 'file:./itrc.db',
+  url: databaseUrl || 'file:./itrc.db',
   authToken: process.env.TURSO_AUTH_TOKEN,
 });
 
@@ -45,7 +49,8 @@ async function initDB() {
         department text,
         year text,
         avatar_url text,
-        order_num INTEGER DEFAULT 0
+        order_num INTEGER DEFAULT 0,
+        archived_at text
       );
 
       CREATE TABLE IF NOT EXISTS activities (
@@ -123,13 +128,24 @@ async function initDB() {
       // Column already exists or other error, ignore
     }
 
+    const memberSchema = await db.execute('PRAGMA table_info(members)');
+    if (!memberSchema.rows.some(column => column.name === 'archived_at')) {
+      try { await db.execute('ALTER TABLE members ADD COLUMN archived_at text'); }
+      catch (error) {
+        const concurrentSchema = await db.execute('PRAGMA table_info(members)');
+        if (!concurrentSchema.rows.some(column => column.name === 'archived_at')) throw error;
+      }
+    }
     console.log('Database initialized successfully');
   } catch (error) {
-    console.error('Failed to initialize database:', error);
+    console.error('Failed to initialize database schema.');
+    throw error;
   }
 }
 
 // Start initialization immediately
-initDB();
+db.ready = initDB();
+// Requests await readiness; this handler also prevents an unhandled rejection during cold start.
+db.ready.catch(() => {});
 
 module.exports = db;

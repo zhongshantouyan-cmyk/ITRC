@@ -34,16 +34,18 @@ export default function Navbar() {
     }, [location, navigate]);
 
     const isActive = (path) => location.pathname === path ? 'active' : '';
+    const isOpsRoute = location.pathname === '/ops' || location.pathname === '/ops-demo';
+    const usesLightNavbar = isOpsRoute || location.pathname === '/login';
 
     return (
         <>
-            <nav className={`navbar ${scrolled ? 'scrolled' : ''}`}>
+            <nav className={`navbar ${scrolled || usesLightNavbar ? 'scrolled' : ''} ${usesLightNavbar ? 'navbar-ops' : ''}`}>
                 <div className="navbar-inner">
                     <Link to="/" className="navbar-logo">
                         <span>ITRC</span>
                     </Link>
 
-                    <button className="hamburger" onClick={() => setMenuOpen(!menuOpen)}>
+                    <button className="hamburger" aria-label={menuOpen ? '關閉主選單' : '開啟主選單'} aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>
                         <span></span>
                         <span></span>
                         <span></span>
@@ -59,8 +61,9 @@ export default function Navbar() {
                         <li><Link to="/experiences" className={isActive('/experiences')}>參與心得</Link></li>
                         {isAdmin && (
                             <>
+                                <li><Link to="/ops" className={isActive('/ops')}>營運工作台</Link></li>
                                 <li><Link to="/admin" className={isActive('/admin')}>管理後台</Link></li>
-                                <li><button onClick={logout} style={{ color: '#fc8181' }}>登出</button></li>
+                                <li><button onClick={logout} style={{ color: usesLightNavbar ? '#9a4d43' : '#fc8181' }}>登出</button></li>
                             </>
                         )}
 

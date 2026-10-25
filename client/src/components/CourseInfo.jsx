@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 import { motion, useInView } from 'framer-motion';
+import { publicCourseInfo } from '../utils/courseInfo';
 
 const SvgIcons = {
     time: (
@@ -42,26 +43,16 @@ const labels = {
     coordinators: '社團幹部',
     email: 'E-mail',
     ig: 'Instagram',
+    professor: '指導老師',
+    registrationFormUrl: '入社報名',
 };
 
 export default function CourseInfo({ info }) {
     const ref = useRef(null);
     const isInView = useInView(ref, { once: true, margin: '-100px' });
 
-    let data;
-    try {
-        data = typeof info === 'string' ? JSON.parse(info) : info;
-    } catch {
-        data = {
-            time: '每週五 18:00 - 21:00',
-            location: '管理學院 CM1037',
-            coordinators: '張大恒、李沁彤、許筠采',
-            email: 'zhongshantouyan@gmail.com',
-            ig: 'nsysu_itrc',
-        };
-    }
-
-    if (!data) return null;
+    const data = publicCourseInfo(info);
+    if (Object.keys(data).length === 0) return null;
 
     return (
         <section className="section section-alt" id="course-info" ref={ref}>
@@ -90,7 +81,9 @@ export default function CourseInfo({ info }) {
                             <div>
                                 <div className="info-label">{labels[key] || key}</div>
                                 <div className="info-value">
-                                    {key === 'professor' ? (
+                                    {key === 'registrationFormUrl' ? (
+                                        <a href={value} target="_blank" rel="noopener noreferrer">填寫入社表單</a>
+                                    ) : key === 'professor' ? (
                                         <a href="https://gam.nsysu.edu.tw/p/404-1349-312656.php?Lang=zh-tw" target="_blank" rel="noopener noreferrer">
                                             {value}
                                         </a>
