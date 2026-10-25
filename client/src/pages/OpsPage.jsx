@@ -75,7 +75,7 @@ function fieldsFor(kind, data, record) {
     { key: 'completionCriteria', label: '結案標準', type: 'textarea', wide: true, placeholder: '什麼成果交出來，這個專案才算完成？' },
   ];
   if (kind === 'event') return [...common, projectField,
-    { key: 'speaker', label: '講者／帶領者' }, { key: 'date', label: '活動日期', type: 'date' }, { key: 'time', label: '活動時間', type: 'time' },
+    { key: 'speaker', label: '講者／帶領者' }, { key: 'date', label: '活動日期', type: 'date' }, { key: 'time', label: '活動時間', placeholder: '例如：16:00–18:00', hint: '可填開始與結束時間，保留完整活動時段。' },
     { key: 'venue', label: '地點／線上會議' }, { key: 'audience', label: '參與對象' }, { key: 'fee', label: '費用說明' },
     { key: 'registrationUrl', label: '報名連結', type: 'url', placeholder: 'https://' }, { key: 'highlights', label: '活動內容與宣傳重點', type: 'textarea', wide: true },
     { key: 'sourceUrl', label: '原始資料連結', type: 'url' }, { key: 'sourceDate', label: '原資料確認日期', type: 'date' },
