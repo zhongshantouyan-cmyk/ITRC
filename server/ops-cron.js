@@ -4,26 +4,31 @@ const express = require('express');
 const { createHash, timingSafeEqual } = require('node:crypto');
 
 const digest = value => createHash('sha256').update(value, 'utf8').digest();
+const { createGitHubCronVerifier } = require('./github-cron-auth');
 
 /**
  * A narrowly scoped scheduler endpoint. It processes already-authorized jobs only.
  * It cannot create records, approve copy, select a principal, or change job limits.
  */
-function createOpsCronRouter(service, { env = process.env } = {}) {
+function createOpsCronRouter(service, { env = process.env, verifyGitHub = createGitHubCronVerifier() } = {}) {
   if (!service || typeof service.runJobs !== 'function') throw new TypeError('An operations job service is required.');
   const router = express.Router();
 
-  router.use('/tick', (req, res, next) => {
+  router.use('/tick', async (req, res, next) => {
     res.set('Cache-Control', 'no-store');
     const secret = env.OPS_CRON_SECRET;
-    if (typeof secret !== 'string' || secret.length < 32 || secret.length > 512 || /\s/.test(secret)) {
+    const hasSecret = typeof secret === 'string' && secret.length >= 32 && secret.length <= 512 && !/\s/.test(secret);
+    const githubEnabled = env.VERCEL_ENV === 'production' && env.OPS_GITHUB_CRON_ENABLED !== 'false';
+    if (!hasSecret && !githubEnabled) {
       return res.status(503).json({ ok:false, code:'CRON_NOT_CONFIGURED', error:'排程連線尚未完成設定。' });
     }
     const match = /^Bearer ([^\s]+)$/i.exec(req.headers.authorization || '');
-    // Both digests have a fixed size; comparisons do not short-circuit on token length/content.
     const submitted = match ? match[1] : '';
-    const equal = timingSafeEqual(digest(secret), digest(submitted));
-    if (!match || !equal) {
+    let authorized = !!match && hasSecret && timingSafeEqual(digest(secret), digest(submitted));
+    if (!authorized && match && githubEnabled) {
+      try { await verifyGitHub(submitted); authorized = true; } catch { /* Never echo tokens or provider responses. */ }
+    }
+    if (!authorized) {
       return res.status(401).json({ ok:false, code:'CRON_UNAUTHORIZED', error:'排程驗證失敗。' });
     }
     if (!['GET','POST'].includes(req.method)) {

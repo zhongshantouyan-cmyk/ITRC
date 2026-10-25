@@ -19,6 +19,11 @@ const PORT = process.env.PORT || 3001;
 
 // Middleware
 app.use(cors());
+app.use(require('./preview-policy').createPreviewWriteGuard());
+app.use(async (_req, res, next) => {
+    try { await db.ready; next(); }
+    catch { res.status(503).json({ error: '資料庫初始化尚未完成，請稍後重試。' }); }
+});
 app.use('/api/ops', express.json({ limit: '256kb' }));
 app.use(express.json());
 app.use('/api/ops', (error, _req, res, next) => {
@@ -51,7 +56,9 @@ const opsProviders = withCanvaConnection(require('./ops/providers'), canvaConnec
 const opsRouter = createOpsRouter({ db, providers: opsProviders });
 app.use('/api/ops/jobs', require('./ops-cron').createOpsCronRouter(opsRouter.service));
 app.use('/api/ops', opsRouter);
-require('./ops-worker').startOpsWorker(opsRouter.service);
+if (require('./preview-policy').previewWritePolicy().allowed) {
+    require('./ops-worker').startOpsWorker(opsRouter.service);
+}
 
 // Upload route (Cloudinary)
 const multer = require('multer');
@@ -77,6 +84,14 @@ const upload = multer({
 });
 
 const { authMiddleware } = require('./middleware/auth');
+app.use('/api/system-backup', require('./routes/system-backup').createSystemBackupRouter({
+    db, authMiddleware,
+    ready: Promise.all([db.ready, opsRouter.service.ready, canvaConnection.ready]),
+    readRTDB: async location => {
+        if (!require('./firebase').isInitialized()) throw new Error('Firebase unavailable');
+        return (await require('firebase-admin').database().ref(location).once('value')).val();
+    },
+}));
 
 app.post('/api/upload', authMiddleware, upload.single('file'), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: '未選擇檔案' });
@@ -174,6 +189,9 @@ app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
-app.listen(PORT, () => {
-    console.log(`ITRC Server running on http://localhost:${PORT}`);
-});
+if (require.main === module) {
+    app.listen(PORT, () => {
+        console.log(`ITRC Server running on http://localhost:${PORT}`);
+    });
+}
+module.exports = app;

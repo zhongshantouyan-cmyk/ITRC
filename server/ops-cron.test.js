@@ -6,10 +6,10 @@ const { randomBytes } = require('node:crypto');
 const express = require('express');
 const { createOpsCronRouter } = require('./ops-cron');
 
-async function fixture(t, { secret = randomBytes(32).toString('hex'), runJobs = async () => ({processed:0,jobs:[]}) } = {}) {
+async function fixture(t, { secret = randomBytes(32).toString('hex'), runJobs = async () => ({processed:0,jobs:[]}), env = {}, verifyGitHub } = {}) {
   const app = express();
   app.use(express.json());
-  app.use('/api/ops/jobs', createOpsCronRouter({runJobs}, {env:{OPS_CRON_SECRET:secret}}));
+  app.use('/api/ops/jobs', createOpsCronRouter({runJobs}, {env:{OPS_CRON_SECRET:secret, ...env}, ...(verifyGitHub ? {verifyGitHub} : {})}));
   const server = app.listen(0,'127.0.0.1');
   await new Promise(resolve => server.once('listening',resolve));
   t.after(() => new Promise(resolve => server.close(resolve)));
@@ -61,4 +61,24 @@ test('cron rejects unsupported methods without processing work',async t => {
     assert.equal(response.status,405); assert.equal(response.headers.get('allow'),'GET, POST');
   }
   assert.equal(calls,0);
+});
+
+
+test('production accepts verified GitHub workflow identity without a permanent scheduler secret', async t => {
+  let verified = 0; const calls = [];
+  const f = await fixture(t, { secret:'', env:{VERCEL_ENV:'production'},
+    verifyGitHub:async token => { assert.equal(token,'signed-workflow-token'); verified++; },
+    runJobs:async options => {calls.push(options); return {processed:0};} });
+  const response = await fetch(f.url, {method:'POST',headers:{Authorization:'Bearer signed-workflow-token'}});
+  assert.equal(response.status,200); assert.equal(verified,1); assert.deepEqual(calls,[{limit:3}]);
+});
+
+test('unverified GitHub identity and disabled production scheduler cannot process jobs', async t => {
+  for (const env of [{VERCEL_ENV:'production'}, {VERCEL_ENV:'preview'}, {VERCEL_ENV:'production',OPS_GITHUB_CRON_ENABLED:'false'}]) {
+    let calls=0;
+    const f = await fixture(t,{secret:'',env,verifyGitHub:async () => {throw Error('private verification failure');},runJobs:async () => {calls++;return {processed:0};}});
+    const response = await fetch(f.url,{method:'POST',headers:{Authorization:'Bearer invalid-workflow-token'}});
+    assert.ok([401,503].includes(response.status)); assert.equal(calls,0);
+    assert.ok(!(await response.text()).includes('private verification failure'));
+  }
 });

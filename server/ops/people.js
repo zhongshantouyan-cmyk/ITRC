@@ -8,15 +8,20 @@ const PERSON_FIELDS = ['personId','name','email','title','group','lineName','ter
 const PERSON_ID = /^ITRC-P\d{4,8}$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+const isInactivePerson = row => Boolean(row && ['inactive','retired'].includes(row.status));
+function assertActorActive(state, actor) {
+  const row = (state.people || []).find(item => item.email && item.email.toLowerCase() === actor?.email?.toLowerCase());
+  assert(!isInactivePerson(row),403,'PERSON_ACCESS_REVOKED','此帳號已不在現任幹部名單，無法存取社團工作台。歷史工作紀錄仍會保留。');
+}
 function person(state, personId) { return (state.people || []).find(row => row.personId === personId); }
 function personMatches(state, personId, actor) {
   const row = person(state, personId);
-  return Boolean(row && row.status !== 'inactive' && row.email && row.email === actor.email);
+  return Boolean(row && !isInactivePerson(row) && row.email && row.email === actor.email);
 }
 function requirePerson(state, personId, label = '負責人') {
   const row = person(state, personId);
   assert(row,400,'PERSON_NOT_FOUND',`${label}不在已確認的幹部名單，請先更新名單。`);
-  assert(row.status !== 'inactive',400,'PERSON_INACTIVE',`${label}不在當期名單，請選擇目前在任的人員。`);
+  assert(!isInactivePerson(row),400,'PERSON_INACTIVE',`${label}不在當期名單，請選擇目前在任的人員。`);
   return row;
 }
 function validatePersonReferences(state, record) {
@@ -49,7 +54,7 @@ function normalizePeopleImport(state, payload) {
       fields.email = fields.email.toLowerCase();
       assert(!fields.email || EMAIL.test(fields.email),400,'INVALID_EMAIL','幹部 MAIL 格式不正確。');
     }
-    if (fields.status !== undefined) assert(['active','inactive','pending'].includes(fields.status),400,'INVALID_PERSON_STATUS','在任狀態需為 active、inactive 或 pending。');
+    if (fields.status !== undefined) assert(['active','inactive','retired','pending'].includes(fields.status),400,'INVALID_PERSON_STATUS','在任狀態需為 active、inactive、retired 或 pending。');
     for (const key of ['sourceUrl','contactSourceUrl']) if (fields[key]) {
       let url; try { url = new URL(fields[key]); } catch {}
       assert(url?.protocol === 'https:' && !url.username && !url.password,400,'INVALID_URL','名單來源需使用完整 https 網址。');
@@ -78,8 +83,8 @@ function normalizePeopleImport(state, payload) {
   return {people,changes,previewToken,warnings:[
     '姓名、職稱與現任名單以官網為準；這裡保存工作台的人員對照，正式來源仍需在原表維護。',
     '只更新本次列出的固定幹部 ID；未列出的人員紀錄不刪除，MAIL 與任務不會自動轉給另一人。',
-    '更新名單不會新增登入權限，也不會變更社長、顧問、財務或最終審核人的授權。',
+    '名單不會授予新的登入或審核權限；非當期／已卸任帳號會停止使用工作台。其他平台的帳號角色仍需另外撤銷。',
   ]};
 }
 
-module.exports = {WEBSITE_AUTHORITY,PERSON_FIELDS,person,personMatches,requirePerson,validatePersonReferences,normalizePeopleImport};
+module.exports = {isInactivePerson,assertActorActive,WEBSITE_AUTHORITY,PERSON_FIELDS,person,personMatches,requirePerson,validatePersonReferences,normalizePeopleImport};

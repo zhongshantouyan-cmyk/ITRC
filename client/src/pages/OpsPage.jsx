@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { opsApi as api } from '../api';
 import { ACTION_LABELS, CHANNELS, EVENT_STATES, JOB_STATES, STAGES, TABS, TASK_STATES, canOwn, dateText, exportPostsCsv, isAdviser, nextStep, parseImportText, safeLink } from '../ops/model';
 import { changeDemoActor, DEMO_ACTORS, loadDemo, performDemoAction, resetDemo } from '../ops/demo';
-import { PERSON_STATES, actorPerson, assignmentFormValue, assignmentOptions, assignmentPayload, canReviewTask, hasAssignee, matchesPerson, ownerLabel, personById, personLabel, personOptions, projectPendingTasks, taskDeliveryReason } from '../ops/people';
+import { PERSON_STATES, actorPerson, assignmentFormValue, assignmentOptions, assignmentPayload, canReviewTask, hasAssignee, matchesPerson, ownerLabel, personById, personLabel, personOptions, projectPendingTasks, taskDeliveryReason, taskGroups, isInactivePerson } from '../ops/people';
+import SourceChanges from '../ops/SourceChanges';
 import './ops.css';
 
 const uuid = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -11,7 +12,7 @@ const collectionFor = kind => ({ project: 'projects', event: 'events', post: 'po
 const titleFor = kind => ({ project: '專案', event: '活動', post: '宣傳需求', task: '任務', obligation: '交付要求' })[kind];
 const values = map => Object.entries(map).map(([value, label]) => ({ value, label }));
 const records = list => list.map(item => ({ value: item.id, label: item.title }));
-const initialCollections = { projects: [], events: [], posts: [], tasks: [], obligations: [], jobs: [], audit: [], people: [] };
+const initialCollections = { projects: [], events: [], posts: [], tasks: [], obligations: [], jobs: [], audit: [], people: [], sourceChanges: [] };
 const normalize = state => ({ ...initialCollections, ...state, settings: state.settings || { integrations: {} } });
 const humanError = error => {
   const body = error.response?.data;
@@ -91,6 +92,7 @@ function fieldsFor(kind, data, record) {
     { key: 'dependsOn', label: '前置任務', type: 'multi', options: records(data.tasks.filter(task => task.id !== record?.id)), wide: true, hint: '按住 Ctrl 或 ⌘ 可多選。完成前置任務後再驗收。' },
     { key: 'acceptanceCriteria', label: '驗收標準', type: 'textarea', wide: true, placeholder: '成果、格式、檢查方式' },
     { key: 'blocker', label: '目前卡點', type: 'textarea', wide: true }, { key: 'deliverableUrl', label: '交付成果連結', type: 'url', wide: true, placeholder: 'https://' },
+    { key: 'sourceUrl', label: '正式來源連結', type: 'url' }, { key: 'sourceRevision', label: '已核對的正式來源版本', hint: '原始檔改版後，先核對任務內容，再更新這個版本。' },
   ];
   if (kind === 'obligation') return [...common, projectField, eventField,
     { key: 'channel', label: '適用管道', type: 'select', options: values(CHANNELS) },
@@ -140,6 +142,7 @@ function PostForm({ record, defaults = {}, data, busy, onClose, onSubmit }) {
     { key: 'purpose', label: '這則宣傳的目的', type: 'textarea' }, { key: 'audience', label: '對誰說' },
     { key: 'highlights', label: '這則貼文的宣傳重點', type: 'textarea', wide: true }, { key: 'cta', label: '希望讀者採取的行動', wide: true },
     { key: 'caption', label: '正式貼文文案', type: 'textarea', rows: 8, wide: true, hint: '送審與設計綁定此版本；修改文案後須重新確認。' },
+    { key: 'sourceUrl', label: '正式來源連結', type: 'url' }, { key: 'sourceRevision', label: '已核對的正式來源版本', hint: '來源版本變更後，文案需要重新送審。' },
   ];
   const set = (key, value) => setForm(old => ({ ...old, [key]: value }));
   const save = async event => {
@@ -178,7 +181,19 @@ function ActionForm({ config, busy, onClose, onSubmit }) {
     if (config.action === 'post.publish' && payload.publishedAt) payload.publishedAt = new Date(payload.publishedAt).toISOString();
     try { await onSubmit(config.action, config.record, payload); onClose(); } catch (issue) { setError(humanError(issue)); }
   };
-  return <Dialog title={config.title} onClose={busy ? noop : onClose}><form onSubmit={save}>{config.description && <p className="ops-note">{config.description}</p>}<div className="ops-form-grid one">{config.fields.map(field => <Field key={field.key} field={field} value={form[field.key]} onChange={value => setForm(old => ({ ...old, [field.key]: value }))} />)}</div>{error && <p className="ops-inline-error" role="alert">{error}</p>}<div className="ops-dialog-actions"><button className="ops-button quiet" type="button" disabled={busy} onClick={onClose}>取消</button><button className="ops-button primary" disabled={busy}>{busy ? '處理中…' : config.button || '確認記錄'}</button></div></form></Dialog>;
+  return <Dialog title={config.title} onClose={busy ? noop : onClose}><form onSubmit={save}>{config.description && <p className="ops-note ops-pre-line">{config.description}</p>}<div className="ops-form-grid one">{config.fields.map(field => <Field key={field.key} field={field} value={form[field.key]} onChange={value => setForm(old => ({ ...old, [field.key]: value }))} />)}</div>{error && <p className="ops-inline-error" role="alert">{error}</p>}<div className="ops-dialog-actions"><button className="ops-button quiet" type="button" disabled={busy} onClick={onClose}>取消</button><button className="ops-button primary" disabled={busy}>{busy ? '處理中…' : config.button || '確認記錄'}</button></div></form></Dialog>;
+}
+
+function GroupTools() {
+  const tools = [
+    ['管理', '幹部與權限', '名單聯絡資訊在主表；登入角色另行維護。', 'ITRC管理組-幹部與權限.html'],
+    ['活動', '講師池與排程', '保留既有講師接洽與排程紀錄。', 'ITRC活動組-講師池排程.html'],
+    ['行銷', '圖文小幫手', '整理文案與素材；正式核稿回到工作台逐版記錄。', 'ITRC圖文小幫手.html'],
+    ['公關', '合作與贊助', '沿用合作案件，將露出要求與證據連到活動。', 'ITRC公關拉贊助小幫手.html'],
+    ['財務', '財務站', '申請、簽核、入帳沿用原帳務入口。', 'ITRC財務站.html'],
+    ['資訊', '維護手冊與交接', '查看原系統入口、保管與維運說明。', 'ITRC資訊組維護手冊.html'],
+  ];
+  return <Panel title="各組工具入口" kicker="TEAM TOOLS"><p className="ops-muted">工作台追蹤接力與驗收，各組原有工具繼續使用；正式資料更新集中到「來源回寫」。</p><div className="ops-team-tools">{tools.map(([group,title,detail,path]) => <a key={group} href={`https://itrc-tools.vercel.app/${path}`} target="_blank" rel="noopener noreferrer"><span className="ops-kicker">{group}組</span><h3>{title} ↗</h3><p>{detail}</p></a>)}</div><div className="ops-source-line"><ExternalLink href="https://itrc-tools.vercel.app/index.html">完整工具站</ExternalLink><ExternalLink href="https://nsysu-itrc.vercel.app/admin">官網內容後台</ExternalLink><ExternalLink href="https://docs.google.com/spreadsheets/d/1K7byAc1JhpcinOHSDnGEGfwy0kzfTnMB4U-neTjKMKg/edit">幹部主表</ExternalLink></div></Panel>;
 }
 
 function Overview({ data, busy, go, openForm, openPost }) {
@@ -200,12 +215,13 @@ function Overview({ data, busy, go, openForm, openPost }) {
     </Panel><Panel title="我的交付" kicker="MY DELIVERABLES" action={<button className="ops-text-button" onClick={() => go('tasks')}>查看任務 →</button>}>
       {myTasks.length ? <div className="ops-my-list">{myTasks.map(task => <button key={task.id} className="ops-my-item" onClick={() => openForm('task', task)}><span className="ops-square" aria-hidden="true" /><span><strong>{task.title}</strong><small>{task.status === 'blocked' ? task.blocker || '請補上卡點' : `期限 ${dateText(task.dueDate)}`}</small></span><Badge value={task.status} type="task" /></button>)}</div> : <p className="ops-note">目前沒有指派給你的未完成任務。到「我的任務」可查看全組交付。</p>}
     </Panel></div>
+    <GroupTools />
     <Panel title="宣傳製作進度" kicker="CONTENT PIPELINE"><div className="ops-pipeline">{groups.map(([label, stages], index) => <button key={label} onClick={() => go('posts')} className="ops-pipeline-step"><span className="ops-step-number">0{index + 1}</span><strong>{data.posts.filter(p => stages.includes(p.stage)).length}</strong><span>{label}</span></button>)}</div><p className="ops-footnote">文案核准後才建立設計；資料或文案異動會重新確認。每次交接都有版本與負責人。</p></Panel>
     {(blocked.length > 0 || blockedJobs.length > 0) && <Panel title="目前卡點" kicker="NEEDS ATTENTION"><div className="ops-attention-list">{blocked.map(task => <div key={task.id}><span className="ops-badge ops-badge-red">任務</span><strong>{task.title}</strong><p>{task.blocker || '尚未填寫原因'}</p><button className="ops-text-button" onClick={() => openForm('task', task)}>更新卡點 →</button></div>)}{blockedJobs.slice(0, 3).map(job => <div key={job.id}><Badge value={job.status} type="job" /><strong>{data.posts.find(p => p.id === job.postId)?.title || '自動工作'}</strong><p>{job.lastError || '請查看系統連線設定。'}</p><button className="ops-text-button" onClick={() => go('settings')}>查看處理方式 →</button></div>)}</div></Panel>}
   </>;
 }
 
-function Projects({ data, busy, openForm, run, openPost }) {
+function Projects({ data, busy, openForm, run, openPost, openAction }) {
   const [selected, setSelected] = useState('all');
   const events = selected === 'all' ? data.events : data.events.filter(e => e.projectId === selected);
   return <>
@@ -215,7 +231,7 @@ function Projects({ data, busy, openForm, run, openPost }) {
       return <article className={`ops-project-card ${selected === project.id ? 'selected' : ''}`} key={project.id}><div className="ops-item-line"><span className="ops-kicker">PROJECT</span><button className="ops-text-button" disabled={busy} onClick={() => openForm('project', project)}>編輯</button></div><button className="ops-project-select" aria-pressed={selected === project.id} onClick={() => setSelected(selected === project.id ? 'all' : project.id)}><h3>{project.title}</h3><p>{project.objective || '尚未補上專案目標'}</p></button><div className="ops-progress-label"><span>已驗收任務</span><strong>{done} / {tasks.length}</strong></div><div className="ops-progress-track" role="progressbar" aria-label={`${project.title}任務完成比例`} aria-valuemin={0} aria-valuemax={tasks.length || 1} aria-valuenow={done}><span style={{ width: `${tasks.length ? done / tasks.length * 100 : 0}%` }} /></div><div className="ops-project-meta"><span>期限 {dateText(project.dueDate)}</span><span>{ownerLabel(project, data.people)}</span></div><p className="ops-footnote">結案標準：{project.completionCriteria || '待補'}</p></article>;
     })}</div>
     <Panel title={selected === 'all' ? '活動資料' : `${data.projects.find(p => p.id === selected)?.title || '專案'}的活動`} action={selected !== 'all' && <button className="ops-text-button" onClick={() => setSelected('all')}>顯示全部</button>}>
-      {!events.length ? <Empty title="尚未建立活動" detail="先填標題、講者、時間與地點；確認資料後就能進入宣傳流程。" /> : <div className="ops-event-list">{events.map(event => <article className="ops-event" key={event.id}><div className="ops-event-date"><strong>{event.date ? event.date.slice(8, 10) : '—'}</strong><span>{event.date ? `${event.date.slice(5, 7)} 月` : '日期待定'}</span></div><div className="ops-event-body"><div className="ops-item-line"><h3>{event.title}</h3><Badge type="event" value={event.confirmationStatus} /></div><p className="ops-event-facts">{event.speaker || '講者待確認'}<span>·</span>{event.time || '時間待確認'}<span>·</span>{event.venue || '地點待確認'}</p>{event.highlights && <p className="ops-pre-line ops-muted">{event.highlights}</p>}<div className="ops-source-line"><span>資料 v{event.version}</span>{event.sourceRevision && <span>{event.sourceRevision}</span>}<ExternalLink href={event.sourceUrl}>查看來源</ExternalLink></div><div className="ops-button-row"><button className="ops-button quiet small" disabled={busy} onClick={() => openForm('event', event)}>編輯資料</button><ActionButton tone="quiet small" busy={busy} reason={event.confirmationStatus === 'confirmed' ? '資料已確認' : !canOwn(data.actor, event, data.projects, data.people) ? '由活動負責人或顧問確認' : !event.date || !event.speaker || !event.venue ? '請補齊日期、講者與地點' : ''} onClick={() => run('event.confirm', event)}>確認活動資料</ActionButton><button className="ops-button quiet small" disabled={busy} onClick={() => openForm('post', null, { eventId: event.id, projectId: event.projectId, title: `${event.title}｜宣傳`, audience: event.audience, highlights: event.highlights })}>＋ 建立宣傳</button><button className="ops-button quiet small" disabled={busy} onClick={() => openForm('task', null, { eventId: event.id, projectId: event.projectId })}>＋ 拆分任務</button></div>{data.posts.filter(p => p.eventId === event.id).length > 0 && <div className="ops-event-posts">{data.posts.filter(p => p.eventId === event.id).map(post => <button key={post.id} onClick={() => openPost(post)}>{post.title}<Badge value={post.stage} /></button>)}</div>}</div></article>)}</div>}
+      {!events.length ? <Empty title="尚未建立活動" detail="先填標題、講者、時間與地點；確認資料後就能進入宣傳流程。" /> : <div className="ops-event-list">{events.map(event => <article className="ops-event" key={event.id}><div className="ops-event-date"><strong>{event.date ? event.date.slice(8, 10) : '—'}</strong><span>{event.date ? `${event.date.slice(5, 7)} 月` : '日期待定'}</span></div><div className="ops-event-body"><div className="ops-item-line"><h3>{event.title}</h3><Badge type="event" value={event.confirmationStatus} /></div><p className="ops-event-facts">{event.speaker || '講者待確認'}<span>·</span>{event.time || '時間待確認'}<span>·</span>{event.venue || '地點待確認'}</p>{event.highlights && <p className="ops-pre-line ops-muted">{event.highlights}</p>}<div className="ops-source-line"><span>資料 v{event.version}</span>{event.sourceRevision && <span>{event.sourceRevision}</span>}<ExternalLink href={event.sourceUrl}>查看來源</ExternalLink></div><div className="ops-button-row"><button className="ops-button quiet small" disabled={busy} onClick={() => openForm('event', event)}>編輯資料</button><ActionButton tone="quiet small" busy={busy} reason={event.confirmationStatus === 'confirmed' ? '資料已確認' : !canOwn(data.actor, event, data.projects, data.people) ? '由活動負責人或顧問確認' : !event.date || !event.speaker || !event.venue ? '請補齊日期、講者與地點' : ''} onClick={() => run('event.confirm', event)}>確認活動資料</ActionButton><button className="ops-button quiet small" disabled={busy} onClick={() => openForm('post', null, { eventId: event.id, projectId: event.projectId, title: `${event.title}｜宣傳`, audience: event.audience, highlights: event.highlights })}>＋ 建立宣傳</button><button className="ops-button quiet small" disabled={busy} onClick={() => openForm('task', null, { eventId: event.id, projectId: event.projectId })}>＋ 拆分任務</button><ActionButton tone="quiet small" busy={busy} reason={data.settings.mode === 'demo' ? '正式工作區可套用社課清單' : !canOwn(data.actor,event,data.projects,data.people) ? '由活動負責人或顧問套用' : !event.date ? '先填活動日期' : event.confirmationStatus === 'cancelled' ? '活動已取消' : ''} onClick={async () => { const result = await run('event.preview-checklist',event); if (!result) return; const preview = result.record; openAction({action:'event.apply-checklist',record:event,title:'套用社課任務清單',description:`將新增 ${preview.tasks.length} 項待指派任務，已有 ${preview.existing} 項不重複新增。建議期限可在建立後調整；不適用項目由管理者取消結案必要。\n${preview.tasks.map(task => `${task.dueDate} · ${task.title}`).join('\n')}`,defaults:{templateId:preview.templateId},fields:[{key:'confirmed',label:'確認清單',type:'checkbox',required:true,checkboxLabel:'已核對適用項目與建議日期，建立後會指派承辦與驗收人'}],button:'建立待指派任務'}); }}>套用社課清單</ActionButton></div>{data.posts.filter(p => p.eventId === event.id).length > 0 && <div className="ops-event-posts">{data.posts.filter(p => p.eventId === event.id).map(post => <button key={post.id} onClick={() => openPost(post)}>{post.title}<Badge value={post.stage} /></button>)}</div>}</div></article>)}</div>}
     </Panel>
     <Panel title="合作與跨組交付要求" kicker="REQUIREMENTS" action={<button className="ops-button quiet small" disabled={busy} onClick={() => openForm('obligation')}>＋ 新增要求</button>}>
       {data.obligations.length ? <div className="ops-requirement-grid">{data.obligations.map(item => <article className="ops-requirement" key={item.id}><div className="ops-item-line"><h3>{item.title}</h3><button className="ops-text-button" onClick={() => openForm('obligation', item)}>編輯</button></div><p className="ops-pre-line">{item.requirements}</p><span className={`ops-badge ${item.requiresSponsorReview ? 'ops-badge-amber' : 'ops-badge-neutral'}`}>{item.requiresSponsorReview ? '發布前需贊助方確認' : '依內容交付'}</span><div className="ops-source-line"><ExternalLink href={item.sourceUrl}>來源</ExternalLink><ExternalLink href={item.evidenceUrl}>交付證據</ExternalLink></div></article>)}</div> : <p className="ops-note">把 Logo、露出、照片、連結或事前審稿等要求集中記錄，宣傳審核時就能一起核對。</p>}
@@ -328,13 +344,14 @@ function Tasks({ data, busy, openForm, run, openAction }) {
   const currentPerson = actorPerson(data.actor, data.people);
   const [scope, setScope] = useState(currentPerson ? 'mine' : 'all');
   const [selectedPersonId, setSelectedPersonId] = useState(currentPerson?.personId || '');
-  const [status, setStatus] = useState('open'); const [query, setQuery] = useState('');
+  const [status, setStatus] = useState('open'); const [query, setQuery] = useState(''); const [group, setGroup] = useState('all');
+  const groups = [...new Set(data.people.flatMap(person => (person.group || '').split(/[、,，/；;]+/u).map(value => value.trim().replace(/組$/, '')).filter(Boolean)))].sort();
   const selectedPerson = personById(data.people, selectedPersonId);
-  const tasks = data.tasks.filter(task => (scope === 'all' || scope === 'mine' && matchesPerson(task, selectedPerson, selectedPersonId ? '' : data.actor.email) || scope === 'unassigned' && !hasAssignee(task)) && (status === 'all' || status === 'open' && !['done', 'cancelled'].includes(task.status) || status === task.status) && `${task.title} ${ownerLabel(task, data.people)} ${personLabel(personById(data.people, task.reviewerPersonId))}`.toLowerCase().includes(query.toLowerCase()));
+  const tasks = data.tasks.filter(task => (group === 'all' || group === 'none' && taskGroups(task,data.people).length === 0 || taskGroups(task,data.people).includes(group)) && (scope === 'all' || scope === 'mine' && matchesPerson(task, selectedPerson, selectedPersonId ? '' : data.actor.email) || scope === 'unassigned' && !hasAssignee(task)) && (status === 'all' || status === 'open' && !['done', 'cancelled'].includes(task.status) || status === task.status) && `${task.title} ${ownerLabel(task, data.people)} ${personLabel(personById(data.people, task.reviewerPersonId))}`.toLowerCase().includes(query.toLowerCase()));
   return <>
     <div className="ops-section-heading"><div><h2>把工作拆成可交付的任務</h2><p className="ops-muted">承辦人交件，驗收人確認；成果與退回原因留在同一筆任務。</p></div><button className="ops-button primary" disabled={busy} onClick={() => openForm('task')}>＋ 新增任務</button></div>
     <div className="ops-task-viewer"><label htmlFor="ops-view-person">查看誰的任務</label><select id="ops-view-person" value={selectedPersonId} onChange={event => { setSelectedPersonId(event.target.value); setScope('mine'); }}><option value="">依登入帳號</option>{personOptions(data.people, selectedPersonId).map(person => <option key={person.value} value={person.value}>{person.label}</option>)}</select><span className="ops-muted">共用登入時可選承辦人檢視；操作仍記錄實際登入帳號。</span></div>
-    <div className="ops-filters"><div className="ops-segment" aria-label="任務範圍">{[['mine', selectedPerson ? `${selectedPerson.name}的任務` : '我的任務'], ['all', '全部任務'], ['unassigned', '待指派']].map(([value, label]) => <button key={value} aria-pressed={scope === value} className={scope === value ? 'active' : ''} onClick={() => setScope(value)}>{label}</button>)}</div><label><span className="ops-sr-only">任務狀態</span><select value={status} onChange={e => setStatus(e.target.value)}><option value="open">未完成</option><option value="all">全部進度</option>{Object.entries(TASK_STATES).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label><label className="ops-search"><span className="ops-sr-only">搜尋任務</span><input placeholder="搜尋任務、姓名或職稱…" value={query} onChange={e => setQuery(e.target.value)} /></label></div>
+    <div className="ops-filters"><div className="ops-segment" aria-label="任務範圍">{[['mine', selectedPerson ? `${selectedPerson.name}的任務` : '我的任務'], ['all', '全部任務'], ['unassigned', '待指派']].map(([value, label]) => <button key={value} aria-pressed={scope === value} className={scope === value ? 'active' : ''} onClick={() => setScope(value)}>{label}</button>)}</div><label><span className="ops-sr-only">任務狀態</span><select value={status} onChange={e => setStatus(e.target.value)}><option value="open">未完成</option><option value="all">全部進度</option>{Object.entries(TASK_STATES).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label><label><span className="ops-sr-only">任務組別</span><select aria-label="任務組別" value={group} onChange={event => setGroup(event.target.value)}><option value="all">全部組別</option>{groups.map(item => <option key={item} value={item}>{item}組</option>)}<option value="none">未歸組／待指派</option></select></label><label className="ops-search"><span className="ops-sr-only">搜尋任務</span><input placeholder="搜尋任務、姓名或職稱…" value={query} onChange={e => setQuery(e.target.value)} /></label></div>
     {tasks.length ? <div className="ops-task-list">{tasks.map(task => {
       const dependencies = (task.dependsOn || []).map(id => data.tasks.find(t => t.id === id)).filter(Boolean);
       const reviewer = personById(data.people, task.reviewerPersonId);
@@ -347,11 +364,13 @@ function Tasks({ data, busy, openForm, run, openAction }) {
           {task.returnReason && <p className="ops-task-blocker"><span>補件</span>{task.returnReason}</p>}
           {dependencies.length > 0 && <div className="ops-dependencies"><span>前置任務</span>{dependencies.map(dependency => <span className={`ops-dependency ${dependency.status === 'done' ? 'done' : ''}`} key={dependency.id}>{dependency.status === 'done' ? '✓ ' : '待完成 · '}{dependency.title}</span>)}</div>}
           <ExternalLink href={task.deliverableUrl}>查看交付成果</ExternalLink>
+          {task.links?.length > 0 && <div className="ops-task-links">{task.links.map(link => <ExternalLink key={link.id} href={link.url}>{link.title}</ExternalLink>)}</div>}
+          {task.comments?.length > 0 && <details className="ops-delivery-history"><summary>任務討論（{task.comments.length}）</summary>{task.comments.map(comment => <div key={comment.id}><p className="ops-pre-line">{comment.text}</p><small>{dateText(comment.createdAt)} · {data.people.find(person => person.email?.toLowerCase() === comment.actorEmail?.toLowerCase())?.name || comment.actorEmail}</small><ExternalLink href={comment.attachmentUrl}>留言補充連結</ExternalLink></div>)}</details>}
           {task.reviewEvidenceUrl && <div className="ops-source-line"><ExternalLink href={task.reviewEvidenceUrl}>查看驗收確認證據</ExternalLink></div>}
           {task.reviewIdentityMode === 'recorded_external_review' && <p className="ops-footnote">此筆驗收由管理帳號依外部確認證據代為登錄。</p>}
           {task.deliveryHistory?.length > 0 && <details className="ops-delivery-history"><summary>交付與驗收紀錄（{task.deliveryHistory.length}）</summary>{[...task.deliveryHistory].reverse().map(entry => <div key={entry.id}><strong>{ACTION_LABELS[entry.action] || (entry.action === 'task.delivery-invalidated' ? '資料修改，需重新交件' : entry.action === 'task.before-reopen' ? '重新開啟前的驗收紀錄' : '交付紀錄')}</strong><small>{dateText(entry.createdAt)} · {entry.actorEmail}</small>{entry.reason && <p>{entry.reason}</p>}<div className="ops-source-line"><ExternalLink href={entry.deliverableUrl}>當次成果</ExternalLink><ExternalLink href={entry.reviewEvidenceUrl}>驗收證據</ExternalLink></div></div>)}</details>}
         </div>
-        <div className="ops-task-side"><span>期限 <strong>{dateText(task.dueDate)}</strong></span><button className="ops-button quiet small" disabled={busy} onClick={() => openForm('task', task)}>查看／更新</button><TaskActions task={task} data={data} busy={busy} run={run} openAction={openAction} /></div>
+        <div className="ops-task-side"><span>期限 <strong>{dateText(task.dueDate)}</strong></span><button className="ops-button quiet small" disabled={busy} onClick={() => openForm('task', task)}>查看／更新</button><TaskActions task={task} data={data} busy={busy} run={run} openAction={openAction} />{(canOwn(data.actor,task,data.projects,data.people,data.tasks) || canReviewTask(data.actor,task,data.people)) && <><button className="ops-button quiet small" disabled={busy} onClick={() => openAction({action:'task.comment',record:task,title:'補充任務討論',fields:[{key:'text',label:'留言內容',type:'textarea',required:true,maxLength:2000},{key:'attachmentUrl',label:'補充連結（選填）',type:'url'}],button:'加入留言'})}>加入留言</button><button className="ops-button quiet small" disabled={busy} onClick={() => openAction({action:'task.add-link',record:task,title:'加入補充文件連結',description:'文件保留在原有 Drive／指定位置；這裡集中連結。新增附件不會覆寫先前交件的內容快照。',fields:[{key:'title',label:'文件名稱',required:true,maxLength:200},{key:'url',label:'文件連結',type:'url',required:true}],button:'新增補充連結'})}>補充文件</button></>}</div>
       </article>;
     })}</div> : <Empty title="目前沒有符合條件的任務" detail="可切換承辦人或全部任務，也可以為下一項交付建立任務。" />}
   </>;
@@ -408,6 +427,8 @@ function ImportPanel({ data, busy, execute }) {
 const PEOPLE_FIELDS = { personId: '幹部 ID', name: '姓名', title: '職稱', group: '組別', email: 'MAIL', lineName: 'LINE 名稱', term: '任期', status: '在任狀態', sourceUrl: '名單來源', sourceRevision: '來源版本', contactSourceUrl: '聯絡資料來源' };
 const PERSON_CHANGE = { create: '新增', update: '更新', unchanged: '未變更' };
 function PeoplePanel({ data, busy, execute, demo }) {
+  const [showArchived, setShowArchived] = useState(false);
+  const visiblePeople = data.people.filter(person => showArchived || !isInactivePerson(person));
   const [input, setInput] = useState(''); const [sourceRevision, setSourceRevision] = useState('');
   const [preview, setPreview] = useState(null); const [staged, setStaged] = useState(null); const [error, setError] = useState('');
   const [confirmed, setConfirmed] = useState(false);
@@ -428,10 +449,11 @@ function PeoplePanel({ data, busy, execute, demo }) {
   const formatValue = (field, value) => field === 'status' ? PERSON_STATES[value] || value || '未填' : value || '未填';
   return <Panel title="幹部名單與承辦人" kicker="PEOPLE DIRECTORY">
     <p className="ops-muted">姓名與職稱依官網核對；MAIL、LINE 與任期保留在內部主表。固定幹部 ID 讓改名、換職稱與交接不會切斷舊任務。</p>
-    <div className="ops-source-line"><ExternalLink href="https://nsysu-itrc.vercel.app/">官網幹部名單</ExternalLink><ExternalLink href="https://docs.google.com/spreadsheets/d/1K7byAc1JhpcinOHSDnGEGfwy0kzfTnMB4U-neTjKMKg/edit">開啟幹部主表</ExternalLink><span>{data.people.length} 筆人員對照{demo ? ' · 虛構示範' : ''}</span></div>
-    {data.people.length ? <div className="ops-table-scroll"><table className="ops-people-table"><caption className="ops-sr-only">內部幹部名單與聯絡資料</caption><thead><tr><th>姓名／固定 ID</th><th>職稱／組別</th><th>MAIL／LINE</th><th>任期／狀態</th></tr></thead><tbody>{data.people.map(person => <tr key={person.personId}><td><strong>{person.name}</strong><small>{person.personId}</small></td><td>{person.title || '職稱待確認'}<small>{person.group || '組別待確認'}</small></td><td>{person.email || 'MAIL 待補'}<small>LINE：{person.lineName || '待補'}</small></td><td>{person.term || '任期待確認'}<small>{PERSON_STATES[person.status] || person.status || '待確認'}</small></td></tr>)}</tbody></table></div> : <p className="ops-note">尚未帶入人員對照。既有活動與任務會保留，新增工作可以先維持待指派。</p>}
+    <div className="ops-source-line"><ExternalLink href="https://nsysu-itrc.vercel.app/">官網幹部名單</ExternalLink><ExternalLink href="https://docs.google.com/spreadsheets/d/1K7byAc1JhpcinOHSDnGEGfwy0kzfTnMB4U-neTjKMKg/edit">開啟幹部主表</ExternalLink><span>{data.people.filter(person => person.status === 'active').length} 位在任 · {data.people.filter(isInactivePerson).length} 筆歷史對照{demo ? ' · 虛構示範' : ''}</span></div>
+    <label className="ops-checkbox"><input type="checkbox" checked={showArchived} onChange={event => setShowArchived(event.target.checked)} />顯示已卸任／非當期的歷史人員</label>
+    {data.people.length ? <div className="ops-table-scroll"><table className="ops-people-table"><caption className="ops-sr-only">內部幹部名單與聯絡資料</caption><thead><tr><th>姓名／固定 ID</th><th>職稱／組別</th><th>MAIL／LINE</th><th>任期／狀態</th></tr></thead><tbody>{visiblePeople.map(person => <tr key={person.personId}><td><strong>{person.name}</strong><small>{person.personId}</small></td><td>{person.title || '職稱待確認'}<small>{person.group || '組別待確認'}</small></td><td>{person.email || 'MAIL 待補'}<small>LINE：{person.lineName || '待補'}</small></td><td>{person.term || '任期待確認'}<small>{PERSON_STATES[person.status] || person.status || '待確認'}</small></td></tr>)}</tbody></table></div> : <p className="ops-note">尚未帶入人員對照。既有活動與任務會保留，新增工作可以先維持待指派。</p>}
     <details className="ops-people-import"><summary>預覽並更新幹部對照</summary>
-      <p className="ops-note">先在主表核對官網名單，再貼上包含欄位名稱的資料。此處更新工作台的人員對照，不會授予登入或財務權限，也不會刪除未列入這次更新的人員。</p>
+      <p className="ops-note">先在主表核對官網名單，再貼上包含欄位名稱的資料。此處更新工作台的人員對照，不會授予新的登入或財務權限。已卸任／非當期帳號會停用工作台存取，歷史紀錄仍保留；其他平台角色需另行撤銷。</p>
       <label className="ops-import-label" htmlFor="ops-people-revision">這次核對的來源版本</label><input id="ops-people-revision" value={sourceRevision} maxLength={2000} placeholder="例如：115-1 官網名單確認版" onChange={event => { setSourceRevision(event.target.value); clearPreview(); }} />
       <div className="ops-import-controls"><label className="ops-file-label">選擇 CSV／TSV／JSON<input type="file" accept=".csv,.tsv,.json,text/csv,text/tab-separated-values,application/json" onChange={async event => { const file = event.target.files?.[0]; if (!file) return; if (file.size > 512000) { setError('請使用 500 KB 以內的名單檔案。'); return; } try { setInput(await file.text()); clearPreview(); } catch { setError('無法讀取檔案，請重新選擇。'); } }} /></label></div>
       <label className="ops-import-label" htmlFor="ops-people-input">貼上主表欄列或人員 JSON</label><textarea className="ops-import-input" id="ops-people-input" rows={5} value={input} onChange={event => { setInput(event.target.value); clearPreview(); }} placeholder="職稱、姓名、EMAIL、LINE名稱、組別、幹部ID、任期、在任狀態" />
@@ -487,6 +509,7 @@ function Settings({ data, demo, busy, run, execute }) {
     return <article className="ops-integration" key={key}><div className="ops-item-line"><h3>{title}</h3><span className={`ops-badge ${configured ? 'ops-badge-blue' : 'ops-badge-amber'}`}>{data.settings.mode === 'demo' ? '展示模式' : configured ? '設定已提供' : '等待設定'}</span></div><p>{description}</p><p className="ops-note">{item.message || (configured ? '實際執行結果會記錄在工作清單。' : key === 'drafting' ? '未設定 AI 時可先使用規則草稿，仍需人工審核。' : '尚未具備完整連線設定。')}</p>{Array.isArray(item.missing) && item.missing.length > 0 && <details><summary>需要完成的設定</summary><ul>{item.missing.map(name => <li key={name}><code>{name}</code></li>)}</ul></details>}</article>;
   })}</div><div className="ops-permission-summary"><div><strong>文案終審</strong><span>{data.settings.approverConfigured === false ? '尚未指定帳號' : data.actor.canApprove ? '此帳號可核准當前版本' : '由指定終審帳號處理'}</span></div><div><strong>設計校對</strong><span>{data.settings.designerConfigured === false ? '尚未指定帳號' : data.actor.canDesign ? '此帳號可校對設計' : '由行銷負責人或顧問處理'}</span></div><div><strong>目前工作區</strong><span>{data.settings.mode === 'demo' ? '虛構資料 · 儲存在此瀏覽器' : '已連接後端 · 上線狀態依部署設定'}</span></div></div>
     <Panel title="自動工作佇列" kicker="BACKGROUND JOBS" action={<ActionButton tone="quiet small" busy={busy} reason={!isAdviser(data.actor) ? '由顧問處理工作' : ''} onClick={() => run('jobs.run', null, { limit: 3 })}>處理待辦工作</ActionButton>}>
+      <p className="ops-note">{data.settings.githubSchedulerConfigured ? '正式環境已設定每 15 分鐘檢查已排入的工作。實際觸發可能延遲；缺少服務設定的項目會停止，排程不代替任何人工核准。' : '可由管理者處理已排入的工作；背景排程狀態依正式環境設定。'}</p>
       {data.jobs.length ? <div className="ops-jobs-table">{data.jobs.map(job => <div className="ops-job-card" key={job.id}><div><div className="ops-item-line"><strong>{data.posts.find(p => p.id === job.postId)?.title || '自動工作'}</strong><Badge value={job.status} type="job" /></div><p className="ops-muted">{job.type} · 文案 v{job.copyVersion} · 已嘗試 {job.attempts || 0} 次</p>{job.lastError && <p className="ops-job-error">{job.lastError}</p>}{job.status === 'needs_reconciliation' && <p className="ops-note">先到 Canva 核對是否已產生設計；若已有成果，回到該則宣傳登錄連結。避免直接重試造成重複。</p>}</div>{['failed', 'blocked_configuration'].includes(job.status) && <ActionButton tone="quiet small" busy={busy} reason={!isAdviser(data.actor) ? '由顧問重新排程' : ''} onClick={() => run('job.retry', job)}>重新排程</ActionButton>}</div>)}</div> : <p className="ops-note">產生文案或核准設計需求後，工作會顯示在這裡。</p>}
     </Panel><PeoplePanel data={data} demo={demo} busy={busy} execute={execute} /><CanvaConnection data={data} demo={demo} /><ImportPanel data={data} busy={busy} execute={execute} />
   </>;
@@ -518,13 +541,13 @@ export default function OpsPage({ demo = false }) {
       else {
         result = (await api.post('/ops/actions', command)).data;
         if (!result.ok) throw new Error('伺服器尚未確認完成這次操作。');
-        if (!['import.preview', 'import.sheet-preview', 'people.import-preview'].includes(action)) {
+        if (!['import.preview', 'import.sheet-preview', 'people.import-preview', 'event.preview-checklist'].includes(action)) {
           try { updateData((await api.get('/ops/bootstrap')).data); }
           catch { setNotice({ type: 'warning', text: '伺服器已儲存這次操作，但清單尚未重新載入。請按「重新整理」取得最新版本。' }); pending.current.delete(signature); return result; }
         }
       }
       pending.current.delete(signature);
-      if (!['import.preview', 'import.sheet-preview', 'people.import-preview'].includes(action)) {
+      if (!['import.preview', 'import.sheet-preview', 'people.import-preview', 'event.preview-checklist'].includes(action)) {
         const draftPending = action === 'post.generate' && !demo && result.record?.status !== 'succeeded';
         setNotice(draftPending ? { type: 'warning', text: `文案工作已登錄，草稿尚未完成。${result.record?.lastError || '請查看自動工作紀錄。'}` } : { type: 'success', text: `${demo ? '示範資料已更新：' : '已完成：'}${ACTION_LABELS[action] || action}${action === 'post.generate' ? '。請查看草稿與工作結果。' : '。'}` });
       }
@@ -563,13 +586,14 @@ export default function OpsPage({ demo = false }) {
           {loadError && <div className="ops-load-error" role="alert"><h2>工作區暫時無法載入</h2><p>{loadError}</p><p>已開啟的表單內容會保留。請確認登入狀態與後端服務，再重新整理。</p><button className="ops-button primary" onClick={refresh}>重新載入</button>{!demo && <a className="ops-button quiet" href="/ops-demo">先看互動展示</a>}</div>}
           {loading ? <div className="ops-loading" role="status"><span /><h2>正在取得工作進度…</h2><p>載入活動、文案版本與待辦任務。</p></div> : data ? <>
             {tab === 'overview' && <Overview data={data} busy={locked} go={go} openForm={openForm} openPost={openPost} />}
-            {tab === 'projects' && <Projects data={data} busy={locked} openForm={openForm} run={run} openPost={openPost} />}
+            {tab === 'projects' && <Projects data={data} busy={locked} openForm={openForm} run={run} openPost={openPost} openAction={config => setDialog({ type: 'action', config })} />}
             {tab === 'posts' && <Posts batchGenerate={batchGenerate} batchProgress={batchProgress} data={data} selectedId={selectedPost} setSelectedId={setSelectedPost} busy={locked} openForm={openForm} run={run} openAction={config => setDialog({ type: 'action', config })} />}
             {tab === 'tasks' && <Tasks data={data} busy={locked} openForm={openForm} run={run} openAction={config => setDialog({ type: 'action', config })} />}
             {tab === 'review' && <Reviews data={data} openPost={openPost} openForm={openForm} busy={locked} run={run} openAction={config => setDialog({ type: 'action', config })} />}
+            {tab === 'sources' && <SourceChanges data={data} busy={locked} execute={execute} openAction={config => setDialog({ type: 'action', config })} />}
             {tab === 'settings' && <Settings data={data} demo={demo} busy={locked} run={run} execute={execute} />}
           </> : !loadError && <Empty title="工作區尚未準備好" detail="請重新整理或稍後再試。" />}
-          <footer className="ops-workspace-footer"><span>ITRC 社務工作台</span><span>{demo ? '虛構展示資料 · 可重設' : '工作流程紀錄與官網內容分開管理'}</span></footer>
+          <footer className="ops-workspace-footer"><span>ITRC 社務工作台</span><span>{demo ? '虛構展示資料 · 可重設' : '正式資料依原主表 · 更新經核對後回寫'}</span></footer>
         </main>
       </div>
     </div>

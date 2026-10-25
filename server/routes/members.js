@@ -3,14 +3,20 @@ const db = require('../db');
 const { authMiddleware } = require('../middleware/auth');
 const { PUBLIC_MEMBER_COLUMNS } = require('../public-content');
 const memberColumns = PUBLIC_MEMBER_COLUMNS.join(', ');
+const { listMembers, setMemberArchived, canManageRoster } = require('../member-directory');
 
 const router = express.Router();
 
 // GET /api/members
+router.get('/all', authMiddleware, async (req, res) => {
+    if (!canManageRoster(req.user)) return res.status(403).json({ error: '只有名單管理者可檢視已卸任資料。' });
+    try { res.set('Cache-Control', 'no-store').json(await listMembers(db, { includeArchived: true })); }
+    catch { res.status(500).json({ error: '無法讀取幹部名單。' }); }
+});
+
 router.get('/', async (req, res) => {
     try {
-        const result = await db.execute(`SELECT ${memberColumns} FROM members ORDER BY order_num ASC, id ASC`);
-        res.json(result.rows);
+        res.json(await listMembers(db));
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -18,6 +24,7 @@ router.get('/', async (req, res) => {
 
 // POST /api/members (admin)
 router.post('/', authMiddleware, async (req, res) => {
+    if (!canManageRoster(req.user)) return res.status(403).json({ error: '只有名單管理者可修改幹部名單。' });
     const { name, role, department, year, avatar_url, order_num } = req.body;
     try {
         const result = await db.execute({
@@ -36,6 +43,7 @@ router.post('/', authMiddleware, async (req, res) => {
 
 // PUT /api/members/:id (admin)
 router.put('/:id', authMiddleware, async (req, res) => {
+    if (!canManageRoster(req.user)) return res.status(403).json({ error: '只有名單管理者可修改幹部名單。' });
     const { name, role, department, year, avatar_url, order_num } = req.body;
     try {
         await db.execute({
@@ -53,18 +61,20 @@ router.put('/:id', authMiddleware, async (req, res) => {
     }
 });
 
-// DELETE /api/members/:id (admin)
+// A departure is reversible. Never erase the historical person row.
 router.delete('/:id', authMiddleware, async (req, res) => {
+    if (!canManageRoster(req.user)) return res.status(403).json({ error: '只有名單管理者可移出現任幹部。' });
     try {
-        const result = await db.execute({
-            sql: 'DELETE FROM members WHERE id = ?',
-            args: [req.params.id]
-        });
-        if (result.rowsAffected === 0) return res.status(404).json({ error: '找不到此成員' });
-        res.json({ message: '已刪除' });
+        res.json(await setMemberArchived(db, req.params.id, true));
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(err.status || 500).json({ error: err.message });
     }
+});
+
+router.post('/:id/restore', authMiddleware, async (req, res) => {
+    if (!canManageRoster(req.user)) return res.status(403).json({ error: '只有名單管理者可恢復公開幹部。' });
+    try { res.json(await setMemberArchived(db, req.params.id, false)); }
+    catch (err) { res.status(err.status || 500).json({ error: err.message }); }
 });
 
 module.exports = router;

@@ -13,10 +13,14 @@ export const TABS = [
   { id: 'overview', label: '工作總覽', mark: '01' }, { id: 'projects', label: '活動與專案', mark: '02' },
   { id: 'posts', label: '宣傳製作', mark: '03' }, { id: 'tasks', label: '我的任務', mark: '04' },
   { id: 'review', label: '審核與紀錄', mark: '05' }, { id: 'settings', label: '系統連線', mark: '06' },
+  { id: 'sources', label: '來源回寫', mark: '07' },
 ];
 export const ACTION_LABELS = {
+  'event.preview-checklist': '預覽社課清單', 'event.apply-checklist': '套用社課任務清單',
+  'source-change.propose': '提出來源更新', 'source-change.approve': '核准來源更新', 'source-change.reject': '退回來源更新', 'source-change.export': '匯出核准回寫包', 'source-change.record-writeback': '登錄來源回寫證據',
   'project.create': '建立專案', 'project.update': '更新專案', 'event.create': '建立活動', 'event.update': '更新活動資料', 'event.confirm': '確認活動資料',
   'obligation.create': '新增交付要求', 'obligation.update': '更新交付要求', 'task.create': '建立任務', 'task.update': '更新任務',
+  'task.comment': '追加任務留言', 'task.add-link': '新增補充文件',
   'task.deliver': '提交成果待驗收', 'task.accept-delivery': '驗收通過', 'task.return-delivery': '退回補件', 'task.reopen': '重新開啟任務',
   'people.import-preview': '預覽幹部名單', 'people.import-apply': '更新幹部對照',
   'people.import-create': '新增幹部對照', 'people.import-update': '更新幹部對照',
@@ -35,7 +39,7 @@ export const canOwn = (actor, record, projects = [], people = [], tasks = []) =>
   const matchesRole = (item, role) => {
     if (!item || !email) return false;
     const personId = item[`${role}PersonId`];
-    if (personId) return people.some(person => person.personId === personId && person.status !== 'inactive' && person.email?.trim().toLowerCase() === email);
+    if (personId) return people.some(person => person.personId === personId && !['inactive', 'retired'].includes(person.status) && person.email?.trim().toLowerCase() === email);
     return item[`${role}Email`]?.trim().toLowerCase() === email;
   };
   const unassignedCreator = !!email && !record?.ownerPersonId && !record?.ownerEmail && record?.createdByEmail?.trim().toLowerCase() === email;
@@ -90,7 +94,7 @@ export function parseImportText(input, kind = 'events') {
     return Object.fromEntries(headers.map((key, i) => [key, (values[i] || '').trim()]));
   });
   if (records.length > 200) throw new Error('每次最多匯入 200 筆，請分批處理。');
-  if (kind === 'people') return { people: records.map(person => ({ ...person, ...(person.status ? { status: ({ '在任': 'active', '現任': 'active', '離任': 'inactive', '非現任': 'inactive', '非當期名單': 'inactive', '已卸任': 'inactive', '暫停': 'inactive', '待確認': 'pending' })[person.status] || person.status } : 'status' in person ? { status: 'pending' } : {}) })) };
+  if (kind === 'people') return { people: records.map(person => ({ ...person, ...(person.status ? { status: ({ '在任': 'active', '現任': 'active', '離任': 'retired', '非現任': 'inactive', '非當期名單': 'inactive', '已卸任': 'retired', '暫停': 'inactive', '待確認': 'pending' })[person.status] || person.status } : 'status' in person ? { status: 'pending' } : {}) })) };
   for (const record of records) if ('requiredForCompletion' in record) {
     const value = record.requiredForCompletion.toLowerCase();
     if (!['true', 'false', '是', '否', '1', '0', ''].includes(value)) throw new Error('「結案必要」請填是／否或 true／false。');

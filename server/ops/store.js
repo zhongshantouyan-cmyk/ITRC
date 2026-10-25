@@ -1,7 +1,7 @@
 'use strict';
 
 const { assert } = require('./errors');
-const KINDS = ['projects', 'events', 'posts', 'tasks', 'obligations', 'jobs', 'people'];
+const KINDS = ['projects', 'events', 'posts', 'tasks', 'obligations', 'jobs', 'people', 'sourceChanges'];
 const emptyState = () => Object.fromEntries([...KINDS, 'audit'].map(kind => [kind, []]));
 
 function createOpsStore(db) {
@@ -38,11 +38,13 @@ function createOpsStore(db) {
     return state;
   }
   async function read() { await ready; return exclusive(() => readState()); }
-  async function mutate({ actorEmail, idempotencyKey, fingerprint, now }, reducer) {
+  async function mutate({ actorEmail, idempotencyKey, fingerprint, now, authorize }, reducer) {
     await ready;
     return exclusive(async () => {
       const tx = await db.transaction('write');
       try {
+        const state = await readState(tx);
+        if (authorize) authorize(state);
         if (idempotencyKey) {
           const old = await tx.execute({sql:'SELECT fingerprint,response FROM ops_idempotency WHERE actor_email=? AND key=?',args:[actorEmail,idempotencyKey]});
           if (old.rows.length) {
@@ -51,7 +53,6 @@ function createOpsStore(db) {
             return { ...JSON.parse(old.rows[0].response), replayed: true };
           }
         }
-        const state = await readState(tx);
         const before = new Map(KINDS.flatMap(kind => state[kind].map(record => [`${kind}:${record.id}`, JSON.stringify(record)])));
         const oldAuditIds = new Set(state.audit.map(item => item.id));
         const response = await reducer(state);

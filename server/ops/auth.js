@@ -26,7 +26,7 @@ function createOpsAuth({ firebase = require('../firebase'), env = process.env } 
       let identity;
       try { identity = await firebase.verifyFirebaseToken(match[1]); }
       catch { throw new OpsError(401, 'INVALID_IDENTITY', '登入憑證無效或已過期，請重新登入。'); }
-      req.opsActor = actorFromIdentity(identity, firebase.resolveRole(identity.email || ''), env);
+      req.opsActor = actorFromIdentity(identity, await firebase.resolveRole(identity.email || ''), env);
       next();
     } catch (error) {
       res.status(error instanceof OpsError ? error.status : 401).json({

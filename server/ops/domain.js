@@ -1,8 +1,10 @@
 'use strict';
 
+const { LESSON_TEMPLATE_ID, lessonTasks } = require('./task-templates');
+const { executeSourceAction } = require('./source-changes');
 const { randomUUID, createHash } = require('node:crypto');
 const { assert, fail } = require('./errors');
-const { person, personMatches, requirePerson, validatePersonReferences, normalizePeopleImport } = require('./people');
+const { assertActorActive, person, personMatches, requirePerson, validatePersonReferences, normalizePeopleImport } = require('./people');
 
 const FIELDS = {
   projects: ['title','objective','ownerEmail','ownerPersonId','adviserEmail','adviserPersonId','status','dueDate','completionCriteria'],
@@ -162,7 +164,7 @@ function clearTaskReview(task) {
 }
 function captureTaskDelivery(task, actor, now, action, extra = {}) {
   task.deliveryHistory ||= [];
-  task.deliveryHistory.push({id:randomUUID(),action,actorEmail:actor.email,createdAt:now,taskVersion:task.version,status:task.status,ownerPersonId:task.ownerPersonId || '',reviewerPersonId:task.reviewerPersonId || '',deliverableUrl:task.deliverableUrl || '',acceptanceCriteria:task.acceptanceCriteria || '',...extra});
+  task.deliveryHistory.push({id:randomUUID(),action,actorEmail:actor.email,createdAt:now,taskVersion:task.version,status:task.status,ownerPersonId:task.ownerPersonId || '',reviewerPersonId:task.reviewerPersonId || '',deliverableUrl:task.deliverableUrl || '',acceptanceCriteria:task.acceptanceCriteria || '',links:structuredClone(task.links || []),...extra});
 }
 function taskReviewAuthority(state, task, actor, payload, {accepting = false} = {}) {
   assert(task.reviewerPersonId,400,'TASK_REVIEWER_REQUIRED','請先指定驗收人。');
@@ -276,6 +278,8 @@ function normalizeImport(state, payload, actor, now) {
 function executeAction(state, command, actor, now) {
   const {action,id,expectedVersion,payload = {}} = command;
   state.people ||= [];
+  assertActorActive(state,actor);
+  if (action.startsWith('source-change.')) return executeSourceAction(state,command,actor,now,{find,versionCheck,newRecord,touch,audit,isAdvisor,requireManage,httpsUrl});
   if (action === 'people.import-preview' || action === 'people.import-apply') {
     assert(isAdvisor(actor),403,'ADVISOR_REQUIRED','幹部對照更新需要社長或顧問確認。');
     const preview = normalizePeopleImport(state,payload);
@@ -411,6 +415,24 @@ function executeAction(state, command, actor, now) {
     if (kind === 'posts') capturePostRevision(state,record,actor,now,action);
     audit(state,actor,action,record,from,now,`更新 ${changed.join('、')}`); return {ok:true,record};
   }
+  if (entity === 'event' && ['preview-checklist','apply-checklist'].includes(operation)) {
+    requireManage(state,actor,record);
+    assert(validDate(record.date || ''),400,'EVENT_DATE_REQUIRED','先填寫活動日期，才能產生建議任務期限。');
+    assert(record.confirmationStatus !== 'cancelled',409,'EVENT_CANCELLED','已取消的活動不能新增籌辦清單。');
+    const proposed = lessonTasks(record);
+    const existing = new Set(state.tasks.filter(task => task.eventId === record.id && task.templateId === LESSON_TEMPLATE_ID).map(task => task.templateTaskKey));
+    const tasks = proposed.filter(task => !existing.has(task.key));
+    if (operation === 'preview-checklist') return {ok:true,record:{templateId:LESSON_TEMPLATE_ID,eventVersion:record.version,tasks,existing:existing.size}};
+    assert(payload.confirmed === true && payload.templateId === LESSON_TEMPLATE_ID,400,'TEMPLATE_CONFIRMATION_REQUIRED','先核對社課清單及建議期限，再確認套用。');
+    const created = [];
+    for (const task of tasks) {
+      const result = executeAction(state,{action:'task.create',payload:{title:task.title,eventId:record.id,projectId:record.projectId || '',ownerPersonId:'',ownerEmail:'',reviewerPersonId:'',status:'unassigned',dueDate:task.dueDate,acceptanceCriteria:task.acceptanceCriteria,requiredForCompletion:true,sourceLabel:'ITRC 共通社課檢查清單 v1'}},actor,now).record;
+      result.templateId = LESSON_TEMPLATE_ID; result.templateTaskKey = task.key;
+      created.push(result);
+    }
+    audit(state,actor,action,record,record.version,now,`套用社課清單：新增 ${created.length} 項待指派任務；建議期限需依實際流程調整。`);
+    return {ok:true,record:{created:created.length,skipped:existing.size,tasks:created}};
+  }
   if (entity === 'event' && operation === 'confirm') {
     requireManage(state,actor,record);
     assert(validDate(record.date || '') && record.speaker && record.venue,400,'EVENT_INCOMPLETE','請先填妥日期、講者與場地。');
@@ -429,6 +451,28 @@ function executeAction(state, command, actor, now) {
     audit(state,actor,action,record,from,now,record.cancellationReason); return {ok:true,record};
   }
   if (entity === 'task') {
+    if (operation === 'comment' || operation === 'add-link') {
+      assert(canManage(state,actor,record) || personMatches(state,record.reviewerPersonId,actor),403,'OWNER_REQUIRED','請由承辦人、驗收人或管理顧問補充這項交付。');
+      if (operation === 'comment') {
+        assert(Object.keys(payload).every(key => ['text','attachmentUrl'].includes(key)),400,'UNSUPPORTED_FIELD','留言只接受內容與補充連結。');
+        assert(typeof payload.text === 'string' && payload.text.trim() && payload.text.length <= 2000,400,'COMMENT_REQUIRED','留言需有內容，最多 2000 字。');
+        if (payload.attachmentUrl) { assert(typeof payload.attachmentUrl === 'string' && payload.attachmentUrl.length <= 2000,400,'INVALID_URL','補充連結最多 2000 字。'); httpsUrl(payload.attachmentUrl,'補充連結',{optional:false}); }
+        record.comments ||= [];
+        assert(record.comments.length < 500,400,'COMMENT_LIMIT','單項任務已達 500 則留言，請另開後續任務。');
+        record.comments.push({id:randomUUID(),text:payload.text.trim(),attachmentUrl:payload.attachmentUrl || '',actorEmail:actor.email,createdAt:now});
+      } else {
+        assert(Object.keys(payload).every(key => ['title','url'].includes(key)),400,'UNSUPPORTED_FIELD','補充連結只接受名稱與網址。');
+        assert(typeof payload.title === 'string' && payload.title.trim() && payload.title.length <= 200,400,'LINK_TITLE_REQUIRED','請填寫 200 字以內的連結名稱。');
+        assert(typeof payload.url === 'string' && payload.url.length <= 2000,400,'INVALID_URL','補充文件網址最多 2000 字。');
+        httpsUrl(payload.url,'補充文件網址',{optional:false});
+        record.links ||= [];
+        assert(record.links.length < 30,400,'LINK_LIMIT','單項任務最多 30 筆補充連結，更多資料請用一份整理頁連結。');
+        assert(!record.links.some(link => link.url === payload.url),409,'LINK_EXISTS','這個連結已經在任務內，無需重複新增。');
+        record.links.push({id:randomUUID(),title:payload.title.trim(),url:payload.url,actorEmail:actor.email,createdAt:now});
+      }
+      touch(record,now); audit(state,actor,action,record,from,now,operation === 'comment' ? '追加任務討論；保留既有交付及驗收證據。' : '追加補充連結；既有交付快照不被覆寫。');
+      return {ok:true,record};
+    }
     assertOpenProject(state,record);
     if (operation === 'deliver') {
       requireManage(state,actor,record);

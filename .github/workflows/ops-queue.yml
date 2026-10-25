@@ -1,7 +1,7 @@
 name: Process approved operations jobs
 
-# Scheduled workflows run only from the default branch after review/merge.
-# No endpoint is contacted until both the repository variable and secret exist.
+# Only this exact main-branch workflow is trusted by the backend. The runner
+# requests a short-lived OIDC identity; no permanent API key is stored in GitHub.
 on:
   workflow_dispatch:
   schedule:
@@ -15,37 +15,40 @@ concurrency:
 
 jobs:
   tick:
-    if: ${{ vars.OPS_WORKER_URL != '' }}
+    if: ${{ github.repository_id == '1285692408' && vars.OPS_DISABLE_QUEUE != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 3
+    permissions:
+      id-token: write
     steps:
       - name: Process already approved jobs
-        env:
-          OPS_WORKER_URL: ${{ vars.OPS_WORKER_URL }}
-          OPS_CRON_SECRET: ${{ secrets.OPS_CRON_SECRET }}
         shell: bash
         run: |
           node <<'NODE'
-          const endpoint = new URL(process.env.OPS_WORKER_URL);
-          const secret = process.env.OPS_CRON_SECRET || '';
-          if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password || endpoint.hash || endpoint.search || endpoint.pathname !== '/api/ops/jobs/tick') {
-            throw new Error('OPS_WORKER_URL must be the HTTPS operations tick endpoint.');
-          }
-          if (!/^[^\s]{32,512}$/.test(secret)) {
-            throw new Error('Set the dedicated OPS_CRON_SECRET repository secret before enabling the scheduler.');
-          }
-          fetch(endpoint, {
-            method: 'POST',
-            redirect: 'error',
-            headers: {Authorization: 'Bearer ' + secret},
-            signal: AbortSignal.timeout(90000),
-          }).then(async response => {
+          (async () => {
+            const endpoint = 'https://itrc-eight.vercel.app/api/ops/jobs/tick';
+            const request = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
+            if (request.protocol !== 'https:') throw new Error('OIDC provider unavailable');
+            request.searchParams.set('audience', endpoint);
+            const identity = await fetch(request, {
+              redirect: 'error',
+              headers: { Authorization: 'Bearer ' + process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN },
+              signal: AbortSignal.timeout(15000),
+            });
+            if (!identity.ok) throw new Error('OIDC identity unavailable');
+            const { value } = await identity.json();
+            if (typeof value !== 'string' || !value) throw new Error('OIDC identity unavailable');
+            const response = await fetch(endpoint, {
+              method: 'POST', redirect: 'error',
+              headers: { Authorization: 'Bearer ' + value },
+              signal: AbortSignal.timeout(90000),
+            });
             if (!response.ok) throw new Error('Operations endpoint returned HTTP ' + response.status);
             const result = await response.json();
-            if (result.ok !== true || !Number.isInteger(result.processed) || result.processed < 0 || result.processed > 3) throw new Error('Unexpected operations response.');
+            if (result.ok !== true || !Number.isInteger(result.processed) || result.processed < 0 || result.processed > 3) throw new Error('Unexpected operations response');
             console.log('Processed approved jobs:', result.processed);
-          }).catch(() => {
-            console.error('Queue check did not complete. Inspect the workspace job states before retrying.');
+          })().catch(error => {
+            console.error(error.message.startsWith('Operations endpoint returned HTTP ') ? error.message : 'Queue check did not complete. Inspect the workspace job states before retrying.');
             process.exitCode = 1;
           });
           NODE

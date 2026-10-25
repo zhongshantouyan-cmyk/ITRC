@@ -1,5 +1,5 @@
 import { canOwn, isAdviser } from './model.js';
-import { hasAssignee, personById, projectPendingTasks, taskDeliveryReason } from './people.js';
+import { hasAssignee, isInactivePerson, personById, projectPendingTasks, taskDeliveryReason } from './people.js';
 
 const KEY = 'itrc-ops-fictional-demo-v1';
 const uuid = () => globalThis.crypto?.randomUUID?.() || `demo-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -15,6 +15,7 @@ function demoPeople() {
 }
 function addDemoPeople(state) {
   state.people ||= demoPeople();
+  state.sourceChanges ||= [];
   for (const collection of ['projects', 'events', 'posts', 'tasks', 'obligations']) for (const record of state[collection]) {
     record.createdByEmail ||= record.ownerEmail || DEMO_ACTORS[3].email;
     if (record.ownerPersonId === undefined) record.ownerPersonId = state.people.find(person => person.email === record.ownerEmail)?.personId || '';
@@ -146,12 +147,24 @@ export function performDemoAction(current, command) {
     if (kind === 'event') record.confirmationStatus = record.confirmationStatus === 'confirmed' ? 'changed' : 'draft';
     if (kind === 'post') record.stage = 'draft';
     touch(record);
+  } else if (action === 'task.comment' || action === 'task.add-link') {
+    need(canOwn(actor,record,state.projects,state.people,state.tasks) || personById(state.people,record.reviewerPersonId)?.email === actor.email,'請由承辦人、驗收人或管理顧問補充。');
+    if (action === 'task.comment') {
+      need(typeof payload.text === 'string' && payload.text.trim() && payload.text.length <= 2000,'請填寫 2000 字以內的留言。');
+      need(!payload.attachmentUrl || /^https:\/\//.test(payload.attachmentUrl),'補充連結需使用 https。');
+      record.comments ||= []; record.comments.push({id:uuid(),text:payload.text.trim(),attachmentUrl:payload.attachmentUrl || '',actorEmail:actor.email,createdAt:now});
+    } else {
+      need(payload.title?.trim() && /^https:\/\//.test(payload.url || ''),'請填寫文件名稱與有效 https 連結。');
+      record.links ||= []; need(!record.links.some(link => link.url === payload.url),'這個連結已經存在。');
+      record.links.push({id:uuid(),title:payload.title.trim(),url:payload.url,actorEmail:actor.email,createdAt:now});
+    }
+    touch(record);
   } else if (action === 'task.deliver') {
     owner(); need(!['done', 'delivered', 'cancelled'].includes(record.status), '目前任務不可交件。'); need(!taskDeliveryReason(record, state.tasks, state.people), taskDeliveryReason(record, state.tasks, state.people)); need(/^https:\/\//.test(payload.deliverableUrl || record.deliverableUrl || ''), '請填入有效的 https 成果連結。');
     Object.assign(record, { status: 'delivered', deliverableUrl: payload.deliverableUrl || record.deliverableUrl, deliveredBy: actor.email, deliveredAt: now, returnReason: '' }); touch(record);
   } else if (['task.accept-delivery', 'task.return-delivery', 'task.reopen'].includes(action)) {
     const reviewer = personById(state.people, record.reviewerPersonId);
-    const personal = !!reviewer?.email && reviewer.email === actor.email && (action !== 'task.accept-delivery' || record.deliveredBy !== actor.email);
+    const personal = !isInactivePerson(reviewer) && !!reviewer?.email && reviewer.email === actor.email && (action !== 'task.accept-delivery' || record.deliveredBy !== actor.email);
     need(personal || isAdviser(actor) || action === 'task.reopen' && canOwn(actor, record, state.projects, state.people), '請由指定驗收人或管理顧問操作。');
     if (action === 'task.reopen') { need(['done', 'cancelled'].includes(record.status) && payload.reason?.trim(), '重新開啟需要已驗收或已取消任務與原因。'); record.status = 'todo'; record.returnReason = payload.reason; }
     else {

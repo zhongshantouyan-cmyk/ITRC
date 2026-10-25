@@ -2,7 +2,7 @@
 const CONTENT_COLUMNS = Object.freeze({
     sections: ['id', 'key', 'title', 'content', 'updated_at'],
     achievements: ['id', 'semester', 'title', 'category', 'description', 'link', 'order_num', 'created_at'],
-    members: ['id', 'name', 'role', 'department', 'year', 'avatar_url', 'order_num'],
+    members: ['id', 'name', 'role', 'department', 'year', 'avatar_url', 'order_num', 'archived_at'],
     activities: ['id', 'type', 'semester', 'title', 'date', 'description', 'speaker', 'image_url', 'video_url', 'created_at'],
     experiences: ['id', 'author', 'title', 'content', 'created_at'],
     online_resources: ['id', 'name', 'name_en', 'url', 'description', 'icon', 'color', 'order_num', 'created_at'],
@@ -10,7 +10,7 @@ const CONTENT_COLUMNS = Object.freeze({
 });
 const CONTENT_TABLES = Object.freeze(Object.keys(CONTENT_COLUMNS));
 const SNAPSHOT_SCOPE = Object.freeze({
-    name: 'public-website-content', version: 2, tables: CONTENT_TABLES,
+    name: 'public-website-content', version: 3, tables: CONTENT_TABLES,
     excludes: ['users', 'ops', 'Firebase RTDB', 'uploaded image bytes', 'Google Drive', 'Canva'],
 });
 const MAX_SNAPSHOTS = 50;
@@ -83,6 +83,15 @@ async function restoreSnapshot(db, id, createdBy = 'admin') {
         if (!result.rows.length) { const error = new Error('找不到此快照'); error.status = 404; throw error; }
         const data = JSON.parse(result.rows[0].snapshot_data);
         const restoredTables = validateSnapshot(data);
+        // Older snapshots predate departures. Restoring copy must not silently
+        // make currently archived people visible again.
+        if (data.members) {
+            const current = await tx.execute('SELECT id, archived_at FROM members');
+            const archived = new Map(current.rows.map(row => [String(row.id), row.archived_at]));
+            for (const row of data.members) {
+                if (!Object.hasOwn(row, 'archived_at')) row.archived_at = archived.get(String(row.id)) || null;
+            }
+        }
         // Backup and restoration share a transaction, so failed INSERTs cannot leave partial deletes.
         const beforeSnapshotId = await insertSnapshot(tx, await captureSnapshot(tx), `還原前自動備份 (還原至快照 #${id})`, createdBy, true);
         const statements = [];

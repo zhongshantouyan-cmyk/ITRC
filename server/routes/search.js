@@ -39,7 +39,7 @@ router.get('/', async (req, res) => {
                 args: [keyword, keyword, keyword]
             }),
             db.execute({
-                sql: "SELECT 'member' as type, id, name as title, role as snippet FROM members WHERE name LIKE ? OR role LIKE ? OR department LIKE ?",
+                sql: "SELECT 'member' as type, id, name as title, role as snippet FROM members WHERE archived_at IS NULL AND (name LIKE ? OR role LIKE ? OR department LIKE ?)",
                 args: [keyword, keyword, keyword]
             })
         ]);

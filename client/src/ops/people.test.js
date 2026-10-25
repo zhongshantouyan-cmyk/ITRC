@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { canOwn, parseImportText } from './model.js';
-import { LEGACY_ASSIGNEE, assignmentFormValue, assignmentPayload, hasAssignee, matchesPerson, ownerLabel, personOptions, projectPendingTasks, taskDeliveryReason } from './people.js';
+import { LEGACY_ASSIGNEE, assignmentFormValue, assignmentPayload, hasAssignee, matchesPerson, ownerLabel, personOptions, projectPendingTasks, taskDeliveryReason, taskGroups } from './people.js';
 import { changeDemoActor, DEMO_ACTORS, loadDemo, performDemoAction } from './demo.js';
 
 const people = [
@@ -71,7 +71,8 @@ test('existing Chinese roster and task headers map to stable identity fields', (
   assert.equal(actualHeaders.people[0].email, '');
   assert.equal(actualHeaders.people[0].lineName, '');
   assert.throws(() => parseImportText('姓名,MAIL\n甲,a@example.invalid', 'people'), /幹部ID/);
-  for (const status of ['非當期名單', '已卸任', '暫停']) assert.equal(parseImportText(`姓名,幹部ID,在任狀態\n甲,ITRC-P0001,${status}`, 'people').people[0].status, 'inactive');
+  for (const status of ['非當期名單', '暫停']) assert.equal(parseImportText(`姓名,幹部ID,在任狀態\n甲,ITRC-P0001,${status}`, 'people').people[0].status, 'inactive');
+  assert.equal(parseImportText('姓名,幹部ID,在任狀態\n甲,ITRC-P0001,已卸任', 'people').people[0].status, 'retired');
   const task = parseImportText('標題,負責人ID,驗收人ID,結案必要\n器材,ITRC-P0001,ITRC-P0002,否', 'tasks').tasks[0];
   assert.equal(task.ownerPersonId, people[0].personId); assert.equal(task.reviewerPersonId, people[1].personId); assert.equal(task.requiredForCompletion, false);
   assert.throws(() => parseImportText('標題,結案必要\n器材,或許', 'tasks'), /結案必要/);
@@ -139,4 +140,25 @@ test('recovering saved copy creates a new unapproved draft and preserves the ori
   assert.equal(demo.state.posts[0].approvedVersion, null);
   assert.equal(demo.state.posts[0].stage, 'draft');
   assert.ok(demo.state.posts[0].history.some(version => version.caption === '修改後內容'));
+});
+
+
+test('retired people are excluded from assignment and group filters support combined responsibilities', () => {
+  const retired = {...people[0],status:'retired',group:'活動'};
+  assert.equal(personOptions([retired]).length,0);
+  assert.match(personOptions([retired],retired.personId)[0].label,/已卸任/);
+  assert.equal(canOwn({email:retired.email,role:'officer'},{ownerPersonId:retired.personId},[],[retired]),false);
+  assert.match(taskDeliveryReason({ownerPersonId:retired.personId,reviewerPersonId:people[1].personId,acceptanceCriteria:'完成'},[],[retired,people[1]]),/非現任/);
+  assert.deepEqual(taskGroups({ownerPersonId:people[0].personId},[{...people[0],group:'公關、行銷組'}]),['公關','行銷']);
+  assert.deepEqual(taskGroups({ownerEmail:people[0].email},[{...people[0],group:'資訊組'}]),['資訊']);
+});
+
+test('demo task discussion and supporting links preserve the current task status', () => {
+  const demo = localDemo();
+  const before = demo.state.tasks.find(task => task.id === 'demo-task-5').status;
+  demo.act('task.comment','demo-task-5',{text:'補充教學示範留言'});
+  demo.act('task.add-link','demo-task-5',{title:'補充文件',url:'https://example.org/demo-file'});
+  const task = demo.state.tasks.find(item => item.id === 'demo-task-5');
+  assert.equal(task.status,before); assert.equal(task.comments.length,1); assert.equal(task.links.length,1);
+  assert.throws(() => demo.act('task.add-link',task.id,{title:'重複',url:'https://example.org/demo-file'}),/存在/);
 });

@@ -68,3 +68,13 @@ test('restore rejects unknown tables and column names before any deletion', asyn
         assert.equal((await db.execute('SELECT title FROM sections')).rows[0].title, 'Before');
     }
 });
+
+
+test('restoring a legacy snapshot does not reactivate a currently archived officer', async t => {
+    const db = await fixture(t);
+    await db.execute("INSERT INTO members (id, name, archived_at) VALUES (7, 'Fictional retired', '2026-10-26')");
+    await db.execute({ sql:'INSERT INTO content_snapshots (id,snapshot_data) VALUES (10,?)',
+        args:[JSON.stringify({members:[{id:7,name:'Fictional old name'}]})] });
+    await restoreSnapshot(db, 10);
+    assert.equal((await db.execute('SELECT archived_at FROM members WHERE id=7')).rows[0].archived_at, '2026-10-26');
+});

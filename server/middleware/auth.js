@@ -14,8 +14,9 @@ async function authMiddleware(req, res, next) {
     // 1) 先當作 Firebase Google ID token 驗證（新的統一登入）
     try {
         const decoded = await verifyFirebaseToken(token);
+        if (decoded.email_verified !== true) return res.status(401).json({ error: '請使用已驗證的 Google 帳號。' });
         const email = decoded.email || '';
-        const role = resolveRole(email);
+        const role = await resolveRole(email);
         if (!role) {
             return res.status(403).json({ error: '此帳號尚未被授權存取管理後台', email });
         }

@@ -4,6 +4,7 @@ const { createHash, randomUUID } = require('node:crypto');
 const { createOpsStore } = require('./store');
 const { OpsError, assert } = require('./errors');
 const { emails } = require('./auth');
+const { assertActorActive } = require('./people');
 const { executeAction, isAdvisor, find, touch, audit, relevantObligations, clearApproval, obsoleteJobs, httpsUrl, cleanFields, capturePostRevision } = require('./domain');
 
 const SYSTEM = {email:'system@itrc.local',name:'工作台排程',role:'advisor',canApprove:false,canDesign:false};
@@ -40,6 +41,7 @@ function createOpsService({ db, store = createOpsStore(db), providers, env = pro
   const provider = () => providers || require('./providers');
   async function bootstrap(actor) {
     const state = await store.read();
+    assertActorActive(state,actor);
     return {
       actor, ...state,
       settings:{
@@ -47,13 +49,14 @@ function createOpsService({ db, store = createOpsStore(db), providers, env = pro
         approverConfigured:emails(env.OPS_APPROVER_EMAILS).size > 0,
         designerConfigured:emails(env.OPS_DESIGNER_EMAILS).size > 0,
         workerEnabled:String(env.OPS_WORKER_ENABLED).toLowerCase() === 'true',
+        githubSchedulerConfigured:env.VERCEL_ENV === 'production' && env.OPS_GITHUB_CRON_ENABLED !== 'false',
         autoRunJobs:String(env.OPS_AUTO_RUN_JOBS).toLowerCase() === 'true',
         sources:parseSources(env).map(({id,name,spreadsheetId,range,kind}) => ({id,name:name || id,url:`https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,range,kind})),
       },
     };
   }
   async function change(reducer, actor = SYSTEM) {
-    return store.mutate({actorEmail:actor.email,now:now()},state => reducer(state,now()));
+    return store.mutate({actorEmail:actor.email,now:now(),authorize:state => actor !== SYSTEM && assertActorActive(state,actor)},state => reducer(state,now()));
   }
   async function sheetPreview(actor, payload) {
     assert(isAdvisor(actor),403,'ADVISOR_REQUIRED','讀取來源表需要社長或顧問執行。');
@@ -80,6 +83,7 @@ function createOpsService({ db, store = createOpsStore(db), providers, env = pro
   }
   async function action(actor, command) {
     assert(actor?.uid && actor?.email && ['chair','advisor','treasurer','officer'].includes(actor.role),401,'IDENTITY_REQUIRED','需要有效的登入身分。');
+    assertActorActive(await store.read(),actor);
     assert(command && typeof command === 'object' && typeof command.action === 'string',400,'INVALID_ACTION','操作格式不正確。');
     assert(typeof command.idempotencyKey === 'string' && /^[A-Za-z0-9_-]{8,120}$/.test(command.idempotencyKey),400,'IDEMPOTENCY_REQUIRED','缺少操作識別碼，請重新整理再試。');
     assert(!command.id || (typeof command.id === 'string' && command.id.length <= 120),400,'INVALID_ID','記錄識別碼不正確。');
@@ -90,14 +94,14 @@ function createOpsService({ db, store = createOpsStore(db), providers, env = pro
     if (command.action === 'jobs.run') {
       assert(isAdvisor(actor),403,'ADVISOR_REQUIRED','執行系統工作需要社長或顧問。');
       assert(Number.isInteger(payload.limit || 3) && (payload.limit || 3) >= 1 && (payload.limit || 3) <= 5,400,'JOB_LIMIT','每次可執行 1 到 5 項工作。');
-      const run = await store.mutate({actorEmail:actor.email,idempotencyKey:command.idempotencyKey,fingerprint,now:now()},state => ({
+      const run = await store.mutate({actorEmail:actor.email,idempotencyKey:command.idempotencyKey,fingerprint,now:now(),authorize:state => assertActorActive(state,actor)},state => ({
         ok:true,record:{jobIds:state.jobs.filter(job => ['queued','running'].includes(job.status)).sort((a,b) => a.createdAt.localeCompare(b.createdAt)).slice(0,payload.limit || 3).map(job => job.id)},
       }));
       const jobs = [];
       for (const jobId of run.record.jobIds) jobs.push(...(await runJobs({limit:1,jobId,actor})).jobs);
       return {ok:true,record:{processed:jobs.length,jobs}};
     }
-    const result = await store.mutate({actorEmail:actor.email,idempotencyKey:command.idempotencyKey,fingerprint,now:now()},state => executeAction(state,command,actor,now()));
+    const result = await store.mutate({actorEmail:actor.email,idempotencyKey:command.idempotencyKey,fingerprint,now:now(),authorize:state => assertActorActive(state,actor)},state => executeAction(state,command,actor,now()));
     if (command.action === 'post.generate' && result.record?.id) {
       await runJobs({limit:1,jobId:result.record.id,actor});
       const current = await store.read();

@@ -69,7 +69,7 @@ test('actor identity requires verified Firebase email and server configured role
 test('legacy shared JWT and submitted actor cannot authorize production actions', async t => {
   const f = await fixture(t);
   const app = express();
-  app.use('/api/ops',createOpsRouter({db:f.db,providers,env,firebase:{verifyFirebaseToken:async token => { if (token !== 'firebase-owner') throw Error('invalid'); return identity(owner.email); },resolveRole:() => 'officer'}}));
+  app.use('/api/ops',createOpsRouter({db:f.db,providers,env,firebase:{verifyFirebaseToken:async token => { if (token !== 'firebase-owner') throw Error('invalid'); return identity(owner.email); },resolveRole:async () => 'officer'}}));
   const server = app.listen(0,'127.0.0.1');
   await new Promise(resolve => server.once('listening',resolve));
   t.after(() => new Promise(resolve => server.close(resolve)));

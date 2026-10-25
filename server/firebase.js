@@ -9,11 +9,15 @@ const admin = require('firebase-admin');
 const DB_URL = 'https://itrc-workspace-default-rtdb.asia-southeast1.firebasedatabase.app';
 
 // 救命索：這些信箱永遠視為顧問級（全權），不受 roles 名單影響，避免換屆鎖死。
-const SUPER_ADMINS = (process.env.SUPER_ADMINS || 'zhongshantouyan@gmail.com,hades60414@gmail.com')
+const SUPER_ADMINS = (process.env.SUPER_ADMINS || 'zhongshantouyan@gmail.com')
     .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
 
 let initialized = false;
 let rolesCache = {};
+let rolesCacheAt = 0;
+let rolesLoading;
+const { roleFromRecords } = require('./role-policy');
+const ROLES_TTL_MS = 30_000;
 
 function initFirebase() {
     if (initialized) return true;
@@ -43,15 +47,6 @@ function initFirebase() {
     initialized = true;
     console.log('[firebase] admin 已初始化，專案 =', serviceAccount.project_id);
 
-    // 即時快取 roles 名單，避免每次請求都打一次 RTDB。
-    admin.database().ref('roles').on(
-        'value',
-        (snap) => {
-            rolesCache = snap.val() || {};
-            console.log('[firebase] roles 名單已更新：', Object.keys(rolesCache).length, '筆');
-        },
-        (err) => console.error('[firebase] roles 監聽錯誤：', err.message)
-    );
     return true;
 }
 
@@ -63,24 +58,30 @@ function isSuperAdmin(email) {
     return SUPER_ADMINS.includes((email || '').toLowerCase());
 }
 
-// 以 email 比對 roles 名單，回傳角色字串（chair/advisor/treasurer/officer），
-// 找不到或未授權回傳 ''。SUPER_ADMINS 先短路為 advisor。與 itrc-auth.js 邏輯一致。
-function resolveRole(email) {
-    const e = (email || '').toLowerCase();
+// A cold serverless instance must await the role source. Never serve a stale role
+// after a refresh failure; the shared club recovery identity remains unchanged.
+async function loadRoles() {
+    if (rolesCacheAt && Date.now() - rolesCacheAt < ROLES_TTL_MS) return rolesCache;
+    if (!rolesLoading) {
+        rolesLoading = admin.database().ref('roles').once('value').then(snap => {
+            rolesCache = snap.val() || {};
+            rolesCacheAt = Date.now();
+            return rolesCache;
+        }).finally(() => { rolesLoading = undefined; });
+    }
+    return rolesLoading;
+}
+
+async function resolveRole(email) {
+    const e = String(email || '').trim().toLowerCase();
     if (!e) return '';
     if (SUPER_ADMINS.includes(e)) return 'advisor';
-    let role = '';
-    const list = rolesCache || {};
-    Object.keys(list).forEach((k) => {
-        const r = list[k];
-        if (r && r.email && String(r.email).toLowerCase() === e) role = r.role || '';
-    });
-    return role;
+    return roleFromRecords(await loadRoles(), e);
 }
 
 async function verifyFirebaseToken(token) {
     if (!initialized) throw new Error('firebase 未初始化');
-    return admin.auth().verifyIdToken(token);
+    return admin.auth().verifyIdToken(token, true);
 }
 
 module.exports = { initFirebase, isInitialized, isSuperAdmin, resolveRole, verifyFirebaseToken };
