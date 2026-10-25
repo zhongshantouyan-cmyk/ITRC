@@ -297,6 +297,18 @@ h6 {
   background: rgba(77, 126, 168, 0.06);
 }
 
+/* The operations workspace uses a light background from the first viewport. */
+.navbar.navbar-ops .navbar-links a,
+.navbar.navbar-ops .navbar-links button {
+  color: var(--text-primary);
+}
+
+.navbar.navbar-ops .navbar-links a.active,
+.navbar.navbar-ops .navbar-links a:hover,
+.navbar.navbar-ops .navbar-links button:hover {
+  color: var(--accent);
+}
+
 .search-btn {
   display: flex;
   align-items: center;
@@ -370,6 +382,39 @@ h6 {
   .navbar-links a.active {
     background: rgba(77, 126, 168, 0.06);
     color: var(--accent);
+  }
+}
+
+/* Extra officer links need the compact menu sooner on the workspace routes. */
+@media (min-width: 901px) and (max-width: 1200px) {
+  .navbar.navbar-ops .hamburger {
+    display: flex;
+  }
+
+  .navbar.navbar-ops .navbar-links {
+    position: fixed;
+    top: 72px;
+    left: 0;
+    right: 0;
+    height: calc(100vh - 72px);
+    flex-direction: column;
+    background: var(--bg-white);
+    padding: 24px;
+    transform: translateX(100%);
+    overflow-y: auto;
+    box-shadow: -4px 0 15px rgba(0, 0, 0, 0.05);
+  }
+
+  .navbar.navbar-ops .navbar-links.open {
+    transform: translateX(0);
+  }
+
+  .navbar.navbar-ops .navbar-links a,
+  .navbar.navbar-ops .navbar-links button {
+    display: inline-flex;
+    font-size: 1.1rem;
+    padding: 14px 20px;
+    text-align: left;
   }
 }
 
