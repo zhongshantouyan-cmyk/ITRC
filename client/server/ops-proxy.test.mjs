@@ -271,6 +271,41 @@ test('only proxy-owned response headers survive; normal JSON and backend validat
   assertNoSecrets(result);
 });
 
+test('unrecognized JSON 401/403 become deployment failures while actual Ops access-error contracts survive', async () => {
+  // Synthetic non-contract envelopes; no assumptions about a provider's real body.
+  for (const status of [401, 403]) {
+    for (const body of [
+      { error: { message: 'synthetic access gate' } },
+      { error: 'synthetic access gate', code: 'UNKNOWN_ACCESS_ERROR' },
+      { message: 'synthetic access gate' },
+      { error: ' ', code: status === 401 ? 'INVALID_IDENTITY' : 'ROLE_REQUIRED' },
+      { error: 'fixture', code: status === 401 ? 'INVALID_IDENTITY' : 'ROLE_REQUIRED', unexpected: true },
+      { error: 'wrong status for code', code: status === 401 ? 'ROLE_REQUIRED' : 'INVALID_IDENTITY' },
+    ]) {
+      const harness = setup({ fetchImpl: async () => json(body, { status }) });
+      const result = await harness.invoke();
+      assert.equal(result.status, 502);
+      assert.equal(result.body.code, 'OPS_PROXY_DEPLOYMENT_ACCESS');
+      assert.match(result.body.error, /部署保護與連線設定/);
+      assert.equal(result.text.includes('synthetic'), false);
+      assert.equal(harness.fetches.length, 1);
+      assertNoSecrets(result);
+    }
+  }
+  for (const [status, codes] of [
+    [401, ['IDENTITY_REQUIRED', 'INVALID_IDENTITY']],
+    [403, ['ROLE_REQUIRED', 'OWNER_REQUIRED', 'ADVISOR_REQUIRED', 'ASSIGNMENT_REQUIRED', 'UNIT_REVIEWER_REQUIRED', 'FINAL_APPROVER_REQUIRED', 'REVIEWER_REQUIRED', 'DESIGNER_REQUIRED', 'PUBLISHER_REQUIRED']],
+  ]) {
+    for (const code of codes) {
+      const body = { error: '工作台身分或操作權限不足。', code };
+      const harness = setup({ fetchImpl: async () => json(body, { status }) });
+      const result = await harness.invoke();
+      assert.equal(result.status, status);
+      assert.deepEqual(result.body, body);
+    }
+  }
+});
+
 test('HTML protection pages, invalid JSON and unexpected response shapes fail without reflecting content', async () => {
   for (const response of [
     new Response(`<html>secret ${OIDC}</html>`, { status: 401, headers: { 'content-type': 'text/html' } }),

@@ -83,11 +83,11 @@
 
 ### 受保護 Preview 的同網域 gateway
 
-本輪接線方式尚待部署與實際連通驗收：瀏覽器透過同網域 `/api/ops/*` 呼叫前端伺服器函式，再由函式呼叫固定後端。gateway 僅允許 `GET bootstrap`、`POST actions`、`GET connections/canva`、`POST connections/canva/start`；不代理 callback 或 cron，不跟隨上游重新導向，也不轉送 Cookie。
+本輪 gateway 已部署並證實會呼叫固定後端，仍待授權與實際連通驗收：瀏覽器透過同網域 `/api/ops/*` 呼叫前端伺服器函式，再由函式呼叫固定後端。gateway 僅允許 `GET bootstrap`、`POST actions`、`GET connections/canva`、`POST connections/canva/start`；不代理 callback 或 cron，不跟隨上游重新導向，也不轉送 Cookie。
 
 函式使用 `@vercel/oidc@4.0.3` 的 `getVercelOidcToken()`，每次取得短期 OIDC 並放入 `x-vercel-trusted-oidc-idp-token`。前端專案的 Secure Backend Access with OIDC Federation 須開啟；後端 Trusted Sources 須允許相符的呼叫專案及環境。OIDC 處理部署保護，原本的 Firebase Bearer 仍交後端驗證身分與角色。參考 [Vercel Trusted Sources](https://vercel.com/docs/deployment-protection/methods-to-bypass-deployment-protection/trusted-sources)。
 
-截至 2026-10-25，後端仍是 Standard Protection／Require Log In 開啟、OPTIONS Allowlist 關閉、Trusted Sources 僅自身；`nsysu-itrc` Preview → `itrc` Preview 的規則僅準備，尚待使用者確認與提交。前端已完成 Firebase 授權網域及 Google 登入，但 API 仍出現 Network Error，不能視為已接通。最新證據見 [ops-validation.md](ops-validation.md)。
+截至 2026-10-25，後端仍是 Standard Protection／Require Log In 開啟、OPTIONS Allowlist 關閉、Trusted Sources 僅自身；`nsysu-itrc` Preview → `itrc` Preview 的規則僅準備，尚待使用者確認與提交。前端已完成 Firebase 授權網域及 Google 登入；跨網域呼叫出現 Network Error，改經 gateway 後則觀察到上游 401，仍未取得後端授權與資料。最新證據見 [ops-validation.md](ops-validation.md)。
 
 ## 5. Canva：連線與分層母版
 

@@ -8,11 +8,11 @@
 | --- | --- |
 | 後端自動測試 | 59 項通過，包含真實本機 libSQL 持久化與 HTTP 身分／排程驗證；外部供應服務使用模擬回應。 |
 | 前端資料處理測試 | 本輪重跑 6 項全部通過，包含 CSV 引號、換行、中文欄位、示範角色、去重及匯出公式防護。 |
-| 同網域 gateway 測試 | 22 項通過，包含路由／方法、原始及 rewrite URL、固定 origin、請求與回應大小、OIDC 來源、憑證回顯防護、重新導向阻擋與逾時不重試；全部使用模擬上游，未發送外部請求。 |
-| 正式前端建置 | 本輪以 `VITE_OPS_API_URL=/api` 建置通過；工作台採用獨立載入，瀏覽器 assets 未見 OIDC／server-only env 字串。此結果不代表 gateway 已部署或後端已連通。 |
+| 同網域 gateway 測試 | 23 項通過，包含路由／方法、原始及 rewrite URL、固定 origin、請求與回應大小、OIDC 來源、憑證回顯防護、重新導向阻擋、逾時不重試，以及區分工作台與平台的 401／403 錯誤；全部使用模擬上游，未發送外部請求。 |
+| 正式前端建置 | 本輪以 `VITE_OPS_API_URL=/api` 建置通過；工作台採用獨立載入，瀏覽器 assets 未見 OIDC／server-only env 字串。此結果不代表後端已連通。 |
 | 獨立交叉檢查 | 已修正已發布內容遭舊工作覆寫、專案贊助要求漏帶、跨負責人活動關聯及展示模式判斷問題。 |
-| GitHub 自動檢查 | 初版提交 `5d5facffa7fe20c628af3d5387e5f7962716f68f` 的 Operations checks 通過。後續提交以 PR 最新檢查為準。 |
-| Vercel Preview | 前端與後端初版均回報部署完成。其後前端重新部署 `CTczcExgoUK7qP4Atw3U2frAH9jk` 為 Ready；部署完成不代表工作台 API 已連通。 |
+| GitHub 自動檢查 | gateway 提交 `ff8ffc19c5b71c32a2f15c47559504416d66186c` 的 Operations checks 通過。後續提交以 PR 最新檢查為準。 |
+| Vercel Preview | 前端 gateway 部署 `8f5itazNVR6GW3fwzfcVZm3An7Pv` 為 Ready，對應 `ff8ffc19`；部署完成不代表工作台 API 已連通。 |
 | Firebase 授權網域 | 使用者明確批准後，已新增前端穩定分支網域 `nsysu-itrc-git-feature-it-9eeefc-zhongshantouyan-4688s-projects.vercel.app`。 |
 
 ## 桌面瀏覽器展示流程
@@ -41,8 +41,9 @@
 | 最初 API 404 | Vercel request logs 證實前端仍呼叫舊正式位置 `https://itrc-eight.vercel.app/api/ops/bootstrap`，未連到本輪後端 Preview。 |
 | 改址與重新部署 | 前端分支專用 `VITE_API_URL` 改為 `https://itrc-git-feature-itrc-int-159353-zhongshantouyan-4688s-projects.vercel.app/api`，重新部署 `CTczcExgoUK7qP4Atw3U2frAH9jk` 為 Ready；畫面仍顯示 Network Error，後端 request logs 未見新的應用請求。尚不能據此判定工作台 API 已接通。 |
 | 後端 Deployment Protection | 實際設定為 Standard Protection／Require Log In 開啟、OPTIONS Allowlist 關閉、Trusted Sources 僅自身專案。尚未修改保護設定；前端登入不會自動授權跨專案服務呼叫。 |
-| 同網域 gateway | 已完成 `client/api/ops.js` 與 helper：只代理 bootstrap、actions、Canva 狀態及啟動授權的 JSON 請求；用 `@vercel/oidc@4.0.3` 取得伺服器短期 OIDC，仍保留後端 Firebase 身分／角色驗證。22 項模擬測試通過；實際部署與連通仍待驗收。 |
-| 工作台專用前端設定 | 已儲存 `VITE_OPS_API_URL=/api`，以及 `OPS_BACKEND_ORIGIN=https://itrc-git-feature-itrc-int-159353-zhongshantouyan-4688s-projects.vercel.app`；兩者僅適用 `feature/itrc-integrated-ops-20261025` 分支，仍待包含 gateway 的部署驗收。前端 OIDC 安全頁原已顯示 Team issuer，本輪未改動。 |
+| 同網域 gateway | 已完成並部署 `client/api/ops.js` 與 helper；只代理四條 JSON API，使用短期 OIDC，仍保留後端 Firebase 驗證。於 `2026-10-25T10:22:00Z`，前端 Vercel request details 顯示 `/api/ops` 函式已執行，External APIs 確認 GET 指向預定後端 Preview 的 `/api/ops/bootstrap`，結果為 401；同時間後端應用 request logs 未見該請求，且信任規則尚未新增。這證明代理入口與固定目標已運作，不能視為後端已授權或角色已通過。 |
+| 平台錯誤顯示修正 | 初次 gateway 的 401 被前端顯示為登入失效；因此補上後端錯誤契約檢查，只有已知 `{error, code}` 的工作台 401／403 才透傳，其他 JSON 授權拒絕改為 502 部署連線錯誤。新增回歸測試後共 23 項通過；最新部署及畫面結果以 PR 驗收補充為準。 |
+| 工作台專用前端設定 | 已儲存 `VITE_OPS_API_URL=/api`，以及 `OPS_BACKEND_ORIGIN=https://itrc-git-feature-itrc-int-159353-zhongshantouyan-4688s-projects.vercel.app`；兩者僅適用 `feature/itrc-integrated-ops-20261025` 分支，已由上述函式請求證實採用。前端 OIDC 安全頁原已顯示 Team issuer，本輪未改動。 |
 | 待確認的信任規則 | 僅準備 `nsysu-itrc` 的 Preview → `itrc` 的 Preview，等待使用者確認，尚未提交。不得把這項準備記為已授權或已連通。 |
 | 正式部署分支 | Vercel 後端 Production Branch 顯示 `feat/vercel-serverless-migration`，本輪未改動。合併 `main` 不等於後端正式部署；上線前須核對前後端各自的部署分支與版本。 |
 

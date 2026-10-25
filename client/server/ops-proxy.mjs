@@ -9,6 +9,16 @@ export const MAX_REQUEST_BYTES = 256 * 1024;
 export const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 const TIMEOUT_MS = 55_000;
 const JWT = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
+// Keep aligned with server/ops/auth.js, domain.js, service.js and ops-connection.js.
+// A platform's JSON access-denied response is not evidence of expired Firebase identity.
+const OPS_ACCESS_CODES = {
+  401: new Set(['IDENTITY_REQUIRED', 'INVALID_IDENTITY']),
+  403: new Set([
+    'ROLE_REQUIRED', 'OWNER_REQUIRED', 'ADVISOR_REQUIRED', 'ASSIGNMENT_REQUIRED',
+    'UNIT_REVIEWER_REQUIRED', 'FINAL_APPROVER_REQUIRED', 'REVIEWER_REQUIRED',
+    'DESIGNER_REQUIRED', 'PUBLISHER_REQUIRED',
+  ]),
+};
 const SENSITIVE_KEYS = new Set([
   'token', 'accesstoken', 'refreshtoken', 'idtoken', 'oidctoken', 'verceloidctoken',
   'authorization', 'cookie', 'setcookie', 'xverceloidctoken', 'xverceltrustedoidcidptoken',
@@ -237,6 +247,11 @@ export function createOpsProxy({ getOidcToken, fetchImpl = globalThis.fetch, env
       }
       const result = await readJson(response);
       assertNoCredentials(result, [oidcToken, authorization, authorization.slice(7)]);
+      if (OPS_ACCESS_CODES[response.status] &&
+          (Object.keys(result).length !== 2 || typeof result.error !== 'string' || !result.error.trim() ||
+           result.error.length > 2000 || !OPS_ACCESS_CODES[response.status].has(result.code))) {
+        throw problem(502, 'OPS_PROXY_DEPLOYMENT_ACCESS', '工作台與後端的部署連線未完成，請管理者檢查部署保護與連線設定。');
+      }
       if (route === 'connections/canva/start' && response.ok) {
         let destination;
         try { destination = new URL(result.authorizationUrl); } catch { throw invalidResponse(); }
