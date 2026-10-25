@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ITRC 圖文小幫手｜行銷組</title>
+<link rel="stylesheet" href="itrc.css">
+<script src="itrc.js" defer></script>
+<style>
+  :root{
+    --navy:#0f1f3d; --navy2:#16294e; --gold:#c9a14a; --gold2:#e3c270;
+    --ink:#1a2233; --muted:#5b6678; --line:#e4e8f0; --bg:#f5f6fa; --card:#ffffff;
+    --ok:#1f9d6b;
+  }
+  *{box-sizing:border-box;font-family:"Segoe UI","Microsoft JhengHei",system-ui,sans-serif}
+  body{margin:0;background:var(--bg);color:var(--ink);font-size:15px;line-height:1.6}
+  header{background:linear-gradient(135deg,var(--navy),var(--navy2));color:#fff;padding:18px 22px;display:flex;align-items:center;gap:12px}
+  header .logo{width:38px;height:38px;border:2px solid var(--gold);border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--gold2);font-weight:800;font-size:13px}
+  header h1{font-size:18px;margin:0;font-weight:700}
+  header .sub{color:#9fb0cc;font-size:12.5px;margin-top:2px}
+  .tabs{display:flex;gap:4px;background:var(--navy);padding:0 14px}
+  .tab{padding:11px 16px;color:#9fb0cc;cursor:pointer;border-bottom:3px solid transparent;font-size:14px;font-weight:600}
+  .tab.active{color:#fff;border-color:var(--gold)}
+  .wrap{max-width:1080px;margin:0 auto;padding:20px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:860px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px}
+  .card h2{font-size:15px;margin:0 0 14px;display:flex;align-items:center;gap:8px}
+  .card h2 .dot{width:7px;height:7px;border-radius:50%;background:var(--gold)}
+  label{display:block;font-size:13px;color:var(--muted);margin:12px 0 5px;font-weight:600}
+  input,textarea,select{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font-size:14px;background:#fbfcfe;color:var(--ink)}
+  textarea{resize:vertical;min-height:64px;line-height:1.55}
+  input:focus,textarea:focus,select:focus{outline:none;border-color:var(--gold);background:#fff}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .chip{font-size:12px;padding:4px 9px;border:1px solid var(--line);border-radius:20px;background:#fff;cursor:pointer;color:var(--muted)}
+  .chip:hover{border-color:var(--gold);color:var(--ink)}
+  .out{white-space:pre-wrap;background:var(--navy);color:#eef2f9;border-radius:10px;padding:16px;font-size:14px;line-height:1.7;min-height:120px;font-family:"Microsoft JhengHei",sans-serif}
+  .btnrow{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+  button.act{background:var(--gold);color:#241c06;border:none;padding:9px 16px;border-radius:8px;font-weight:700;cursor:pointer;font-size:14px}
+  button.act:hover{background:var(--gold2)}
+  button.ghost{background:#fff;border:1px solid var(--line);color:var(--ink);padding:9px 14px;border-radius:8px;cursor:pointer;font-size:13px}
+  button.ghost:hover{border-color:var(--gold)}
+  .hint{font-size:12px;color:var(--muted);margin-top:6px}
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:10px 18px;border-radius:8px;font-size:14px;opacity:0;transition:.25s;pointer-events:none}
+  .toast.show{opacity:1}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:12px}
+  th,td{border:1px solid var(--line);padding:8px 10px;text-align:left}
+  th{background:#f0f3f8;font-weight:700;color:var(--ink)}
+  td.tag{font-weight:700;color:var(--navy);white-space:nowrap}
+  .sec{font-size:12px;color:var(--muted);margin:16px 0 4px;text-transform:uppercase;letter-spacing:.5px}
+  .none{display:none}
+  .rules{margin:6px 0 0;padding-left:20px}
+  .rules li{margin:7px 0}
+  .chip .sw,.sv .sw{display:inline-block;width:12px;height:12px;border-radius:3px;border:1px solid rgba(0,0,0,.18);vertical-align:-1px;margin-right:5px}
+  .chip.on{border-color:var(--gold);color:var(--ink);background:#fff8ea;font-weight:600}
+  .spec .srow{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+  .spec .srow:last-child{border-bottom:none}
+  .spec .sk{flex:0 0 104px;color:var(--muted);font-size:13px;font-weight:600}
+  .spec .sv{flex:1;font-weight:600;line-height:1.7}
+</style>
+</head>
+<body>
+<header class="apphead">
+  <div class="logo">ITRC</div>
+  <div>
+    <h1><svg class="svgic"><use href="#i-palette"></use></svg>圖文小幫手</h1>
+    <div class="sub">行銷組 · 貼文文案、發文排程與流程檢查</div>
+  </div>
+</header>
+
+<div class="tabs">
+  <div class="tab active" data-tab="post"><svg class="svgic" style="width:15px;height:15px;vertical-align:-3px;margin-right:5px"><use href="#i-edit"></use></svg>貼文文案產生器</div>
+  <div class="tab" data-tab="tpl"><svg class="svgic" style="width:15px;height:15px;vertical-align:-3px;margin-right:5px"><use href="#i-palette"></use></svg>Canva 模板規格</div>
+  <div class="tab" data-tab="sched"><svg class="svgic" style="width:15px;height:15px;vertical-align:-3px;margin-right:5px"><use href="#i-calendar"></use></svg>發文排程產生器</div>
+  <div class="tab" data-tab="check"><svg class="svgic" style="width:15px;height:15px;vertical-align:-3px;margin-right:5px"><use href="#i-checklist"></use></svg>圖文流程檢查表</div>
+</div>
+
+<!-- ============ TAB 1: POST GENERATOR ============ -->
+<div class="wrap" id="tab-post">
+  <div class="grid">
+    <div class="card">
+      <h2><span class="dot"></span>填入資訊</h2>
+
+      <label>貼文類型</label>
+      <select id="ptype" onchange="onType()">
+        <option value="course">社課 / 講座預告</option>
+        <option value="recruit">社員招募</option>
+        <option value="thanks">廠商贊助感謝</option>
+        <option value="result">競賽 / 得獎名單</option>
+      </select>
+
+      <!-- course -->
+      <div class="f course">
+        <label>講題</label>
+        <input id="c_topic" placeholder="例：用 AI 從零打造投資系統">
+        <label>講者（可點下方快速帶入）</label>
+        <input id="c_speaker" placeholder="例：潘靜慶 董事長">
+        <div class="chips" id="speakerChips"></div>
+        <label>講者背景（一句）</label>
+        <input id="c_bg" placeholder="例：前匯豐商銀副總、前 JPMorgan 經理">
+        <div class="row2">
+          <div><label>日期</label><input id="c_date" placeholder="3/13（五）"></div>
+          <div><label>時間</label><input id="c_time" placeholder="16:10–18:00"></div>
+        </div>
+        <label>地點</label>
+        <input id="c_place" value="中山大學管理學院">
+        <label>重點（每行一條）</label>
+        <textarea id="c_points" placeholder="交易不是比誰最準，而是誰最能重複做對的事&#10;現場實作模擬交易 APP"></textarea>
+        <label>報名 / 表單連結（選填）</label>
+        <input id="c_link" placeholder="https://...">
+      </div>
+
+      <!-- recruit -->
+      <div class="f recruit none">
+        <label>主標</label>
+        <input id="r_title" value="114-2 學期社員熱烈招募">
+        <label>開場 hook</label>
+        <input id="r_hook" value="想在大學時期就提早踏入投資與金融市場的世界嗎？這裡就是屬於你的舞台 👊">
+        <label>特色課程（每行一條）</label>
+        <textarea id="r_feat">重量級專題講座｜前 JPMorgan、兆豐證券、WorldQuant、十億操盤手分享實務
+量化實戰工作坊｜從零打造 AI 投資系統
+證券業職涯 Coffee Chat｜與業界前輩面對面
+期末成果發表｜產出研究報告，履歷最強亮點</textarea>
+        <label>講師陣容（每行一條）</label>
+        <textarea id="r_lect">潘靜慶 董事長（AI 智能投資）｜前匯豐副總、前 JPMorgan
+羅欽源 協理（主觀交易策略）｜累積獲利超過 10 億
+王昭文 所長（技術籌碼分析）｜華南金控董事</textarea>
+        <div class="row2">
+          <div><label>時間</label><input id="r_time" value="週五 16:10–18:00"></div>
+          <div><label>地點</label><input id="r_place" value="中山大學管理學院"></div>
+        </div>
+        <label>社費</label>
+        <input id="r_fee" value="中山學生 $500／人；外校 $1500／人（表單完成小任務折 $200💸）">
+        <label>報名連結</label>
+        <input id="r_link" placeholder="https://docs.google.com/forms/...">
+        <label>抽獎獎品（選填，每行一條）</label>
+        <textarea id="r_prize">涼被（竹漾）、大象杯（Elephant Cuppa）、高檔茶葉（好日子）、針織四季被（好傢在）</textarea>
+      </div>
+
+      <!-- thanks -->
+      <div class="f thanks none">
+        <label>廠商名稱（可點下方帶入）</label>
+        <input id="t_brand" placeholder="例：竹漾 DUYAN">
+        <div class="chips" id="brandChips"></div>
+        <label>活動 / 用途</label>
+        <input id="t_event" value="期末模擬交易挑戰賽">
+        <label>贊助內容 / 獎品</label>
+        <input id="t_item" placeholder="例：涼被 ×1 作為最佳績效獎獎品">
+        <label>給廠商一句介紹（選填）</label>
+        <input id="t_desc" placeholder="例：主打透氣親膚的台灣寢具品牌">
+        <label>廠商連結 / IG（選填）</label>
+        <input id="t_link" placeholder="https://...">
+      </div>
+
+      <!-- result -->
+      <div class="f result none">
+        <label>活動名稱</label>
+        <input id="x_event" value="期末模擬交易挑戰賽">
+        <label>最佳績效獎</label>
+        <input id="x_perf" placeholder="例：第 3 組（報酬率 18.2%）">
+        <label>最佳成果獎</label>
+        <input id="x_out" placeholder="例：第 1 組">
+        <label>最佳創意獎</label>
+        <input id="x_idea" placeholder="例：第 5 組">
+        <label>結語（選填）</label>
+        <input id="x_note" value="恭喜所有得獎隊伍，也謝謝每位社員的投入！">
+      </div>
+
+      <label style="margin-top:16px">Hashtag</label>
+      <input id="tags" value="#中山大學 #ITRC #投資交易研究社 #投資 #金融 #量化交易 #大學社團">
+      <div class="chips">
+        <span class="chip" onclick="addTag('#NSYSU')">#NSYSU</span>
+        <span class="chip" onclick="addTag('#股票')">#股票</span>
+        <span class="chip" onclick="addTag('#ETF')">#ETF</span>
+        <span class="chip" onclick="addTag('#財經')">#財經</span>
+        <span class="chip" onclick="addTag('#中山大小事')">#中山大小事</span>
+      </div>
+
+      <div class="btnrow"><button class="act" onclick="gen()">產生文案 ▸</button></div>
+    </div>
+
+    <div class="card">
+      <h2><span class="dot"></span>產出（可直接複製貼上）</h2>
+      <div class="sec">IG / 貼文長文</div>
+      <div class="out" id="outMain">填好左邊欄位，按「產生文案」。</div>
+      <div class="btnrow">
+        <button class="act" onclick="copy('outMain')"><svg class="svgic" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px"><use href="#i-copy"></use></svg>複製長文</button>
+      </div>
+      <div class="sec">限時動態短版</div>
+      <div class="out" id="outStory" style="min-height:60px">—</div>
+      <div class="btnrow"><button class="ghost" onclick="copy('outStory')"><svg class="svgic" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px"><use href="#i-copy"></use></svg>複製限動</button></div>
+      <div class="sec">圖卡逐頁文字（給設計）</div>
+      <div class="out" id="outCard" style="min-height:60px">—</div>
+      <div class="btnrow"><button class="ghost" onclick="copy('outCard')"><svg class="svgic" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px"><use href="#i-copy"></use></svg>複製圖卡文字</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ TAB: CANVA TEMPLATE SPEC ============ -->
+<div class="wrap none" id="tab-tpl">
+  <div class="grid">
+    <div class="card">
+      <h2><span class="dot"></span>選擇 Canva 模板</h2>
+      <p class="hint">依行銷組 SOP 的固定模板。選好類型與色系，右側會列出該套用的色碼、字型與頁數結構，照著在 Canva 做即可。</p>
+      <label>貼文類型</label>
+      <select id="tplType" onchange="onTpl()">
+        <option value="course">社課公告</option>
+        <option value="thanks">感謝贊助</option>
+        <option value="online">線上社課</option>
+      </select>
+      <label>色系</label>
+      <div class="chips" id="tplColors"></div>
+      <p class="hint" id="tplColorNote"></p>
+    </div>
+    <div class="card">
+      <h2><span class="dot"></span>套用規格</h2>
+      <div class="spec" id="tplSpec"></div>
+      <div class="btnrow"><button class="ghost" onclick="copy('tplSpecText')"><svg class="svgic" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px"><use href="#i-copy"></use></svg>複製規格</button></div>
+      <div class="out none" id="tplSpecText"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ TAB 2: SCHEDULE ============ -->
+<div class="wrap none" id="tab-sched">
+  <div class="card">
+    <h2><span class="dot"></span>排程鐵則（行銷組 SOP）</h2>
+    <ul class="rules">
+      <li><b>每週三前</b>完成社課公告貼文發布</li>
+      <li><b>週四 ～ 社課前 12 小時</b>：轉發限時動態，並附上「非社員單堂報名連結」</li>
+      <li><b>Deadline 前 5 天</b>：監督者發起進度提醒</li>
+      <li><b>發布前 1～2 天</b>：緊盯進度、完成最後校稿</li>
+      <li>提醒訊息<b>避開假日</b>發送</li>
+    </ul>
+  </div>
+  <div class="card" style="margin-top:18px">
+    <h2><span class="dot"></span>輸入社課，自動回推發文時程</h2>
+    <p class="hint">每行一個社課，格式：<b>社課名稱, YYYY-MM-DD</b>（社課當天日期）。系統依上方鐵則回推每場的提醒 → 緊盯 → 發布 → 轉限動 → 當天。</p>
+    <textarea id="sevents" style="min-height:120px">迎新社課, 2026-03-06
+用 AI 打造投資系統, 2026-03-13
+ETF 因子投資, 2026-04-24
+期末學術成果發表, 2026-05-22</textarea>
+    <div class="btnrow">
+      <button class="act" onclick="genSched()">產生排程 ▸</button>
+      <button class="ghost" onclick="copySched()"><svg class="svgic" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px"><use href="#i-copy"></use></svg>複製成表格（貼進 Google Sheet）</button>
+    </div>
+    <div id="schedOut"></div>
+  </div>
+</div>
+
+<!-- ============ TAB 3: CHECKLIST ============ -->
+<div class="wrap none" id="tab-check">
+  <div class="card">
+    <h2><span class="dot"></span>單篇貼文 SOP 檢查表</h2>
+    <p class="hint">每要發一篇貼文，照這張表跑一遍，新幹部也不會漏。勾選狀態只在本機暫存。</p>
+    <div id="checklist"></div>
+    <div class="btnrow"><button class="ghost" onclick="resetCheck()">重設勾選</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast">已複製到剪貼簿</div>
+
+<script>
+/* ---------- presets from real ITRC data ---------- */
+const SPEAKERS = {
+  "潘靜慶 董事長":"前匯豐商銀副總、前 JPMorgan 經理（AI 智能投資）",
+  "羅欽源 協理":"中盈投資、累積獲利超過 10 億（主觀交易策略）",
+  "王昭文 所長":"華南金控董事、中山國資所所長（技術籌碼分析）",
+  "張廷緯 分析師":"現任私募創投分析師（VC 估值與實務）",
+  "郭治言 經理":"永豐金證券（ETF 因子投資）",
+  "張坤城 資深研究員":"WorldQuant（量化研究）",
+  "廖婉婷 總經理":"統一投顧（產業研究）"
+};
+const BRANDS = ["竹漾 DUYAN","Elephant Cuppa","好日子","好傢在","給足呵護","阿努納奇","ALAI 寢具工廠","PUREGEAR","basiik","A&D 雅頓髮品","mise en plants","永康八號"];
+const FOOTER_IG = "📸 追蹤我們 IG：@nsysu_itrc";
+
+/* ---------- tabs ---------- */
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  t.classList.add('active');
+  ['post','tpl','sched','check'].forEach(id=>document.getElementById('tab-'+id).classList.add('none'));
+  document.getElementById('tab-'+t.dataset.tab).classList.remove('none');
+});
+
+/* ---------- chips ---------- */
+const sc=document.getElementById('speakerChips');
+Object.keys(SPEAKERS).forEach(n=>{const c=document.createElement('span');c.className='chip';c.textContent=n;
+  c.onclick=()=>{document.getElementById('c_speaker').value=n;document.getElementById('c_bg').value=SPEAKERS[n];};sc.appendChild(c);});
+const bc=document.getElementById('brandChips');
+BRANDS.forEach(n=>{const c=document.createElement('span');c.className='chip';c.textContent=n;c.onclick=()=>document.getElementById('t_brand').value=n;bc.appendChild(c);});
+
+function onType(){
+  const t=document.getElementById('ptype').value;
+  document.querySelectorAll('#tab-post .f').forEach(e=>e.classList.add('none'));
+  document.querySelector('#tab-post .'+t).classList.remove('none');
+}
+function v(id){return (document.getElementById(id).value||'').trim();}
+function lines(id){return v(id).split('\n').map(s=>s.trim()).filter(Boolean);}
+function addTag(t){const el=document.getElementById('tags');if(!el.value.includes(t))el.value=(el.value+' '+t).trim();}
+
+/* ---------- Canva 模板規格（依行銷組 SOP）---------- */
+const TPL_FONT='王漢宗特黑體';
+const TPLS={
+  course:{name:'社課公告', pages:['封面（一頁即可）'], variants:{
+    green:{label:'灰綠', main:'#4e7059'},
+    red:{label:'紅', main:'#bb4b43'}
+  }},
+  thanks:{name:'感謝贊助', pages:['封面','贊助商品圖'], variants:{
+    green:{label:'灰綠', main:'#4e7059', ring:'#0d6428', ringName:'深綠'},
+    red:{label:'紅', main:'#bb4b43', ring:'#bb4b43', ringName:'紅'}
+  }},
+  online:{name:'線上社課', pages:['封面','線上報名 QR code'], variants:{
+    green:{label:'灰綠', main:'#4e7059', ring:'#0d6428', ringName:'深綠'}
+  }}
+};
+let tplColor='green';
+function onTpl(){
+  const t=document.getElementById('tplType').value, vs=TPLS[t].variants;
+  if(!vs[tplColor]) tplColor=Object.keys(vs)[0];
+  const cw=document.getElementById('tplColors'); cw.innerHTML='';
+  Object.keys(vs).forEach(k=>{
+    const v=vs[k], c=document.createElement('span');
+    c.className='chip'+(k===tplColor?' on':'');
+    c.innerHTML=`<span class="sw" style="background:${v.main}"></span>${v.label} ${v.main}`;
+    c.onclick=()=>{tplColor=k;onTpl();};
+    cw.appendChild(c);
+  });
+  document.getElementById('tplColorNote').textContent = (t==='online')?'※ 線上社課目前只有灰綠版。':'';
+  renderTplSpec(t);
+}
+function renderTplSpec(t){
+  const tpl=TPLS[t], v=tpl.variants[tplColor];
+  let h=`<div class="srow"><span class="sk">模板</span><span class="sv">${tpl.name}・${v.label}版</span></div>`+
+        `<div class="srow"><span class="sk">字型</span><span class="sv">${TPL_FONT}</span></div>`+
+        `<div class="srow"><span class="sk">主色調</span><span class="sv"><span class="sw" style="background:${v.main}"></span>${v.main}</span></div>`;
+  if(v.ring) h+=`<div class="srow"><span class="sk">封面 Logo 圈色</span><span class="sv"><span class="sw" style="background:${v.ring}"></span>${v.ringName} ${v.ring}</span></div>`;
+  h+=`<div class="srow"><span class="sk">頁數結構</span><span class="sv">${tpl.pages.map((p,i)=>`第 ${i+1} 頁：${p}`).join('<br>')}</span></div>`;
+  document.getElementById('tplSpec').innerHTML=h;
+  let txt=`Canva 模板規格 — ${tpl.name}・${v.label}版\n字型：${TPL_FONT}\n主色調：${v.main}`;
+  if(v.ring) txt+=`\n封面 Logo 圈色：${v.ringName} ${v.ring}`;
+  txt+=`\n頁數結構：\n`+tpl.pages.map((p,i)=>`  第 ${i+1} 頁：${p}`).join('\n');
+  document.getElementById('tplSpecText').textContent=txt;
+}
+
+/* ---------- generators ---------- */
+function gen(){
+  const t=document.getElementById('ptype').value;
+  let main='',story='',card='';
+  if(t==='course'){
+    const topic=v('c_topic'),sp=v('c_speaker'),bg=v('c_bg'),d=v('c_date'),tm=v('c_time'),pl=v('c_place'),lk=v('c_link');
+    const pts=lines('c_points').map(p=>'🔸 '+p).join('\n');
+    main=`📢 中山大學 ITRC｜社課預告\n\n🎤 ${topic||'（講題）'}\n`+
+         (sp?`講者：${sp}${bg?`（${bg}）`:''}\n`:'')+
+         `\n🗓️ ${d||'（日期）'}　⏰ ${tm||'（時間）'}\n📍 ${pl||''}\n`+
+         (pts?`\n${pts}\n`:'')+
+         (lk?`\n👉 報名／簽到：${lk}\n`:'')+
+         `\n${FOOTER_IG}\n\n`+v('tags');
+    story=`📢 社課預告\n${topic}\n${d} ${tm}｜${pl}`+(lk?`\n報名 →（滑上去）`:'');
+    card=`封面：${topic}\n第2頁：講者 ${sp}\n${bg}\n第3頁：${d} ${tm}／${pl}\n第4頁：`+(lines('c_points')[0]||'重點一句')+`\n末頁：報名 QR + @nsysu_itrc`;
+  }
+  else if(t==='recruit'){
+    const feat=lines('r_feat').map(x=>'🔸 '+x).join('\n');
+    const lect=lines('r_lect').map(x=>'🔹 '+x).join('\n');
+    const prize=lines('r_prize').map(x=>'🎁 '+x).join('\n');
+    main=`中山大學 ITRC 投資交易研究社｜${v('r_title')}\n\n${v('r_hook')}\n\n`+
+      `🔥 我們的特色課程與活動：\n${feat}\n\n`+
+      (lect?`🎤 講師陣容：\n${lect}\n\n`:'')+
+      `🗓️ 社課時間：${v('r_time')}\n📍 地點：${v('r_place')}\n💰 社費：${v('r_fee')}\n\n`+
+      `👉 立即報名，一起把知識變成實力！\n`+(v('r_link')?`🔗 報名連結：${v('r_link')}\n`:'')+
+      (prize?`\n🎉 抽獎好康：\n${prize}\n`:'')+
+      `\n${FOOTER_IG}\n\n`+v('tags');
+    story=`🔥 ITRC ${v('r_title')}\n從零開始學投資交易\n報名 →（滑上去）`;
+    card=`封面：${v('r_title')}\n第2頁：4 大特色\n第3頁：講師陣容\n第4頁：時間/地點/社費\n第5頁：抽獎獎品\n末頁：報名 QR + @nsysu_itrc`;
+  }
+  else if(t==='thanks'){
+    const b=v('t_brand');
+    main=`🙏 感謝 ${b||'（廠商）'} 贊助 ITRC ${v('t_event')}\n\n`+
+      (v('t_desc')?`${v('t_desc')}\n\n`:'')+
+      `🎁 贊助內容：${v('t_item')||''}\n`+
+      (v('t_link')?`🔗 ${v('t_link')}\n`:'')+
+      `\n有你們的支持，社員的努力更有溫度，也讓這場活動更精彩 💪\n\n${FOOTER_IG}\n\n`+v('tags');
+    story=`🙏 感謝 ${b||'（廠商）'} 贊助\n${v('t_item')}`;
+    card=`封面：感謝 ${b||'（廠商）'} 贊助\n第2頁：產品圖（用 114-2 廠商圖檔）\n第3頁：${v('t_item')}\n末頁：@nsysu_itrc`;
+  }
+  else if(t==='result'){
+    main=`🏆 ITRC ${v('x_event')}｜得獎名單公布\n\n`+
+      `🥇 最佳績效獎：${v('x_perf')||''}\n`+
+      `🥈 最佳成果獎：${v('x_out')||''}\n`+
+      `🥉 最佳創意獎：${v('x_idea')||''}\n\n`+
+      `${v('x_note')}\n\n${FOOTER_IG}\n\n`+v('tags');
+    story=`🏆 ${v('x_event')} 得獎名單出爐！`;
+    card=`封面：得獎名單\n第2頁：🥇最佳績效\n第3頁：🥈最佳成果\n第4頁：🥉最佳創意\n末頁：@nsysu_itrc`;
+  }
+  document.getElementById('outMain').textContent=main;
+  document.getElementById('outStory').textContent=story;
+  document.getElementById('outCard').textContent=card;
+}
+
+/* ---------- copy ---------- */
+function copy(id){
+  const txt=document.getElementById(id).textContent;
+  navigator.clipboard.writeText(txt).then(()=>toast('已複製到剪貼簿')).catch(()=>{
+    const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();toast('已複製到剪貼簿');
+  });
+}
+function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1400);}
+
+/* ---------- schedule（依 SOP 鐵則回推）---------- */
+let schedRows=[];
+function fmt(d){return `${d.getMonth()+1}/${d.getDate()}（${'日一二三四五六'[d.getDay()]}）`;}
+function addDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x;}
+function wedOfWeek(d){const dow=(d.getDay()+6)%7;return addDays(d,-dow+2);} // 該週週三
+function avoidWeekend(d){const g=d.getDay();if(g===6)return addDays(d,-1);if(g===0)return addDays(d,-2);return d;}
+function genSched(){
+  const evs=lines('sevents').map(l=>{const i=l.lastIndexOf(',');return [l.slice(0,i).trim(),l.slice(i+1).trim()];}).filter(e=>e[0]&&e[1]);
+  schedRows=[];
+  evs.forEach(([name,ds])=>{
+    const D=new Date(ds); if(isNaN(D)) return;
+    const wed=wedOfWeek(D);
+    schedRows.push([fmt(avoidWeekend(addDays(wed,-5))),name,'監督提醒 · Deadline 前 5 天','監督者提醒幹部進度（避開假日）']);
+    schedRows.push([fmt(avoidWeekend(addDays(wed,-1))),name,'發布前緊盯 · 前 1～2 天','確認圖文完成、最後校稿']);
+    schedRows.push([fmt(wed),name,'社課貼文發布 · 每週三前','社課公告貼文上線（套 Canva 模板）']);
+    schedRows.push([fmt(addDays(wed,1)),name,'轉限動 · 週四～社課前 12h','轉限時動態＋附非社員單堂報名連結']);
+    schedRows.push([fmt(D),name,'社課當天','現場花絮限動 / 課後回顧']);
+  });
+  let h='<table><tr><th>日期</th><th>對應社課</th><th>階段</th><th>建議內容</th></tr>';
+  schedRows.forEach(r=>h+=`<tr><td class="tag">${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`);
+  h+='</table>';
+  document.getElementById('schedOut').innerHTML=h;
+}
+function copySched(){
+  if(!schedRows.length){toast('請先產生排程');return;}
+  const tsv=['日期\t對應社課\t階段\t建議內容',...schedRows.map(r=>r.join('\t'))].join('\n');
+  navigator.clipboard.writeText(tsv).then(()=>toast('已複製，可貼進 Google Sheet'));
+}
+
+/* ---------- checklist ---------- */
+const CHECK=[
+  {g:'發布前最終防錯（SOP 必勾）', items:[
+    '資訊層級：重點訊息一眼可見、主次分明',
+    '數據校對：金額、報酬率、日期、時間數字正確',
+    '錯字檢查：講者／廠商／社團名稱無錯字',
+    '報名連結：實際點開測試可正常開啟'
+  ]},
+  {g:'流程檢查', items:[
+    '確認貼文目的與對象（招募／社課／贊助／競賽）',
+    '文案用「圖文產生器」產出並校稿',
+    '圖卡套用 Canva 固定模板（色碼、王漢宗特黑體一致）',
+    '@nsysu_itrc 與 hashtag 已加上',
+    '需要標註的贊助商／講者已標記',
+    '排程時間確認（參考發文排程表）',
+    '幹部／組長審稿通過',
+    '發布後存檔到對應雲端資料夾',
+    '記錄成效（觸及／讚／儲存）以利複盤'
+  ]}
+];
+function renderCheck(){
+  const saved=JSON.parse(localStorage.getItem('itrc_check')||'{}');
+  let h='',i=0;
+  CHECK.forEach(grp=>{
+    h+=`<div class="sec">${grp.g}</div>`;
+    grp.items.forEach(c=>{
+      h+=`<label style="display:flex;gap:10px;align-items:flex-start;color:var(--ink);font-weight:500;margin:8px 0"><input type="checkbox" style="width:auto;margin-top:4px" ${saved[i]?'checked':''} onchange="saveCheck(${i},this.checked)"> ${c}</label>`;
+      i++;
+    });
+  });
+  document.getElementById('checklist').innerHTML=h;
+}
+function saveCheck(i,val){const s=JSON.parse(localStorage.getItem('itrc_check')||'{}');s[i]=val;localStorage.setItem('itrc_check',JSON.stringify(s));}
+function resetCheck(){localStorage.removeItem('itrc_check');renderCheck();}
+
+/* init */
+onType();gen();onTpl();renderCheck();
+</script>
+</body>
+</html>

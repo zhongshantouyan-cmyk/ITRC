@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ITRC 資訊組維護手冊｜網站 · 工具站 · 快閃競賽</title>
+<link rel="stylesheet" href="itrc.css">
+<script src="itrc.js" defer></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<script src="itrc-auth.js"></script>
+<style>
+  .container{max-width:1000px}
+  .who{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:13px;color:#cdd6e8}
+  .who .role{background:var(--gold);color:var(--navy);font-weight:700;padding:2px 9px;border-radius:var(--pill);font-size:12px}
+  /* gate / 未授權 */
+  .gate{max-width:480px;margin:60px auto;text-align:center;background:var(--card);border:1px solid var(--line);
+    border-radius:var(--r-lg);padding:34px 28px;box-shadow:var(--sh-2)}
+  .gate h2{margin:0 0 8px;color:var(--navy);font-size:19px}
+  .gate p{color:var(--muted);font-size:13.5px;margin:6px 0 18px;line-height:1.7}
+  /* tabs */
+  .tabs{display:flex;gap:6px;margin:16px 0 18px;flex-wrap:wrap}
+  .tabs button{background:#fff;border:1px solid var(--line);border-radius:var(--pill);padding:8px 16px;
+    font-weight:700;font-size:13.5px;color:var(--ink-2);cursor:pointer;transition:var(--ease)}
+  .tabs button:hover{border-color:#c7d0e0}
+  .tabs button.active{background:var(--navy);color:#fff;border-color:var(--navy)}
+  .none{display:none}
+  /* 文件排版 */
+  .sec .lead{font-size:14px;color:var(--ink-2);line-height:1.7;margin:0 0 14px}
+  .sec h3{font-size:14.5px;color:var(--navy);margin:20px 0 8px;padding-left:9px;border-left:3px solid var(--gold)}
+  .kv{width:100%;border-collapse:collapse;font-size:13px;background:var(--card);border:1px solid var(--line);
+    border-radius:var(--r);overflow:hidden;margin:6px 0 4px}
+  .kv th,.kv td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line-2);vertical-align:top}
+  .kv th{background:var(--bg-2);color:var(--ink-2);font-weight:700;white-space:nowrap;width:130px}
+  .kv tr:last-child th,.kv tr:last-child td{border-bottom:none}
+  .maint ol,.maint ul{margin:8px 0;padding-left:22px}
+  .maint li{margin:5px 0;font-size:13.5px;line-height:1.65;color:var(--ink-2)}
+  .maint code{font-family:"Cascadia Code",Consolas,monospace;background:#eef1f7;border:1px solid var(--line);
+    border-radius:5px;padding:1px 6px;font-size:12.5px;color:var(--navy);word-break:break-all}
+  .maint pre{background:var(--navy);color:#e8edf6;border-radius:10px;padding:13px 15px;overflow:auto;
+    font-family:"Cascadia Code",Consolas,monospace;font-size:12.5px;line-height:1.55;margin:8px 0}
+  .envs{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+  .envs code{margin:0}
+  .note{background:var(--warn-bg,#fbf2dd);border:1px solid #ecd9a6;border-radius:10px;padding:11px 14px;margin:12px 0;font-size:13px;line-height:1.7}
+  .note b{color:var(--warn,#b9821a)}
+  .note.bad{background:var(--bad-bg,#fbe9e8);border-color:#f1cfcd}
+  .note.bad b{color:var(--bad,#c4453f)}
+  .note.ok{background:var(--ok-bg,#e7f5ee);border-color:#bfe4d1}
+  .note.ok b{color:var(--ok,#2f9e6f)}
+  .pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 9px;border-radius:var(--pill)}
+  .pill.todo{background:var(--warn-bg,#fbf2dd);color:var(--warn,#b9821a)}
+  .fill{display:inline-block;min-width:170px;border-bottom:1.5px dotted #9aa6c0}
+  a.ext{color:var(--gold-ink,#8a6a22);font-weight:600}
+</style>
+</head>
+<body>
+<header class="apphead">
+  <h1><svg class="svgic"><use href="#i-file"></use></svg>資訊組維護手冊</h1>
+  <span class="sub">網站前端 · 後端 · 幹部工具站 · 快閃投資競賽</span>
+  <div class="who" id="who"></div>
+</header>
+
+<div class="container" id="app"></div>
+
+<!-- 內容（登入且屬資訊組／社長顧問才顯示）-->
+<template id="tpl-app">
+  <p class="lead" style="color:var(--muted);font-size:13px;margin:0 0 4px">資訊組維運交接總表：四套系統的平台、網址、更新方式、環境變數與排錯。點分頁切換。</p>
+  <div class="tabs" id="tabs"></div>
+
+  <!-- 前端 -->
+  <section id="tab-fe" class="sec maint none">
+    <p class="lead">對外招生的社團官網（課程介紹、活動成果、報名資訊）。訪客看到的門面，本身只是畫面，內容靠後端 API 供應。</p>
+    <table class="kv">
+      <tr><th>平台</th><td>Vercel（專案 <code>nsysu-itrc</code>，Production Branch = <code>main</code>）</td></tr>
+      <tr><th>對外網址</th><td><a class="ext" href="https://nsysu-itrc.vercel.app" target="_blank" rel="noopener">nsysu-itrc.vercel.app</a></td></tr>
+      <tr><th>原始碼</th><td>GitHub <code>choulinc/ITRC</code>（社團 fork：<code>zhongshantouyan-cmyk/ITRC</code>）的 <code>client/</code>（Vite + React SPA）。本機 <code>C:\Users\USER\projects\ITRC</code></td></tr>
+    </table>
+    <h3>如何更新／部署</h3>
+    <ul>
+      <li><b>改內容</b>（課程、幹部、活動、成果）：直接用「<b>資訊組後台</b>」<code>nsysu-itrc.vercel.app/admin</code> 線上登入編輯資料庫，<b>即時生效、不用重部署</b>。</li>
+      <li><b>改程式碼／版面</b>：<code>git push</code> 到 <code>main</code> 分支 → Vercel 自動 build + deploy。</li>
+    </ul>
+    <h3>環境變數（名稱；值在 Vercel 後台，勿外流）</h3>
+    <div class="envs"><code>VITE_API_URL</code></div>
+    <div class="note"><b>注意：</b><code>VITE_API_URL</code> 是 build-time 變數（Vite 在 build 時就把值寫死進 bundle），指向後端 API（現值 <code>https://itrc-eight.vercel.app/api</code>）。<b>改了它一定要重新部署前端才會生效。</b></div>
+    <h3>常見排錯</h3>
+    <ul>
+      <li>頁面打得開但<b>課程／活動／成果區塊空白</b> → 幾乎都是後端問題，看「後端」分頁。</li>
+      <li>網域／DNS 設定在 Vercel 該專案的 Domains。</li>
+    </ul>
+  </section>
+
+  <!-- 後端 -->
+  <section id="tab-be" class="sec maint none">
+    <p class="lead">官網的 API 伺服器，供應課程／幹部／活動／成果等資料，並處理登入與圖片上傳。<b>2026-07 已從 Render 遷到 Vercel Serverless。</b></p>
+    <table class="kv">
+      <tr><th>平台</th><td>Vercel Serverless Functions（專案 <code>itrc</code>，Production Branch = <code>feat/vercel-serverless-migration</code>）</td></tr>
+      <tr><th>API 網址</th><td><code>https://itrc-eight.vercel.app/api</code></td></tr>
+      <tr><th>健康檢查</th><td><a class="ext" href="https://itrc-eight.vercel.app/api/health" target="_blank" rel="noopener">/api/health</a>（回 200 JSON = 正常）</td></tr>
+      <tr><th>原始碼</th><td>同 repo 的 <code>server/</code>（Express；<code>server/api/index.js</code> 匯出 app、<code>server/vercel.json</code> 把路徑 rewrite 到 <code>/api</code>）</td></tr>
+    </table>
+    <h3>如何更新／部署</h3>
+    <ul>
+      <li><code>git push</code> 到 <code>feat/vercel-serverless-migration</code> 分支 → Vercel 自動部署。<b>注意：後端追的是 <code>feat</code> 分支，不是 <code>main</code>。</b></li>
+    </ul>
+    <h3>環境變數（名稱；值在 Vercel 後台，勿外流）</h3>
+    <div class="envs">
+      <code>TURSO_DATABASE_URL</code><code>TURSO_AUTH_TOKEN</code><code>JWT_SECRET</code><code>CLOUDINARY_CLOUD_NAME</code><code>CLOUDINARY_API_KEY</code><code>CLOUDINARY_API_SECRET</code><code>ALLOW_LEGACY_JWT</code><code>FIREBASE 服務帳號相關</code>
+    </div>
+    <div class="note"><b>設定位置：</b>Vercel → <code>itrc</code> 專案 → Settings → Environment Variables（Sensitive）。改完到 <b>Deployments → 對最新部署按 Redeploy</b> 才生效。</div>
+    <h3>用到的服務</h3>
+    <ul>
+      <li><b>資料庫：</b>Turso（libSQL）　<b>登入：</b>Firebase Google + 舊版密碼 JWT　<b>圖片：</b>Cloudinary</li>
+    </ul>
+    <div class="note ok"><b>保活已不需要：</b>Vercel Serverless 不會休眠，<b>不再需要任何定時 ping／cron 保活</b>（舊 cron-job.org 的「itrc-render-daytime-warm」排程已停用）。原 Render 服務保留當回滾備援，日後確認無虞可刪。</div>
+    <h3>常見排錯</h3>
+    <ul>
+      <li><code>/api/health</code> 非 200 → 看 Vercel <code>itrc</code> 專案 Deployments 的 Function Logs。</li>
+      <li>閒置後第一個請求約 <b>1～2 秒冷啟</b>屬正常。</li>
+      <li>圖片上傳失敗 → 注意 Vercel 請求 body 上限約 <b>4.5MB</b>。</li>
+    </ul>
+  </section>
+
+  <!-- 工具站 -->
+  <section id="tab-tool" class="sec maint none">
+    <p class="lead">你正在用的這個「幹部工具站」：講師排程、任務看板、圖文、贊助、證書、財務站、幹部與權限，以及這份手冊。</p>
+    <table class="kv">
+      <tr><th>平台</th><td>Vercel 靜態部署（專案 <code>itrc-tools</code>，team <code>zhongshantouyan-4688s-projects</code>）</td></tr>
+      <tr><th>對外網址</th><td><a class="ext" href="https://itrc-tools.vercel.app" target="_blank" rel="noopener">itrc-tools.vercel.app</a></td></tr>
+      <tr><th>原始碼</th><td>本機 <code>C:\Users\USER\itrc-tools\</code>。單檔 HTML 工具 + 共用 <code>itrc.css</code> / <code>itrc.js</code>（圖示＋導覽列＋toast）/ <code>itrc-auth.js</code>（登入與角色）</td></tr>
+    </table>
+    <h3>如何更新／部署</h3>
+    <p class="lead" style="margin:4px 0">改完本機檔案後，用 <b>scoped CLI</b> 部署（<b>務必帶資料夾路徑</b>——家目錄含機密，不能整包上傳）：</p>
+    <pre>npx vercel deploy "C:/Users/USER/itrc-tools" --prod --yes \
+  --scope zhongshantouyan-4688s-projects --token &lt;一次性 token&gt;</pre>
+    <div class="note"><b>token 安全：</b>每次部署用一次性 token，用完建議到 Vercel 後台撤銷。</div>
+    <h3>後端與資料</h3>
+    <ul>
+      <li><b>Firebase Realtime Database</b>（專案 <code>itrc-workspace</code>），設定內嵌在 <code>itrc-auth.js</code>。看板／贊助／財務／名單等<b>雲端即時同步</b>；部分個人偏好存各自瀏覽器 <code>localStorage</code>。</li>
+    </ul>
+    <h3>登入與權限</h3>
+    <ul>
+      <li>Google 登入 + <b>角色白名單</b>（<code>roles</code> 名單存 RTDB，用「<b>幹部與權限</b>」工具線上編、改完即時生效、不用重部署）。</li>
+      <li>角色：<code>chair</code>（正副社長）／<code>advisor</code>（顧問）／<code>treasurer</code>（財務長）／<code>officer</code>（一般幹部）。能力：roster／approve／ledger／apply／treasury。</li>
+      <li><b>救命索：</b><code>SUPER_ADMINS</code>（社團信箱 + 顧問信箱）永遠最高權限，換屆走人也不會鎖死。整站權限鎖死時用它登入解。</li>
+      <li><b>這份手冊</b>鎖：職稱含「資訊」者 + 社長／副社長／顧問 + SUPER_ADMINS 才看得到。</li>
+    </ul>
+    <h3>常見排錯</h3>
+    <ul>
+      <li>登入後<b>沒角色／權限不對</b> → 到「幹部與權限」確認該人的 Google 信箱與角色，名單改完即時生效。</li>
+    </ul>
+  </section>
+
+  <!-- 快閃投資競賽 -->
+  <section id="tab-game" class="sec maint none">
+    <p class="lead">課堂用的<b>多人即時投資模擬遊戲</b>：各組同學掃 QR 加入，主持人開局控盤，8 回合（每回合＝一季）比投報率。<b>劇本驅動</b>（每回合漲跌寫在 JSON 劇本裡，不是即時亂數）。</p>
+    <table class="kv">
+      <tr><th>平台</th><td>Vercel（Production Branch = <code>phase-2</code>，若已 merge 回 <code>main</code> 則為 main；push 到 production 分支自動部署）</td></tr>
+      <tr><th>對外網址</th><td>看 Vercel 該專案 → Domains <span class="pill todo">實際網址待保管人填</span></td></tr>
+      <tr><th>原始碼</th><td>本機 <code>C:\Users\USER\Desktop\投資遊戲開發\investment-game</code>（Vite + React 18 + TS + Tailwind/shadcn + Zustand）</td></tr>
+      <tr><th>後端／資料</th><td><b>Supabase</b>（免費方案）：資料庫 + Realtime 回合同步；Phase 2 結算引擎搬到 Supabase Edge Function</td></tr>
+    </table>
+    <h3>如何更新／部署</h3>
+    <ul>
+      <li><code>git push</code> 到 production 分支（<code>phase-2</code> 或 <code>main</code>）→ Vercel 自動 build + deploy。Vercel 會自動偵測 Vite，build command 不用改（<code>vercel.json</code> 已設好）。</li>
+      <li><b>開課前必做：</b>確認 Supabase 的 SQL 都套用過（見 repo <code>docs/p2-architecture.md</code>），且 Vercel 環境變數有設。</li>
+    </ul>
+    <h3>環境變數（名稱；值在 Vercel 後台）</h3>
+    <div class="envs"><code>VITE_SUPABASE_URL</code><code>VITE_SUPABASE_PUBLISHABLE_KEY</code></div>
+    <div class="note">兩個都要在 Vercel → 專案 → Settings → Environment Variables 加，<b>Production / Preview / Development 全勾</b>。是 Vite build-time 變數，改了要重新部署才生效。（publishable key 屬前端公開金鑰，但仍只把「值」放後台、手冊只列名稱。）</div>
+    <h3>課堂使用流程</h3>
+    <ul>
+      <li>老師開 <code>/host/new</code> 建局（設標題、回合數，建議 8）→ 主持人控制台 →「進入投影模式」顯示大字代碼 + QR。</li>
+      <li>學生掃 QR：組長「建組」、其他人「加入既有組」（<b>無帳號註冊，用 device token</b>；5 碼 join code）。</li>
+      <li>每回合走 <code>intro → events → discuss → order → settle</code>，主持人逐階段推進；第 8 回合結算後自動跳最終排行榜。</li>
+    </ul>
+    <h3>規則鐵則（改顯示／結算務必守住）</h3>
+    <div class="note bad"><b>台股顏色 = 紅漲綠跌</b>（和歐美相反），別套成綠漲紅跌。</div>
+    <ul>
+      <li><b>用金額下單、不是股數</b>（內部 <code>units = amount / price</code>）；金額類數值一律用整數，避免浮點誤差。</li>
+      <li>結算：訂單以<b>開盤價成交</b>、收盤價反映當季事件；手續費 <code>0.001425</code>、最低 20；單一持股上限 <b>50%</b>（下單時擋）。</li>
+    </ul>
+    <h3>已知技術債</h3>
+    <div class="note bad"><b><code>host_token</code>（主持人權杖）安全性尚未收尾</b>——別當成正式權限機制。課堂內用可接受，要對外正式開放前需先補強。</div>
+  </section>
+
+  <!-- 帳號 / 交接 -->
+  <section id="tab-handover" class="sec maint none">
+    <p class="lead">換屆交接時，把各平台帳號的保管人填進來，別讓帳號隨畢業走人而失聯。</p>
+    <table class="kv">
+      <tr><th>Vercel 帳號</th><td>管 <code>nsysu-itrc</code>／<code>itrc</code>／<code>itrc-tools</code>　保管人：<span class="fill"></span></td></tr>
+      <tr><th>GitHub repo</th><td><code>choulinc/ITRC</code> / fork　保管人：<span class="fill"></span></td></tr>
+      <tr><th>Firebase</th><td>專案 <code>itrc-workspace</code>（工具站＋官網登入）　保管人：<span class="fill"></span></td></tr>
+      <tr><th>Turso</th><td>官網資料庫　保管人：<span class="fill"></span></td></tr>
+      <tr><th>Cloudinary</th><td>官網圖片　保管人：<span class="fill"></span></td></tr>
+      <tr><th>Google 登入信箱</th><td>社團公用信箱（SUPER_ADMIN）　保管人：<span class="fill"></span></td></tr>
+      <tr><th>快閃競賽</th><td>Vercel 專案／後端　保管人：<span class="fill"></span></td></tr>
+    </table>
+    <div class="note bad"><b>資安鐵則：</b>不要把任何<b>金鑰／密碼／token 明文</b>貼進這份手冊或工具站——這是<b>公開靜態站，原始碼可被下載</b>，登入鎖只擋一般訪客的畫面、不是硬加密。密鑰值只放在各平台後台，這份手冊只列「名稱與位置」。</div>
+  </section>
+</template>
+
+<script>
+(function(){
+  var $=function(id){return document.getElementById(id);};
+  function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+
+  // 可看維護手冊：萬能管理員 / 社長副社長 / 顧問 / 職稱含「資訊」
+  function canMaint(u){
+    if(!u) return false;
+    if(u.superAdmin) return true;
+    if(u.role==='chair'||u.role==='advisor') return true;
+    return /資訊/.test(u.title||'');
+  }
+  function signOutBtn(){
+    return ITRCAuth.isDev()?'':'<div style="margin-top:14px"><button class="btn ghost sm" onclick="ITRCAuth.signOut()">登出換帳號</button></div>';
+  }
+
+  var TABS=[['fe','網站前端'],['be','網站後端'],['tool','幹部工具站'],['game','快閃投資競賽'],['handover','帳號交接']];
+
+  function renderWho(u){
+    var el=$('who'); if(!el) return;
+    if(!u){ el.innerHTML=''; return; }
+    if(!u.role){ el.innerHTML='<span>'+esc(u.name)+'</span>'+(ITRCAuth.isDev()?'':'<button class="btn ghost sm" onclick="ITRCAuth.signOut()">登出</button>'); return; }
+    var label=ITRCAuth.ROLE_LABEL[u.role]||u.role;
+    el.innerHTML='<span class="role">'+esc(label)+'</span><span>'+esc(u.name)+(u.title?'（'+esc(u.title)+'）':'')+'</span>'
+      +(ITRCAuth.isDev()?'':'<button class="btn ghost sm" onclick="ITRCAuth.signOut()">登出</button>');
+  }
+
+  function mount(){
+    var app=$('app');
+    app.innerHTML=''; app.appendChild($('tpl-app').content.cloneNode(true));
+    var tabsEl=$('tabs');
+    TABS.forEach(function(t,i){
+      var b=document.createElement('button'); b.textContent=t[1]; b.setAttribute('data-tab',t[0]);
+      if(i===0) b.className='active';
+      b.onclick=function(){ show(t[0]); };
+      tabsEl.appendChild(b);
+    });
+    show(TABS[0][0]);
+  }
+  function show(id){
+    TABS.forEach(function(t){
+      var sec=$('tab-'+t[0]); if(sec) sec.classList.toggle('none', t[0]!==id);
+    });
+    document.querySelectorAll('#tabs button').forEach(function(b){
+      b.classList.toggle('active', b.getAttribute('data-tab')===id);
+    });
+  }
+
+  function onAuth(u){
+    renderWho(u);
+    var app=$('app');
+    if(ITRCAuth.isDev()){ mount(); return; }   // 本機／測試模式：直接預覽
+    if(!u){
+      app.innerHTML='<div class="gate"><h2>請先登入</h2><p>資訊組維護手冊僅供資訊組成員與正副社長／顧問查看，請用社團 Google 帳號登入。</p><button class="btn gold" onclick="ITRCAuth.signIn()">用 Google 登入</button></div>';
+      return;
+    }
+    if(!u.role){
+      app.innerHTML='<div class="gate"><h2>尚未授權</h2><p>你的帳號（'+esc(u.email||u.name)+'）還沒有被指派角色。<br>請聯絡社長或資訊組把你加進「幹部與權限」名單。</p>'+signOutBtn()+'</div>';
+      return;
+    }
+    if(!canMaint(u)){
+      app.innerHTML='<div class="gate"><h2>權限不足</h2><p>這份維護手冊限<b>資訊組成員</b>與<b>正副社長／顧問</b>查看。<br>你目前的身分（'+esc(ITRCAuth.ROLE_LABEL[u.role]||u.role)+(u.title?' · '+esc(u.title):'')+'）沒有開放。</p>'+signOutBtn()+'</div>';
+      return;
+    }
+    mount();
+  }
+
+  ITRCAuth.init({onChange:onAuth});
+})();
+</script>
+</body>
+</html>

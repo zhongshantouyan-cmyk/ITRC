@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ITRC 證書 / 獎狀批次產生器</title>
+<link rel="stylesheet" href="itrc.css">
+<script src="itrc.js" defer></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<script src="itrc-auth.js"></script>
+<script src="itrc-cloud.js"></script>
+<style>
+  :root{--navy:#0f1f3d;--navy2:#16294e;--gold:#b8932f;--gold2:#d9b75a;--ink:#1a2233;--muted:#5b6678;--line:#e4e8f0;--bg:#f5f6fa}
+  *{box-sizing:border-box;font-family:"Segoe UI","Microsoft JhengHei",system-ui,sans-serif}
+  body{margin:0;background:var(--bg);color:var(--ink);font-size:15px}
+  header{background:linear-gradient(135deg,var(--navy),var(--navy2));color:#fff;padding:16px 22px;display:flex;align-items:center;gap:12px}
+  header .logo{width:38px;height:38px;border:2px solid var(--gold2);border-radius:9px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--gold2);font-weight:800;font-size:11px;line-height:1.1}
+  header h1{font-size:18px;margin:0}
+  header .sub{color:#9fb0cc;font-size:12.5px;margin-top:2px}
+  .layout{display:grid;grid-template-columns:370px 1fr;min-height:calc(100vh - 70px)}
+  @media(max-width:900px){.layout{grid-template-columns:1fr}}
+  .panel{background:#fff;border-right:1px solid var(--line);padding:18px;overflow:auto}
+  .panel h2{font-size:14px;margin:0 0 8px;display:flex;gap:8px;align-items:center}
+  .panel h2 .dot{width:7px;height:7px;border-radius:50%;background:var(--gold)}
+  label{display:block;font-size:13px;color:var(--muted);margin:12px 0 5px;font-weight:600}
+  input,textarea,select{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font-size:14px;background:#fbfcfe;color:var(--ink)}
+  textarea{resize:vertical;min-height:120px;line-height:1.6;font-family:"Microsoft JhengHei",sans-serif}
+  input:focus,textarea:focus,select:focus{outline:none;border-color:var(--gold);background:#fff}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .hint{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.5}
+  .btnrow{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap}
+  button.act{background:var(--gold);color:#fff;border:none;padding:10px 18px;border-radius:8px;font-weight:700;cursor:pointer;font-size:14px}
+  button.act:hover{background:var(--gold2)}
+  button.ghost{background:#fff;border:1px solid var(--line);color:var(--ink);padding:10px 14px;border-radius:8px;cursor:pointer;font-size:13px}
+  .stage{padding:22px;overflow:auto;background:#e9ecf3}
+  .count{font-size:13px;color:var(--muted);margin-bottom:12px}
+  /* certificate — mirrors ITRC 參與證明 layout */
+  .cert{width:780px;height:551px;margin:0 auto 22px;background:#fffdf7;position:relative;box-shadow:0 6px 22px rgba(15,31,61,.12);
+        border:3px double var(--gold);padding:14px;background-size:cover;background-position:center}
+  .cert .inner{border:1px solid var(--gold2);height:100%;padding:30px 56px;display:flex;flex-direction:column;align-items:center;text-align:center;position:relative}
+  .cert .badge{position:absolute;top:14px;left:24px;width:46px;height:46px;border:2px solid var(--gold);border-radius:9px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--gold);font-weight:800;font-size:13px;line-height:1.05}
+  .cert .badge small{font-size:8px;letter-spacing:1px;font-weight:600}
+  .cert .en{font-family:"Georgia","Times New Roman",serif;font-style:italic;font-size:30px;color:var(--gold);letter-spacing:1px;margin-top:6px}
+  .cert .title{font-size:38px;color:var(--navy);letter-spacing:10px;font-weight:800;margin:6px 0 2px;padding-left:10px}
+  .cert .rule{width:96px;height:3px;background:var(--gold);margin:6px 0 20px}
+  .cert .body{font-size:19px;line-height:2.15;color:#26303f;max-width:640px}
+  .cert .name{font-weight:800;color:var(--navy);border-bottom:2px solid var(--gold);padding:0 12px 2px;margin:0 2px}
+  .cert .signblock{margin-top:auto;line-height:2;font-size:16px;color:#26303f;padding-top:16px}
+  .cert .no{position:absolute;bottom:10px;left:24px;font-size:11px;color:#9aa3b2;letter-spacing:1px}
+  .cert .emblem{position:absolute;right:40px;bottom:30px;width:84px;height:84px;border:2px solid var(--gold);border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--gold);font-weight:800;font-size:13px;opacity:.55;line-height:1.1}
+  .cert .emblem small{font-size:8px;letter-spacing:1px}
+  /* custom-template (background) mode */
+  .cert.bg{border:none!important;padding:0;background-size:cover;background-position:center;box-shadow:0 6px 22px rgba(15,31,61,.12)}
+  .cert.bg .bginner{position:absolute;inset:0}
+  .cert.bg .ovtext{position:absolute;line-height:1.5;font-weight:800;white-space:pre-wrap;text-align:center}
+  /* 疊在 Canva 底圖上的名字／欄位用底圖控制項的字色字級，不套內建金邊版型的藍字+底線 */
+  .cert.bg .ovtext .name{color:inherit;border-bottom:none;font-weight:inherit;padding:0;margin:0}
+  .cert.bg .ovtext b{font-weight:900}
+  .cert.bg.editor .ovtext{cursor:move;outline:1.5px dashed rgba(201,161,74,.85);outline-offset:5px}
+  .cert.bg.editor .ovtext:focus{outline:2px solid var(--gold);outline-offset:5px}
+  .cert.bg.editor .dragtag{position:absolute;top:8px;right:8px;background:rgba(15,31,61,.85);color:#fff;font-size:11px;padding:3px 9px;border-radius:6px;pointer-events:none;z-index:2}
+  #bgctrls{display:none;border-top:1px dashed var(--line);margin-top:14px;padding-top:8px}
+  @media print{
+    body{background:#fff}
+    header,.panel,.count,.noprint{display:none!important}
+    .layout{display:block}.stage{padding:0;background:#fff}
+    .cert{box-shadow:none;margin:0;page-break-after:always;width:100%;height:100vh}
+    /* 底圖版用 aspect-ratio 撐滿頁面，蓋掉預覽用的固定 inline 寬度 */
+    .cert.bg{width:100%!important;height:auto!important;outline:none}
+    .cert.bg .ovtext{outline:none!important}
+    .cert.bg .dragtag{display:none!important}
+    @page{size:A4 landscape;margin:10mm}
+  }
+</style>
+</head>
+<body>
+<header class="apphead">
+  <div class="logo">ITRC<small>NSYSU</small></div>
+  <div><h1>證書 / 獎狀產生器</h1><div class="sub">共用 · 一份名單批次產出，依社內參與證明格式</div></div>
+  <span id="certConn" class="small" style="margin-left:auto;color:#9fb0cc;white-space:nowrap">● 連線中…</span>
+</header>
+
+<div class="layout">
+  <div class="panel">
+    <h2><span class="dot"></span>設定</h2>
+
+    <label>證書類型</label>
+    <select id="ctype" onchange="applyType()">
+      <option value="member">社員參與證明</option>
+      <option value="cadre">幹部證明</option>
+      <option value="deep">深度研究社員證明</option>
+      <option value="award">期末競賽獎狀</option>
+    </select>
+
+    <label>學期</label>
+    <input id="term" value="114 學年度第二學期">
+
+    <label>內文範本 <span style="font-weight:400">（{name}姓名、{extra}/{extra2}額外欄位、{term}學期）</span></label>
+    <textarea id="tpl"></textarea>
+    <button class="ghost" type="button" onclick="nameOnly()" style="margin-top:8px;font-size:12px;padding:6px 11px">只疊名字（用 Canva 底圖時）</button>
+
+    <div class="row2">
+      <div><label>編號前綴</label><input id="prefix" value="ITRC114-2-社字第"></div>
+      <div><label>起始號</label><input id="startno" value="1" type="number" min="0"></div>
+    </div>
+
+    <label>發證日期</label>
+    <input id="date" value="">
+
+    <div class="row2">
+      <div><label>負責人姓名</label><input id="signer" value="" placeholder="社長姓名"></div>
+      <div><label>職稱</label><input id="signrole" value="社長"></div>
+    </div>
+
+    <label>背景圖（選填，上傳 Canva 匯出的<b>空白</b>底圖）</label>
+    <input id="bgfile" type="file" accept="image/png,image/jpeg,image/*" onchange="loadBg(event)">
+    <div class="hint">不選則使用內建金邊版型，直式橫式皆會自動判斷。<br><b>注意：</b>Canva 下載請選 <b>PNG</b>（PDF 無法讀取），且底圖須為<b>不含名字</b>的空白版——名字由此處批次疊上。<br>上傳後會自動存成<b>全社共用模板</b>，其他幹部開啟即套用。</div>
+    <button class="ghost" type="button" id="btnClrTmpl" onclick="clearTmpl()" style="display:none;margin-top:8px">清除共用模板</button>
+
+    <div id="bgctrls">
+      <label style="margin-top:0">疊字設定（用模板時）</label>
+      <div class="row2">
+        <div><label style="margin-top:0">字級</label><input id="ovsize" type="number" min="8" max="120" value="22" onchange="setOv('size',+this.value)"></div>
+        <div><label style="margin-top:0">顏色</label><input id="ovcolor" type="color" value="#26303f" onchange="setOv('color',this.value)" style="height:40px;padding:3px"></div>
+      </div>
+      <label>文字框寬度 <span id="ovwlab" style="font-weight:400">70%</span></label>
+      <input id="ovw" type="range" min="20" max="100" value="70" oninput="setOv('w',+this.value)">
+      <div class="hint">在右邊<b>第一張</b>證書上把文字拖到位置，其餘自動套用，位置依證書類型記住。<br>內文範本只留 <code>{name}</code> 就只疊名字；保留整段就疊整段。</div>
+    </div>
+
+    <label id="lblList">名單　<span style="font-weight:400">（每行一位）</span></label>
+    <textarea id="names" placeholder="王小明&#10;陳大華"></textarea>
+    <div class="hint" id="listHint"></div>
+
+    <div class="btnrow">
+      <button class="act" onclick="render()">產生預覽 ▸</button>
+      <button class="act" onclick="window.print()"><svg class="svgic" style="width:15px;height:15px;vertical-align:-3px;margin-right:4px"><use href="#i-printer"></use></svg>列印 / 另存 PDF</button>
+    </div>
+    <div class="hint">列印時選「另存為 PDF」一次匯出全部；版面 A4 橫式、一人一頁。</div>
+  </div>
+
+  <div class="stage">
+    <div class="count noprint" id="count"></div>
+    <div id="certs"></div>
+  </div>
+</div>
+
+<script>
+/* exact wording taken from ITRC 114-2 參與證明 PDFs */
+const TYPES={
+  member:{en:"Congratulation",title:"參 與 證 明",prefix:"ITRC114-2-社字第",
+    tpl:"茲證明 {name} 學員，已完成並符合國立中山大學 ITRC 投資交易研究社 {term} 社課之修課標準，特此頒發本參與證明，以資證明。",
+    listLabel:"名單（每行一位）",extra:false,extra2:false},
+  cadre:{en:"Thank You",title:"幹 部 證 明",prefix:"ITRC114-2-幹字第",
+    tpl:"茲證明 {name}（{extra}），於國立中山大學 ITRC 投資交易研究社 {term} 擔任 {extra} 期間認真負責，特此頒發本幹部參與證明，以資證明。",
+    listLabel:"名單（每行：姓名, 職務）　例：王小明, 公關組 PM",extra:true,extra2:false},
+  deep:{en:"Congratulation",title:"深度研究社員證明",prefix:"ITRC114-2-研字第",
+    tpl:"茲證明 {name} 社員，於國立中山大學 ITRC 投資交易研究社 {term} 擔任深度研究社員，特此頒發本參與證明，以資證明。",
+    listLabel:"名單（每行一位）",extra:false,extra2:false},
+  award:{en:"Congratulation",title:"獎　　狀",prefix:"ITRC114-2-獎字第",
+    tpl:"本社 {name} 社員，於 {term} 參與中山大學投資交易研究社期末競賽（{extra}），榮獲 {extra2}，特頒此狀，以茲鼓勵。",
+    listLabel:"名單（每行：姓名, 組別, 獎項名次）　例：王小明, 交易組, 最佳績效獎 第一名",extra:true,extra2:true}
+};
+
+let BG=null,BGW=0,BGH=0;
+let POS={};
+const DEFPOS={x:50,y:55,size:22,color:'#26303f',w:70};
+function curPos(){const ct=document.getElementById('ctype').value;if(!POS[ct])POS[ct]=Object.assign({},DEFPOS);return POS[ct];}
+
+/* ---------- cloud (Firebase RTDB, itrc-workspace)：座標與背景模板全社共用 ---------- */
+const CERT_FB_CONFIG = {
+  apiKey: "AIzaSyBG41luYP0eyt9UUeuS0lybKTqWYi1GpLc",
+  authDomain: "itrc-workspace.firebaseapp.com",
+  databaseURL: "https://itrc-workspace-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "itrc-workspace",
+  storageBucket: "itrc-workspace.firebasestorage.app",
+  messagingSenderId: "462903407211",
+  appId: "1:462903407211:web:9cc9217dcef3c97cf2372e",
+  measurementId: "G-Z17XG7FJ5T"
+};
+let certPosRef=null, certTmplRef=null, certDragging=false, certPosPending=null;
+function certConn(t){const c=document.getElementById('certConn');if(c)c.textContent=t;}
+function applyTmpl(v){
+  if(v&&v.data){BG=v.data;BGW=+v.w||0;BGH=+v.h||0;}
+  else{BG=null;BGW=BGH=0;}
+  const b=document.getElementById('btnClrTmpl');if(b)b.style.display=(certTmplRef&&BG)?'inline-block':'none';
+  updPrintOri();render();scrollEditor();
+}
+let certCloud=null;
+function initCertCloud(){
+  certCloud=ITRCCloud.create({status:certConn,
+    onLocal:function(){try{POS=JSON.parse(localStorage.getItem('itrc_cert_pos')||'{}');}catch(e){POS={};}render();},
+    onUnavailable:function(){certPosRef=certTmplRef=null;POS={};applyTmpl(null);},
+    onCloudReady:function(cloud){
+      certPosRef=cloud.watch('certs/positions',function(snap){const v=snap.val()||{};if(certDragging){certPosPending=v;return;}POS=v;render();});
+      certTmplRef=cloud.watch('certs/template',function(snap){applyTmpl(snap.val());});
+    }
+  });
+}
+function clearTmpl(){
+  if(certCloud&&certCloud.isLocal()){applyTmpl(null);certConn('● 本機預覽已清除，未更動共用模板');return;}
+  if(certCloud&&certTmplRef&&confirm('清除全社共用的背景模板，改回內建金邊版型？'))return certCloud.write(certTmplRef,null);
+}
+function savePos(){
+  if(certCloud&&certCloud.isLocal()){localStorage.setItem('itrc_cert_pos',JSON.stringify(POS));certConn('● 本機測試已儲存，未寫入雲端');return Promise.resolve(true);}
+  if(!certCloud){certConn('● 尚未儲存：登入尚未確認');return Promise.resolve(false);}
+  return certCloud.write(certPosRef,POS);
+}
+function setOv(k,v){curPos()[k]=v;savePos();if(k==='w')document.getElementById('ovwlab').textContent=v+'%';render();}
+function updPrintOri(){let s=document.getElementById('pageori');if(!s){s=document.createElement('style');s.id='pageori';document.head.appendChild(s);}
+  const ori=(BG&&BGH>BGW)?'portrait':'landscape';s.textContent='@media print{@page{size:A4 '+ori+';margin:'+(BG?'0':'10mm')+'}}';}
+function loadBg(e){const f=e.target.files[0];if(!f){BG=null;BGW=BGH=0;updPrintOri();render();return;}
+  if(f.type==='application/pdf'||/\.pdf$/i.test(f.name)){alert('這是 PDF，工具讀不了。\n請回 Canva 下載時改選 PNG（或 JPG）再上傳。');e.target.value='';return;}
+  const r=new FileReader();r.onload=()=>{const img=new Image();img.onerror=()=>alert('讀不到這張圖，請確認是 PNG / JPG。');img.onload=()=>{BGW=img.naturalWidth;BGH=img.naturalHeight;BG=r.result;
+    if(certCloud&&certCloud.isLocal()){certConn('● 模板僅供本機預覽，未寫入雲端');}
+    else if(certCloud){certCloud.write(certTmplRef,{data:r.result,w:BGW,h:BGH,name:f.name||''}).then(function(ok){if(ok&&window.itrcToast)itrcToast('模板已存雲端，全社共用');});}
+    updPrintOri();render();scrollEditor();};img.src=r.result;};r.readAsDataURL(f);}
+function bindDrag(){
+  const el=document.querySelector('.cert.editor .ovtext');if(!el)return;
+  el.onmousedown=e=>{e.preventDefault();certDragging=true;el.focus();const cert=el.closest('.cert');const p=curPos();
+    const move=ev=>{const rc=cert.getBoundingClientRect();let x=(ev.clientX-rc.left)/rc.width*100,y=(ev.clientY-rc.top)/rc.height*100;
+      p.x=Math.max(2,Math.min(98,x));p.y=Math.max(2,Math.min(98,y));el.style.left=p.x+'%';el.style.top=p.y+'%';};
+    const up=()=>{document.removeEventListener('mousemove',move);document.removeEventListener('mouseup',up);certDragging=false;certPosPending=null;savePos();};
+    document.addEventListener('mousemove',move);document.addEventListener('mouseup',up);};
+}
+let nudgeT;
+function nudge(dx,dy){
+  const el=document.querySelector('.cert.editor .ovtext');if(!el)return;
+  const rc=el.closest('.cert').getBoundingClientRect();const p=curPos();
+  p.x=Math.max(2,Math.min(98,p.x+dx/rc.width*100));
+  p.y=Math.max(2,Math.min(98,p.y+dy/rc.height*100));
+  el.style.left=p.x+'%';el.style.top=p.y+'%';
+  clearTimeout(nudgeT);nudgeT=setTimeout(savePos,400);
+}
+document.addEventListener('keydown',e=>{
+  if(!BG)return;
+  const el=document.querySelector('.cert.editor .ovtext');
+  if(!el||document.activeElement!==el)return;
+  const s=e.shiftKey?10:1;
+  if(e.key==='ArrowUp')nudge(0,-s);else if(e.key==='ArrowDown')nudge(0,s);
+  else if(e.key==='ArrowLeft')nudge(-s,0);else if(e.key==='ArrowRight')nudge(s,0);
+  else return;
+  e.preventDefault();
+});
+function scrollEditor(){const ed=document.querySelector('.cert.editor');if(ed&&BG)ed.scrollIntoView({behavior:'smooth',block:'center'});}
+function nameOnly(){document.getElementById('tpl').value='{name}';render();}
+
+function rocToday(){const d=new Date();const m=String(d.getMonth()+1).padStart(2,'0');return `中華民國 ${d.getFullYear()-1911} 年 ${m} 月 ${d.getDate()} 日`;}
+document.getElementById('date').value=rocToday();
+
+function applyType(){
+  const t=TYPES[document.getElementById('ctype').value];
+  document.getElementById('tpl').value=t.tpl;
+  document.getElementById('prefix').value=t.prefix;
+  document.getElementById('lblList').innerHTML=t.listLabel;
+  document.getElementById('listHint').textContent=(t.extra||t.extra2)?'額外欄位用逗號分隔。':'每行一位姓名即可。';
+  render();
+}
+function pad(n){return String(n).padStart(3,'0');}
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(m){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]);});}
+
+function render(){
+  const t=TYPES[document.getElementById('ctype').value];
+  const tpl=document.getElementById('tpl').value;
+  const term=document.getElementById('term').value;
+  const prefix=document.getElementById('prefix').value;
+  let no=parseInt(document.getElementById('startno').value)||0;
+  const date=document.getElementById('date').value;
+  const signer=document.getElementById('signer').value;
+  const role=document.getElementById('signrole').value;
+  const rows=document.getElementById('names').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  const p=curPos();
+  const ratio=(BGW&&BGH)?BGW+'/'+BGH:'780/551';
+  const w=(BGH>BGW)?520:780;
+
+  const html=rows.map((line,idx)=>{
+    const parts=line.split(',').map(s=>s.trim());
+    const name=parts[0]||'', extra=parts[1]||'', extra2=parts[2]||'';
+    let body=esc(tpl).replace(/{name}/g,`<span class="name">${esc(name)}</span>`)
+      .replace(/{extra2}/g,`<b>${esc(extra2)}</b>`).replace(/{extra}/g,`<b>${esc(extra)}</b>`)
+      .replace(/{term}/g,esc(term));
+    const num=prefix+pad(no++)+"號";
+    if(BG){
+      const ov=`<div class="bginner"><div class="ovtext" ${idx===0?'tabindex="0"':''} style="left:${p.x}%;top:${p.y}%;transform:translate(-50%,-50%);width:${p.w}%;font-size:${p.size}px;color:${p.color}">${body}</div></div>`;
+      const tag=idx===0?`<div class="dragtag">拖曳調整名字位置 · 方向鍵微調</div>`:'';
+      return `<div class="cert bg ${idx===0?'editor':''}" style="aspect-ratio:${ratio};width:${w}px;height:auto;background-image:url('${BG}')">${ov}${tag}</div>`;
+    }
+    const inner=`<div class="inner">
+           <div class="badge">ITRC<small>NSYSU</small></div>
+           <div class="en">${t.en}</div>
+           <div class="title">${t.title}</div><div class="rule"></div>
+           <div class="body">${body}</div>
+           <div class="signblock">負責人：${esc(signer)}　${esc(role)}<br>國立中山大學 ITRC 投資交易研究社<br>${esc(date)}</div>
+           <div class="emblem">ITRC<small>NSYSU</small></div>
+           <div class="no">${esc(num)}</div>
+         </div>`;
+    return `<div class="cert">${inner}</div>`;
+  }).join('');
+
+  document.getElementById('certs').innerHTML=html||'<p style="text-align:center;color:#888;margin-top:40px">在左邊貼上名單，按「產生預覽」。</p>';
+  document.getElementById('bgctrls').style.display=BG?'block':'none';
+  if(BG){const q=curPos();document.getElementById('ovsize').value=q.size;document.getElementById('ovcolor').value=q.color;document.getElementById('ovw').value=q.w;document.getElementById('ovwlab').textContent=q.w+'%';bindDrag();}
+  const s=parseInt(document.getElementById('startno').value)||0;
+  document.getElementById('count').textContent=rows.length?`共 ${rows.length} 張，編號 ${prefix}${pad(s)}號 起`:'';
+}
+
+document.getElementById('names').value="王小明\n李小華\n陳大文";
+updPrintOri();applyType();initCertCloud();
+</script>
+</body>
+</html>

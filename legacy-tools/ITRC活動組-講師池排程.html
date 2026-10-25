@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ITRC 活動組｜講師池 &amp; 排程協調</title>
+<link rel="stylesheet" href="itrc.css">
+<script src="itrc.js" defer></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<script src="itrc-auth.js"></script>
+<script src="itrc-cloud.js"></script>
+<style>
+  :root{
+    --navy:#0f1f3d; --navy2:#16294d; --gold:#c9a14a; --gold2:#b8932f;
+    --bg:#f4f5f8; --card:#fff; --line:#e3e6ee; --txt:#1d2436; --muted:#5b6678;
+    --ok:#1f9d6b; --warn:#d98a00; --bad:#c0392b; --info:#2d6cdf;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Segoe UI","Microsoft JhengHei",sans-serif;background:var(--bg);color:var(--txt)}
+  header{background:var(--navy);color:#fff;padding:16px 22px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  header h1{font-size:19px;margin:0;letter-spacing:.5px}
+  header .sub{color:#aebbd6;font-size:13px}
+  header .term{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:13px;color:#cdd6ea}
+  header .term input{width:78px;background:var(--navy2);border:1px solid #2c3e63;color:#fff;border-radius:6px;padding:5px 8px;font-size:13px}
+  .tabs{display:flex;gap:4px;background:var(--navy2);padding:0 14px}
+  .tabs button{background:none;border:none;color:#aebbd6;padding:12px 16px;font-size:14px;cursor:pointer;border-bottom:3px solid transparent}
+  .tabs button.active{color:#fff;border-bottom-color:var(--gold)}
+  .wrap{max-width:1280px;margin:0 auto;padding:18px}
+  .hint{background:#fff7e6;border:1px solid #f0dca8;color:#7a5b00;border-radius:8px;padding:9px 13px;font-size:13px;margin-bottom:14px}
+  .btn{border:1px solid var(--gold2);background:var(--gold);color:#241c00;border-radius:7px;padding:7px 13px;font-size:13px;cursor:pointer;font-weight:600}
+  .btn:hover{background:var(--gold2);color:#fff}
+  .btn.ghost{background:#fff;color:var(--navy);border-color:var(--line)}
+  .btn.ghost:hover{background:#eef1f7}
+  .btn.sm{padding:4px 9px;font-size:12px}
+  .btn.danger{background:#fff;color:var(--bad);border-color:#e7c3bf}
+  .btn.danger:hover{background:var(--bad);color:#fff}
+  /* board */
+  .board{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:920px){.board{grid-template-columns:1fr}}
+  .col{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .col h2{margin:0 0 4px;font-size:15px;color:var(--navy);display:flex;align-items:center;gap:8px}
+  .col .ch-sub{color:var(--muted);font-size:12px;margin-bottom:10px}
+  .col-tools{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center}
+  .col-tools select{padding:5px 8px;border:1px solid var(--line);border-radius:6px;font-size:12px}
+  /* speaker card */
+  .sp{border:1px solid var(--line);border-left:4px solid var(--gold);border-radius:9px;padding:10px 10px 8px;margin-bottom:9px;background:#fff;cursor:grab;transition:box-shadow .12s}
+  .sp:hover{box-shadow:0 2px 10px rgba(15,31,61,.08)}
+  .sp.dragging{opacity:.4}
+  .sp.assigned{border-left-color:var(--ok);background:#f5fbf8}
+  .sp .top{display:flex;align-items:center;gap:7px}
+  .sp .handle{color:#b6bdcd;cursor:grab;font-size:15px;user-select:none}
+  .sp .nm{font-weight:700;font-size:14px}
+  .sp .topic{color:var(--txt);font-size:13px;margin:4px 0 2px}
+  .sp .meta{color:var(--muted);font-size:11.5px;line-height:1.5}
+  .sp .avail{font-size:11.5px;margin-top:3px}
+  .sp .avail b{color:var(--info)}
+  .sp .row-btn{display:flex;gap:5px;margin-top:7px;flex-wrap:wrap}
+  .pill{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;font-weight:600;white-space:nowrap}
+  .pill.s-想邀{background:#eef2fb;color:#3a5a9b}
+  .pill.s-已寄信{background:#fff2dd;color:#9a6a00}
+  .pill.s-洽談中{background:#e6f3ff;color:#1d6fd0}
+  .pill.s-已確認{background:#e4f7ee;color:#157a4f}
+  .pill.s-婉拒{background:#fbe9e7;color:#b23a2c}
+  .pill.s-備取{background:#eef0f4;color:#5a6478}
+  .pill.s-參考{background:#f0ecf8;color:#6a4ea3}
+  .badge-wk{background:var(--ok);color:#fff;font-size:10.5px;padding:2px 7px;border-radius:6px;margin-left:auto}
+  /* week slot */
+  .wk{border:1px dashed #cfd6e6;border-radius:9px;padding:9px 11px;margin-bottom:9px;background:#fbfcfe;transition:.12s}
+  .wk.over{border-color:var(--gold);background:#fff7e6}
+  .wk.wkdrag{opacity:.4}
+  .wk .grip{cursor:grab;color:#9aa7c0;user-select:none;padding:0 4px;font-size:15px;line-height:1}
+  .wk .grip:active{cursor:grabbing}
+  .wk.off{background:#f1f2f5;border-style:solid;border-color:#e3e6ee;opacity:.75}
+  .wk.filled{border-style:solid;border-color:#cfe3d6;background:#f6fbf8}
+  .wk .wh{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+  .wk .wh b{color:var(--navy);font-size:13px}
+  .wk .wh input.dt{border:1px solid var(--line);border-radius:5px;padding:2px 5px;font-size:12px;width:140px}
+  .wk .slot-name{font-weight:700;font-size:14px;margin-top:5px}
+  .wk .slot-topic{font-size:12.5px;color:var(--txt);margin-top:2px}
+  .wk .empty{color:#9aa3b6;font-size:12.5px;margin-top:6px;font-style:italic}
+  .wk .wk-btn{display:flex;gap:5px;margin-top:7px;flex-wrap:wrap;align-items:center}
+  .wk select.assign{padding:4px 7px;border:1px solid var(--line);border-radius:6px;font-size:12px;max-width:170px}
+  /* modal */
+  .ov{position:fixed;inset:0;background:rgba(10,18,35,.45);display:none;align-items:flex-start;justify-content:center;padding:30px 14px;overflow:auto;z-index:50}
+  .ov.show{display:flex}
+  .modal{background:#fff;border-radius:12px;max-width:560px;width:100%;padding:20px}
+  .modal h3{margin:0 0 12px;color:var(--navy);font-size:16px}
+  .fg{margin-bottom:10px}
+  .fg label{display:block;font-size:12px;color:var(--muted);margin-bottom:3px}
+  .fg input,.fg textarea,.fg select{width:100%;border:1px solid var(--line);border-radius:7px;padding:8px;font-size:13px;font-family:inherit}
+  .fg textarea{resize:vertical;min-height:46px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .modal-foot{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+  /* export */
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
+  .card h2{margin:0 0 8px;font-size:15px;color:var(--navy)}
+  .card p{font-size:13px;color:var(--muted);line-height:1.6;margin:6px 0}
+  textarea.out{width:100%;min-height:150px;border:1px solid var(--line);border-radius:8px;padding:10px;font-size:12.5px;font-family:ui-monospace,Consolas,monospace;background:#fbfcfe}
+  .lineup{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px}
+  .lineup th,.lineup td{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}
+  .lineup th{background:var(--navy);color:#fff;font-weight:600}
+  .lineup tr:nth-child(even) td{background:#fafbfd}
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;opacity:0;transition:.25s;pointer-events:none;z-index:99}
+  .toast.show{opacity:1}
+  .small{font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+<header class="apphead">
+  <h1><svg class="svgic"><use href="#i-mic"></use></svg>講師池與排程</h1>
+  <span class="sub">活動組 · 講師邀約與學期排程</span>
+  <span class="term">學期 <input id="term" value="115-1"> · <span id="autosave" class="small" style="color:#8fa0c4">正在確認登入</span></span>
+</header>
+<div class="tabs">
+  <button class="active" data-tab="board"><svg class="svgic" style="width:15px;height:15px;margin-right:5px"><use href="#i-checklist"></use></svg>排程板</button>
+  <button data-tab="share"><svg class="svgic" style="width:15px;height:15px;margin-right:5px"><use href="#i-download"></use></svg>匯出 / 串接</button>
+  <button data-tab="help"><svg class="svgic" style="width:15px;height:15px;margin-right:5px"><use href="#i-help"></use></svg>使用說明</button>
+</div>
+
+<!-- ============ 排程板 ============ -->
+<div class="wrap tab" id="tab-board">
+  <div class="hint"><svg class="svgic" style="width:16px;height:16px;color:var(--gold2);vertical-align:-3px;margin-right:4px"><use href="#i-bulb"></use></svg>左側為<b>講師池</b>，右側為<b>每週社課</b>。將講師卡片<b>拖到右側某一週</b>即排定；卡片之間<b>上下拖曳</b>可調整優先順序（或用 ▲▼）。觸控裝置可改用按鈕操作。</div>
+  <div class="board">
+    <!-- pool -->
+    <div class="col" id="poolCol">
+      <h2><svg class="svgic" style="width:18px;height:18px;color:var(--gold2);vertical-align:-3px;margin-right:5px"><use href="#i-user"></use></svg>講師池 <span id="poolCount" class="small" style="font-weight:400;color:var(--muted)"></span></h2>
+      <div class="ch-sub">候選講師依優先順序排列，越上面越優先邀。</div>
+      <div class="col-tools">
+        <button class="btn sm" onclick="openSp()">＋ 新增講師</button>
+        <select id="filterStatus" onchange="renderPool()">
+          <option value="">全部狀態</option>
+          <option>想邀</option><option>已寄信</option><option>洽談中</option>
+          <option>已確認</option><option>備取</option><option>婉拒</option><option>參考</option>
+        </select>
+      </div>
+      <div id="pool"></div>
+    </div>
+    <!-- weeks -->
+    <div class="col" id="weekCol">
+      <h2><svg class="svgic" style="width:18px;height:18px;color:var(--gold2);vertical-align:-3px;margin-right:5px"><use href="#i-calendar"></use></svg>學期排程</h2>
+      <div class="ch-sub">每週一格，拖入講師或以下拉指派。</div>
+      <div class="col-tools">
+        <button class="btn sm ghost" onclick="openGen()"><svg class="svgic" style="width:14px;height:14px;vertical-align:-2px;margin-right:3px"><use href="#i-plus"></use></svg>產生空白週次</button>
+        <button class="btn sm ghost" onclick="addWeek()">＋ 加一場</button>
+      </div>
+      <div id="weeks"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 匯出 / 串接 ============ -->
+<div class="wrap tab" id="tab-share" style="display:none">
+  <div class="card">
+    <h2><svg class="svgic" style="width:18px;height:18px;color:var(--gold2);vertical-align:-3px;margin-right:5px"><use href="#i-checklist"></use></svg>學期 lineup 總覽</h2>
+    <p>僅列出已排定講師的週次，可直接複製給社長或列印。</p>
+    <button class="btn sm" onclick="copyLineupText()">複製文字版</button>
+    <div id="lineupBox"></div>
+  </div>
+  <div class="card">
+    <h2><svg class="svgic" style="width:18px;height:18px;color:var(--gold2);vertical-align:-3px;margin-right:5px"><use href="#i-link"></use></svg>給行銷組 / 公關組串接用</h2>
+    <p>行銷組做<b>社課預告圖文</b>、公關組對<b>贊助廠商</b>說明檔期，都需要這份排程。下面是結構化資料：</p>
+    <p class="small">· 之後三個工具放到<b>同一個網站</b>時，行銷工具能自動讀到這份排程（同網域共用儲存）。<br>· 現在各自雙擊開啟時，用「複製 JSON」貼到行銷工具的「匯入」即可。</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0">
+      <button class="btn sm" onclick="copyJSON()">複製排程 JSON</button>
+      <button class="btn sm ghost" onclick="downloadJSON()">下載 JSON 檔</button>
+    </div>
+    <textarea class="out" id="jsonOut" readonly></textarea>
+  </div>
+  <div class="card">
+    <h2><svg class="svgic" style="width:18px;height:18px;color:var(--gold2);vertical-align:-3px;margin-right:5px"><use href="#i-send"></use></svg>單場講師資訊（給行銷貼文用）</h2>
+    <p>選一週，複製該場講師的完整資訊，貼進「ITRC 圖文小幫手」做社課預告。</p>
+    <select id="oneWeek" onchange="renderOneWeek()" style="padding:7px;border:1px solid var(--line);border-radius:7px;font-size:13px;margin-bottom:8px"></select>
+    <textarea class="out" id="oneOut" readonly style="min-height:120px"></textarea>
+    <div style="margin-top:8px"><button class="btn sm" onclick="copyOne()">複製這場</button></div>
+  </div>
+</div>
+
+<!-- ============ help ============ -->
+<div class="wrap tab" id="tab-help" style="display:none">
+  <div class="card">
+    <h2>30 秒上手</h2>
+    <p>1️⃣ <b>排程板</b>左邊新增 / 整理候選講師，右邊「產生空白週次」鋪出整學期。</p>
+    <p>2️⃣ 跟講師喬時間時，把<b>可行時段</b>寫在卡片上；確定哪週就把卡片<b>拖到那一週</b>。</p>
+    <p>3️⃣ 卡片狀態（想邀→已寄信→洽談中→已確認）一路更新，社長一眼看得到進度。</p>
+    <p>4️⃣ 排好後到「匯出 / 串接」，把 lineup 給社長，或複製給行銷 / 公關組用。</p>
+    <p class="small" style="margin-top:14px">登入後讀寫社團共用資料，請以頁首的雲端確認狀態為準。未登入或連線失敗時不會儲存到雲端；重要排程仍可下載 JSON 備份。</p>
+  </div>
+</div>
+
+<!-- speaker modal -->
+<div class="ov" id="spOv">
+  <div class="modal">
+    <h3 id="spTitle">新增講師</h3>
+    <div class="grid2">
+      <div class="fg"><label>講師 / 單位</label><input id="f_name" placeholder="例：講師姓名 / 服務單位"></div>
+      <div class="fg"><label>狀態</label><select id="f_status">
+        <option>想邀</option><option>已寄信</option><option>洽談中</option>
+        <option>已確認</option><option>備取</option><option>婉拒</option><option>參考</option>
+      </select></div>
+    </div>
+    <div class="fg"><label>主題</label><input id="f_topic" placeholder="社課主題"></div>
+    <div class="fg"><label>經歷 / 頭銜</label><textarea id="f_bg" placeholder="一行一個，例：中盈投資 協理 / CFA"></textarea></div>
+    <div class="fg"><label>活動簡介</label><textarea id="f_intro" placeholder="這堂課大概會講什麼"></textarea></div>
+    <div class="grid2">
+      <div class="fg"><label>形式</label><select id="f_form">
+        <option>未定</option><option>實體</option><option>線上</option><option>混合</option>
+      </select></div>
+      <div class="fg"><label>可行時段</label><input id="f_avail" placeholder="例：週三晚可 / 4月後 / 週一不行"></div>
+    </div>
+    <div class="fg"><label>聯絡資訊</label><input id="f_contact" placeholder="email / 電話 / LINE"></div>
+    <div class="fg"><label>宣傳特點 / 備註</label><textarea id="f_note" placeholder="例：投資獲利貢獻10億；需提早兩週確認"></textarea></div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="closeSp()">取消</button>
+      <button class="btn" onclick="saveSp()">儲存</button>
+    </div>
+  </div>
+</div>
+
+<!-- generate modal -->
+<div class="ov" id="genOv">
+  <div class="modal" style="max-width:420px">
+    <h3>產生空白週次</h3>
+    <p class="small" style="margin:0 0 12px">會清掉目前的週次，重鋪一張空白課表（講師指派不受影響的部分會清空，請先確認）。</p>
+    <div class="grid2">
+      <div class="fg"><label>第一週日期</label><input type="date" id="g_start" value="2026-09-16"></div>
+      <div class="fg"><label>共幾週</label><input type="number" id="g_count" value="14" min="1" max="30"></div>
+    </div>
+    <div class="fg"><label>間隔（天）</label><input type="number" id="g_step" value="7" min="1"></div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="closeGen()">取消</button>
+      <button class="btn" onclick="doGen()">產生</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ---------- storage ---------- */
+const K_POOL='itrc_act_pool', K_WK='itrc_act_weeks', K_TERM='itrc_act_term', K_SHARE='itrc_shared_activities';
+const $=id=>document.getElementById(id);
+const uid=()=>Math.random().toString(36).slice(2,9);
+let pool=[], weeks=[];
+
+/* ---------- cloud (Firebase RTDB, itrc-workspace) ---------- */
+const ACT_FB_CONFIG = {
+  apiKey: "AIzaSyBG41luYP0eyt9UUeuS0lybKTqWYi1GpLc",
+  authDomain: "itrc-workspace.firebaseapp.com",
+  databaseURL: "https://itrc-workspace-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "itrc-workspace",
+  storageBucket: "itrc-workspace.firebasestorage.app",
+  messagingSenderId: "462903407211",
+  appId: "1:462903407211:web:9cc9217dcef3c97cf2372e",
+  measurementId: "G-Z17XG7FJ5T"
+};
+let actRef=null, actMode='local', actDragging=false, actPending=null;
+function actConn(t){const a=$('autosave');if(a)a.textContent=t;}
+function asArr(v){return Array.isArray(v)?v:(v?Object.values(v).filter(Boolean):[]);}
+function normalizeAct(v){v=v||{};return {pool:asArr(v.pool),weeks:asArr(v.weeks),term:v.term||''};}
+function applyActPending(){if(actPending){const d=normalizeAct(actPending);actPending=null;pool=d.pool;weeks=d.weeks;if(d.term)$('term').value=d.term;renderAll();}}
+
+const SEED=[
+  {id:uid(),name:'範例講師 A',topic:'（主題待填）',bg:'（經歷／單位待填）',intro:'',form:'實體',avail:'',contact:'',note:'示範卡片，可編輯或刪除',status:'參考'},
+  {id:uid(),name:'範例講師 B',topic:'（主題待填）',bg:'',intro:'',form:'線上',avail:'',contact:'',note:'',status:'想邀'},
+];
+
+function renderAll(){renderPool();renderWeeks();}
+function loadLocal(){
+  try{pool=JSON.parse(localStorage.getItem(K_POOL))||null;}catch(e){pool=null;}
+  if(!pool)pool=SEED.slice();
+  try{weeks=JSON.parse(localStorage.getItem(K_WK))||[];}catch(e){weeks=[];}
+  const t=localStorage.getItem(K_TERM); if(t)$('term').value=t;
+}
+let actCloud=null;
+function initAct(){
+  pool=[]; weeks=[]; renderAll();
+  actCloud=ITRCCloud.create({status:actConn,
+    onLocal:function(){actMode='local';loadLocal();renderAll();},
+    onUnavailable:function(){actRef=null;actMode='blocked';pool=[];weeks=[];renderAll();},
+    onCloudReady:function(cloud){
+      actMode='cloud';
+      actRef=cloud.watch('activities/state',function(snap){
+        const v=snap.val();
+        if(actDragging){actPending=v||{pool:[],weeks:[],term:''};return;}
+        const d=normalizeAct(v);pool=d.pool;weeks=d.weeks;$('term').value=d.term;
+        renderAll();
+      });
+    }
+  });
+}
+function save(silent){
+  if(actCloud&&actCloud.isLocal()){
+    localStorage.setItem(K_POOL,JSON.stringify(pool));
+    localStorage.setItem(K_WK,JSON.stringify(weeks));
+    localStorage.setItem(K_TERM,$('term').value);
+    writeShared();actConn('● 本機測試已儲存，未寫入雲端');return Promise.resolve(true);
+  }
+  if(!actCloud){actConn('● 尚未儲存：登入尚未確認');return Promise.resolve(false);}
+  return actCloud.write(actRef,{pool:pool,weeks:weeks,term:$('term').value}).then(function(ok){if(ok)writeShared();return ok;});
+}
+$('term').addEventListener('input',()=>save());
+
+/* shared layer for 行銷/公關 tools */
+function writeShared(){
+  const sched=weeks.map(w=>{
+    const sp=w.spId?pool.find(p=>p.id===w.spId):null;
+    return {week:w.label||'', date:w.date||'', off:!!w.off,
+      speaker:sp?sp.name:'', topic:sp?sp.topic:(w.topic||''),
+      bg:sp?sp.bg:'', intro:sp?sp.intro:'', form:sp?sp.form:'', contact:sp?sp.contact:''};
+  });
+  const data={meta:{term:$('term').value,updated:new Date().toISOString(),source:'ITRC活動組'},schedule:sched,pool:pool};
+  localStorage.setItem(K_SHARE,JSON.stringify(data));
+  return data;
+}
+
+/* ---------- pool render ---------- */
+function statusPill(s){return `<span class="pill s-${s}">${s}</span>`;}
+function assignedWeek(id){const w=weeks.find(w=>w.spId===id);return w?(w.label||w.date||'已排'):null;}
+
+function renderPool(){
+  const f=$('filterStatus').value;
+  const list=pool.filter(p=>!f||p.status===f);
+  $('poolCount').textContent=`(${pool.length} 位)`;
+  $('pool').innerHTML=list.map((p,i)=>{
+    const idx=pool.indexOf(p);
+    const wk=assignedWeek(p.id);
+    const bg=(p.bg||'').split('\n').filter(x=>x).join('｜');
+    return `<div class="sp ${wk?'assigned':''}" draggable="true" data-id="${p.id}" data-idx="${idx}">
+      <div class="top">
+        <span class="handle">⠿</span>
+        <span class="nm">${esc(p.name)}</span>
+        ${statusPill(p.status)}
+        ${wk?`<span class="badge-wk"><svg class="svgic" style="width:12px;height:12px;vertical-align:-1px;margin-right:2px"><use href="#i-calendar"></use></svg>${esc(wk)}</span>`:''}
+      </div>
+      ${p.topic?`<div class="topic"><svg class="svgic" style="width:13px;height:13px;vertical-align:-2px;margin-right:3px"><use href="#i-pin"></use></svg>${esc(p.topic)}</div>`:''}
+      ${bg?`<div class="meta">${esc(bg)}</div>`:''}
+      ${p.avail?`<div class="avail"><svg class="svgic" style="width:13px;height:13px;vertical-align:-2px;margin-right:3px"><use href="#i-clock"></use></svg><b>${esc(p.avail)}</b></div>`:''}
+      ${p.contact?`<div class="meta"><svg class="svgic" style="width:13px;height:13px;vertical-align:-2px;margin-right:3px"><use href="#i-mail"></use></svg>${esc(p.contact)}</div>`:''}
+      ${p.note?`<div class="meta"><svg class="svgic" style="width:13px;height:13px;vertical-align:-2px;margin-right:3px"><use href="#i-edit"></use></svg>${esc(p.note)}</div>`:''}
+      <div class="row-btn">
+        <button class="btn sm ghost" onclick="moveSp('${p.id}',-1)">▲</button>
+        <button class="btn sm ghost" onclick="moveSp('${p.id}',1)">▼</button>
+        <button class="btn sm ghost" onclick="openSp('${p.id}')">編輯</button>
+        <button class="btn sm danger" onclick="delSp('${p.id}')">刪除</button>
+      </div>
+    </div>`;
+  }).join('')||'<div class="small" style="padding:8px">沒有符合的講師。</div>';
+  bindPoolDrag();
+}
+
+function moveSp(id,dir){
+  const i=pool.findIndex(p=>p.id===id);const j=i+dir;
+  if(j<0||j>=pool.length)return;
+  [pool[i],pool[j]]=[pool[j],pool[i]];
+  save();renderPool();
+}
+
+/* drag: pool reorder + drag to week */
+let dragId=null, dragWk=null;
+function bindPoolDrag(){
+  document.querySelectorAll('.sp').forEach(el=>{
+    el.addEventListener('dragstart',e=>{dragId=el.dataset.id;dragWk=null;actDragging=true;el.classList.add('dragging');e.dataTransfer.effectAllowed='move';});
+    el.addEventListener('dragend',()=>{dragId=null;actDragging=false;applyActPending();document.querySelectorAll('.sp').forEach(s=>s.classList.remove('dragging'));});
+    el.addEventListener('dragover',e=>{e.preventDefault();});
+    el.addEventListener('drop',e=>{
+      e.preventDefault();e.stopPropagation();
+      const fromId=dragId, toId=el.dataset.id;
+      if(!fromId||fromId===toId)return;
+      const fi=pool.findIndex(p=>p.id===fromId), ti=pool.findIndex(p=>p.id===toId);
+      const [it]=pool.splice(fi,1); pool.splice(ti,0,it);
+      save();renderPool();
+    });
+  });
+}
+
+/* ---------- weeks render ---------- */
+function renderWeeks(){
+  $('weeks').innerHTML=weeks.map((w,i)=>{
+    const sp=w.spId?pool.find(p=>p.id===w.spId):null;
+    const opts=pool.map(p=>`<option value="${p.id}" ${w.spId===p.id?'selected':''}>${esc(p.name)}</option>`).join('');
+    return `<div class="wk ${w.off?'off':sp?'filled':''}" data-i="${i}">
+      <div class="wh">
+        <span class="grip" draggable="true" data-i="${i}" title="拖曳調整週次順序">⠿</span>
+        <b>${esc(w.label||('第'+(i+1)+'週'))}</b>
+        <input class="dt" value="${esc(w.date||'')}" placeholder="日期 例:9/16" onchange="setWk(${i},'date',this.value)">
+        <label style="margin-left:auto;font-size:12px"><input type="checkbox" ${w.off?'checked':''} onchange="setWk(${i},'off',this.checked)"> 停課</label>
+      </div>
+      ${w.off?`<div class="empty">停課（${esc(w.topic||'國定假日/期中')}）<input class="dt" style="width:120px;margin-left:6px" value="${esc(w.topic||'')}" placeholder="原因" onchange="setWk(${i},'topic',this.value)"></div>`
+      : sp?`<div class="slot-name"><svg class="svgic" style="width:14px;height:14px;vertical-align:-2px;margin-right:3px"><use href="#i-mic"></use></svg>${esc(sp.name)} ${statusPill(sp.status)}</div>
+            <div class="slot-topic">${esc(sp.topic||'')} ${sp.form&&sp.form!=='未定'?'· '+esc(sp.form):''}</div>`
+      :`<div class="empty">把講師拖進來，或下拉指派 ↓</div>`}
+      <div class="wk-btn">
+        ${!w.off?`<select class="assign" onchange="assign(${i},this.value)"><option value="">— 指派講師 —</option>${opts}</select>`:''}
+        ${sp?`<button class="btn sm ghost" onclick="assign(${i},'')">清空</button>`:''}
+        <button class="btn sm ghost" onclick="mvWk(${i},-1)">▲</button>
+        <button class="btn sm ghost" onclick="mvWk(${i},1)">▼</button>
+        <button class="btn sm danger" onclick="delWk(${i})">刪除場次</button>
+      </div>
+    </div>`;
+  }).join('')||'<div class="small" style="padding:8px">還沒有週次，點「產生空白週次」開始。</div>';
+  bindWeekDrop();
+  renderOneWeekOpts();
+}
+function setWk(i,k,v){weeks[i][k]=v;save();renderWeeks();}
+function assign(i,id){if(id)weeks.forEach((w,j)=>{if(j!==i&&w.spId===id)w.spId=null;});weeks[i].spId=id||null;save();renderWeeks();renderPool();}
+function mvWk(i,d){const j=i+d;if(j<0||j>=weeks.length)return;[weeks[i],weeks[j]]=[weeks[j],weeks[i]];save();renderWeeks();}
+function delWk(i){if(!confirm('刪除這個場次？'))return;weeks.splice(i,1);save();renderWeeks();renderPool();}
+function addWeek(){weeks.push({label:'第'+(weeks.length+1)+'週',date:'',spId:null,off:false,topic:''});save();renderWeeks();}
+
+function bindWeekDrop(){
+  document.querySelectorAll('.wk .grip').forEach(g=>{
+    g.addEventListener('dragstart',e=>{dragWk=+g.dataset.i;dragId=null;actDragging=true;e.dataTransfer.effectAllowed='move';g.closest('.wk').classList.add('wkdrag');e.stopPropagation();});
+    g.addEventListener('dragend',()=>{dragWk=null;actDragging=false;applyActPending();document.querySelectorAll('.wk').forEach(w=>w.classList.remove('wkdrag','over'));});
+  });
+  document.querySelectorAll('.wk').forEach(el=>{
+    el.addEventListener('dragover',e=>{e.preventDefault();el.classList.add('over');});
+    el.addEventListener('dragleave',()=>el.classList.remove('over'));
+    el.addEventListener('drop',e=>{
+      e.preventDefault();el.classList.remove('over');
+      const i=+el.dataset.i;
+      if(dragWk!==null){
+        if(dragWk!==i){const m=weeks.splice(dragWk,1)[0];weeks.splice(i,0,m);save();renderWeeks();toast('已調整順序');}
+        dragWk=null;return;
+      }
+      if(!dragId)return;
+      if(weeks[i].off){toast('這週是停課，先取消停課再指派');return;}
+      weeks.forEach((w,j)=>{if(j!==i&&w.spId===dragId)w.spId=null;});
+      weeks[i].spId=dragId;save();renderWeeks();renderPool();
+      toast('已排定');
+    });
+  });
+}
+
+/* generate weeks */
+function openGen(){$('genOv').classList.add('show');}
+function closeGen(){$('genOv').classList.remove('show');}
+function doGen(){
+  const start=$('g_start').value, cnt=+$('g_count').value, step=+$('g_step').value;
+  if(!start){toast('請選第一週日期');return;}
+  const d0=new Date(start+'T00:00:00');
+  weeks=[];
+  for(let i=0;i<cnt;i++){
+    const d=new Date(d0.getTime()+i*step*86400000);
+    const lbl=(d.getMonth()+1)+'/'+d.getDate();
+    weeks.push({label:'第'+(i+1)+'週',date:lbl,spId:null,off:false,topic:''});
+  }
+  save();closeGen();renderWeeks();
+  toast('已產生 '+cnt+' 週');
+}
+
+/* ---------- speaker modal ---------- */
+let editId=null;
+function openSp(id){
+  editId=id||null;
+  const p=id?pool.find(x=>x.id===id):{};
+  $('spTitle').textContent=id?'編輯講師':'新增講師';
+  f_name.value=p.name||'';f_topic.value=p.topic||'';f_bg.value=p.bg||'';
+  f_intro.value=p.intro||'';f_form.value=p.form||'未定';f_avail.value=p.avail||'';
+  f_contact.value=p.contact||'';f_note.value=p.note||'';f_status.value=p.status||'想邀';
+  $('spOv').classList.add('show');
+}
+function closeSp(){$('spOv').classList.remove('show');}
+function saveSp(){
+  if(!f_name.value.trim()){toast('請填講師/單位');return;}
+  const o={name:f_name.value.trim(),topic:f_topic.value.trim(),bg:f_bg.value.trim(),
+    intro:f_intro.value.trim(),form:f_form.value,avail:f_avail.value.trim(),
+    contact:f_contact.value.trim(),note:f_note.value.trim(),status:f_status.value};
+  if(editId){Object.assign(pool.find(p=>p.id===editId),o);}
+  else{pool.unshift({id:uid(),...o});}
+  save();closeSp();renderPool();renderWeeks();
+}
+function delSp(id){
+  if(!confirm('刪除這位講師？已排定的場次會一起清空。'))return;
+  pool=pool.filter(p=>p.id!==id);
+  weeks.forEach(w=>{if(w.spId===id)w.spId=null;});
+  save();renderPool();renderWeeks();
+}
+
+/* ---------- share tab ---------- */
+function renderLineup(){
+  const rows=weeks.filter(w=>!w.off&&w.spId).map(w=>{
+    const sp=pool.find(p=>p.id===w.spId)||{};
+    return `<tr><td>${esc(w.label||'')}</td><td>${esc(w.date||'')}</td><td>${esc(sp.name||'')}</td><td>${esc(sp.topic||'')}</td><td>${esc(sp.form||'')}</td><td>${esc(sp.status||'')}</td></tr>`;
+  }).join('');
+  $('lineupBox').innerHTML=rows?`<table class="lineup"><tr><th>週次</th><th>日期</th><th>講師</th><th>主題</th><th>形式</th><th>狀態</th></tr>${rows}</table>`
+    :'<p class="small">還沒有排定的講師。</p>';
+  $('jsonOut').value=JSON.stringify(writeShared(),null,2);
+}
+function lineupText(){
+  let s=`【ITRC ${$('term').value} 社課排程】\n`;
+  weeks.forEach(w=>{
+    if(w.off){s+=`${w.date||w.label}　停課（${w.topic||''}）\n`;return;}
+    const sp=w.spId?pool.find(p=>p.id===w.spId):null;
+    s+=`${w.date||w.label}　${sp?sp.name+'｜'+sp.topic:'（未定）'}${sp&&sp.form&&sp.form!=='未定'?' · '+sp.form:''}\n`;
+  });
+  return s;
+}
+function copyLineupText(){cp(lineupText());}
+function copyJSON(){cp($('jsonOut').value);}
+function downloadJSON(){
+  const blob=new Blob([JSON.stringify(writeShared(),null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='ITRC_'+$('term').value+'_排程.json';a.click();toast('已下載');
+}
+function renderOneWeekOpts(){
+  const sel=$('oneWeek');if(!sel)return;
+  sel.innerHTML='<option value="">— 選一週 —</option>'+weeks.map((w,i)=>w.spId&&!w.off?`<option value="${i}">${esc(w.date||w.label)}｜${esc((pool.find(p=>p.id===w.spId)||{}).name||'')}</option>`:'').join('');
+}
+function renderOneWeek(){
+  const i=$('oneWeek').value;if(i===''){$('oneOut').value='';return;}
+  const w=weeks[i],sp=pool.find(p=>p.id===w.spId)||{};
+  $('oneOut').value=`日期：${w.date||w.label}\n講師：${sp.name||''}\n主題：${sp.topic||''}\n形式：${sp.form||''}\n經歷：\n${(sp.bg||'').split('\n').map(x=>'· '+x).join('\n')}\n簡介：${sp.intro||''}`;
+}
+function copyOne(){if($('oneOut').value)cp($('oneOut').value);else toast('先選一週');}
+
+/* ---------- utils ---------- */
+function esc(s){return(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function cp(t){navigator.clipboard.writeText(t).then(()=>toast('已複製')).catch(()=>{const a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();document.execCommand('copy');a.remove();toast('已複製');});}
+let tt;
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('show'),1600);}
+
+/* tabs */
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('.tabs button').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+  document.querySelectorAll('.tab').forEach(t=>t.style.display='none');
+  $('tab-'+b.dataset.tab).style.display='block';
+  if(b.dataset.tab==='share')renderLineup();
+});
+
+/* init */
+initAct();
+</script>
+</body>
+</html>

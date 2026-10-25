@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ITRC 管理組｜任務看板</title>
+<!-- Firebase 共用登入與即時資料庫 -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<script src="itrc-auth.js"></script>
+<link rel="stylesheet" href="itrc.css">
+<script src="itrc.js" defer></script>
+<style>
+  :root{
+    --navy:#0f1f3d; --navy2:#16294d; --gold:#c9a14a; --gold2:#b8932f;
+    --bg:#eef1f6; --card:#fff; --line:#e3e6ee; --txt:#1d2436; --muted:#5b6678;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Segoe UI","Microsoft JhengHei",sans-serif;background:var(--bg);color:var(--txt)}
+  header{background:var(--navy);color:#fff;padding:14px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  header h1{font-size:18px;margin:0}
+  header .sub{color:#aebbd6;font-size:13px}
+  header .right{margin-left:auto;display:flex;align-items:center;gap:10px}
+  .conn{font-size:12px;padding:4px 10px;border-radius:20px;display:flex;align-items:center;gap:5px}
+  .conn.local{background:#3a3f52;color:#cfd6e6}
+  .conn.cloud{background:#13633f;color:#c7f0db}
+  .conn.loading{background:#3a4660;color:#dce5f6}
+  .conn.pending{background:#6b5317;color:#ffe9a8}
+  .conn.err{background:#5a2420;color:#f3c9c4}
+  .gate{max-width:480px;margin:56px auto;text-align:center;background:#fff;border:1px solid var(--line);border-radius:12px;padding:32px 26px;box-shadow:0 3px 14px rgba(15,31,61,.1)}
+  .gate h2{margin:0 0 8px;color:var(--navy);font-size:19px}.gate p{color:var(--muted);font-size:13.5px;line-height:1.7}
+  .sync-readonly [data-mutate]{opacity:.48;pointer-events:none;cursor:not-allowed}
+
+  .viewtabs{display:flex;gap:4px;background:var(--navy2);padding:0 16px}
+  .vt{background:none;border:none;color:#aebbd6;padding:11px 16px;font-size:14px;cursor:pointer;border-bottom:3px solid transparent}
+  .vt.active{color:#fff;border-bottom-color:var(--gold)}
+
+  .bar{background:#fff;border-bottom:1px solid var(--line);padding:9px 20px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .bar select,.bar input{padding:6px 9px;border:1px solid var(--line);border-radius:7px;font-size:13px}
+  .btn{border:1px solid var(--gold2);background:var(--gold);color:#241c00;border-radius:7px;padding:6px 12px;font-size:13px;cursor:pointer;font-weight:600}
+  .btn:hover{background:var(--gold2);color:#fff}
+  .btn.ghost{background:#fff;color:var(--navy);border-color:var(--line)}
+  .btn.ghost:hover{background:#eef1f7}
+  .btn.sm{padding:3px 8px;font-size:12px}
+  .btn.danger{background:#fff;color:#c0392b;border-color:#e7c3bf}
+  .btn.danger:hover{background:#c0392b;color:#fff}
+
+  .board{display:flex;gap:14px;padding:18px 20px;overflow-x:auto;align-items:flex-start;min-height:60vh}
+  .list{background:#e7ebf3;border-radius:12px;width:280px;flex:0 0 280px;padding:10px;display:flex;flex-direction:column;gap:8px}
+  .list.over-list{outline:2px dashed var(--gold);outline-offset:-2px}
+  .list-head{display:flex;align-items:center;gap:6px;font-weight:700;font-size:14px;color:var(--navy)}
+  .list-head .cnt{background:#cfd6e6;color:#46506a;font-size:11px;padding:1px 7px;border-radius:10px}
+  .list-head .lh-btn{margin-left:auto;display:flex;gap:4px}
+  .cards{display:flex;flex-direction:column;gap:8px;min-height:12px}
+  .card{background:#fff;border:1px solid var(--line);border-left:4px solid var(--gold);border-radius:9px;padding:9px 10px;cursor:grab;box-shadow:0 1px 2px rgba(15,31,61,.05)}
+  .card:hover{box-shadow:0 3px 10px rgba(15,31,61,.1)}
+  .card.dragging{opacity:.4}
+  .card .ti{font-size:13.5px;font-weight:600;line-height:1.35}
+  .card .row{display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap}
+  .tag{font-size:10.5px;padding:1px 7px;border-radius:5px;font-weight:600}
+  .tag.g-管理組{background:#e3e7f0;color:#3a466e}
+  .tag.g-活動組{background:#fbeed0;color:#8a6400}
+  .tag.g-公關組{background:#dcf3e6;color:#1c7a4c}
+  .tag.g-資訊組{background:#dceafc;color:#1d5fb0}
+  .tag.g-行銷組{background:#efe2f7;color:#7a3fa3}
+  .tag.wk{background:#e8ebf2;color:#46506a}
+  .who{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:3px}
+  .due{font-size:11px;padding:1px 6px;border-radius:5px;background:#f0f2f6;color:#5a6478}
+  .due.soon{background:#fde8d6;color:#9a5b00}
+  .due.over{background:#fbe0dc;color:#b23a2c}
+  .addcard{font-size:12.5px;color:#5a6478;cursor:pointer;padding:6px 8px;border-radius:7px;border:1px dashed #c4ccdb;text-align:center}
+  .addcard:hover{background:#dde3ee;color:var(--navy)}
+
+  /* runbook */
+  .rb-controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#fff;border-bottom:1px solid var(--line);padding:12px 20px}
+  .rb-controls input[type=date]{padding:5px 8px;border:1px solid var(--line);border-radius:7px;font-size:13px}
+  .events{padding:16px 20px;display:flex;flex-direction:column;gap:12px;max-width:940px}
+  .event{background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .event summary{display:flex;align-items:center;gap:8px;padding:11px 14px;background:#f4f6fa;cursor:pointer;font-size:14px;list-style:none}
+  .event summary::-webkit-details-marker{display:none}
+  .event .wk{font-weight:700;color:var(--navy)}
+  .event-body{padding:8px 14px 12px}
+  .ev-edit{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0 10px;border-bottom:1px dashed var(--line);margin-bottom:8px}
+  .ev-edit input{padding:4px 7px;border:1px solid var(--line);border-radius:6px;font-size:12px}
+  .grp{margin-bottom:6px}
+  .grp h4{margin:6px 0 3px}
+  .task-row{display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:6px}
+  .task-row:hover{background:#f6f8fc}
+  .task-row .tt{flex:1;font-size:13px;cursor:pointer}
+  .task-row.done .tt{text-decoration:line-through;color:#9aa3b6}
+
+  .ov{position:fixed;inset:0;background:rgba(10,18,35,.45);display:none;align-items:flex-start;justify-content:center;padding:34px 14px;overflow:auto;z-index:50}
+  .ov.show{display:flex}
+  .modal{background:#fff;border-radius:12px;max-width:480px;width:100%;padding:20px}
+  .modal h3{margin:0 0 12px;color:var(--navy);font-size:16px}
+  .fg{margin-bottom:10px}
+  .fg label{display:block;font-size:12px;color:var(--muted);margin-bottom:3px}
+  .fg input,.fg textarea,.fg select{width:100%;border:1px solid var(--line);border-radius:7px;padding:8px;font-size:13px;font-family:inherit}
+  .fg textarea{resize:vertical;min-height:60px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .modal-foot{display:flex;gap:8px;justify-content:space-between;margin-top:14px}
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;opacity:0;transition:.25s;pointer-events:none;z-index:99}
+  .toast.show{opacity:1}
+  .small{font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+<header class="apphead">
+  <h1><svg class="svgic"><use href="#i-board"></use></svg>任務看板</h1>
+  <span class="sub">管理組 · 社課作戰表與看板</span>
+  <div class="right">
+    <span class="conn loading" id="conn">● 驗證登入中…</span>
+  </div>
+</header>
+
+<div class="viewtabs">
+  <button class="vt active" data-v="runbook" onclick="showView('runbook')"><svg class="svgic" style="width:16px;height:16px;margin-right:5px"><use href="#i-checklist"></use></svg>社課作戰表</button>
+  <button class="vt" data-v="board" onclick="showView('board')"><svg class="svgic" style="width:16px;height:16px;margin-right:5px"><use href="#i-board"></use></svg>看板</button>
+  <a class="vt" href="ITRC管理組-幹部與權限.html" style="margin-left:auto;display:inline-flex;align-items:center;text-decoration:none"><svg class="svgic" style="width:16px;height:16px;margin-right:5px"><use href="#i-edit"></use></svg>幹部與權限</a>
+</div>
+
+<div class="gate" id="authGate">
+  <h2>正在確認登入狀態</h2>
+  <p>取得幹部身分後，才會載入共用任務看板。</p>
+</div>
+
+<!-- ===== 社課作戰表 ===== -->
+<div class="view" id="view-runbook">
+  <div class="rb-tip" style="margin:8px 14px 0;background:var(--info-bg);border:1px solid #d3e2f2;border-radius:8px;padding:10px 14px;font-size:13px;color:#37445f;line-height:1.7;display:flex;gap:8px"><svg class="svgic" style="width:18px;height:18px;flex:none;color:var(--info);margin-top:1px"><use href="#i-bulb"></use></svg><span><b>社課作戰表＝每堂社課的標準作業清單。</b>填入第 2 週日期，點「產生本學期社課」即排出第 2–12 週共 11 堂；每堂按「套用範本」自動帶出各組工作項目與截止日（行銷出圖文、活動辦車證／備品／接待、資訊錄影）。勾選代表完成，這些任務也會同步顯示於「看板」。</span></div>
+  <div class="rb-controls">
+    <label class="small">第 2 週社課日期</label>
+    <input type="date" id="rb_start" data-mutate>
+    <button class="btn sm" data-mutate onclick="genSemester()">產生本學期社課（第 2~12 週）</button>
+    <span style="width:1px;height:20px;background:var(--line)"></span>
+    <button class="btn sm ghost" data-mutate onclick="addEvent()">＋ 加一堂</button>
+    <span class="small" style="margin-left:auto">一般（非社課）任務放在「看板」分頁</span>
+  </div>
+  <div class="events" id="runbook"></div>
+</div>
+
+<!-- ===== 看板 ===== -->
+<div class="view" id="view-board" style="display:none">
+  <div class="bar">
+    <button class="btn sm" data-mutate onclick="openCard()">＋ 新增任務</button>
+    <button class="btn sm ghost" data-mutate onclick="addList()">＋ 新增欄位</button>
+    <span style="width:1px;height:20px;background:var(--line)"></span>
+    <label class="small">負責人</label>
+    <select id="fWho" onchange="render()"><option value="">全部</option></select>
+    <label class="small">組別</label>
+    <select id="fGroup" onchange="render()">
+      <option value="">全部</option><option>管理組</option><option>活動組</option>
+      <option>公關組</option><option>資訊組</option><option>行銷組</option>
+    </select>
+    <span style="margin-left:auto"></span>
+    <button class="btn sm ghost" onclick="exportJSON()">備份 JSON</button>
+    <button class="btn sm ghost" data-mutate onclick="document.getElementById('imp').click()">還原</button>
+    <input type="file" id="imp" data-mutate accept="application/json" style="display:none" onchange="importJSON(event)">
+  </div>
+  <div class="board" id="board"></div>
+</div>
+
+<!-- card modal -->
+<div class="ov" id="cardOv">
+  <div class="modal">
+    <h3 id="cardTitle">新增任務</h3>
+    <div class="fg"><label>任務</label><input id="c_title" placeholder="例：寄 115-1 講師邀請函"></div>
+    <div class="grid2">
+      <div class="fg"><label>負責人</label><input id="c_who" list="whoList" placeholder="輸入或選幹部"></div>
+      <div class="fg"><label>組別</label><select id="c_group">
+        <option value="">—</option><option>管理組</option><option>活動組</option>
+        <option>公關組</option><option>資訊組</option><option>行銷組</option>
+      </select></div>
+    </div>
+    <div class="grid2">
+      <div class="fg"><label>截止日</label><input type="date" id="c_due"></div>
+      <div class="fg"><label>放在哪欄</label><select id="c_list"></select></div>
+    </div>
+    <div class="fg"><label>屬於社課</label><select id="c_week"><option value="">— 無（一般任務）—</option></select></div>
+    <div class="fg"><label>備註</label><textarea id="c_note" placeholder="細節、連結、廠商要求…"></textarea></div>
+    <div class="modal-foot">
+      <button class="btn danger" id="c_del" onclick="delCard()">刪除</button>
+      <span style="display:flex;gap:8px">
+        <button class="btn ghost" onclick="closeCard()">取消</button>
+        <button class="btn" onclick="saveCard()">儲存</button>
+      </span>
+    </div>
+  </div>
+</div>
+<datalist id="whoList"></datalist>
+<div class="toast" id="toast"></div>
+
+<script>
+/* Firebase 設定由 itrc-auth.js 統一初始化；這份只保留供辨識專案。 */
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBG41luYP0eyt9UUeuS0lybKTqWYi1GpLc",
+  authDomain: "itrc-workspace.firebaseapp.com",
+  databaseURL: "https://itrc-workspace-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "itrc-workspace",
+  storageBucket: "itrc-workspace.firebasestorage.app",
+  messagingSenderId: "462903407211",
+  appId: "1:462903407211:web:9cc9217dcef3c97cf2372e",
+  measurementId: "G-Z17XG7FJ5T"
+};
+const BOARD_KEY = 'itrc';
+const LS_KEY = 'itrc_mgmt_board';
+const DEV_LS_KEY = 'itrc_mgmt_board_dev';
+
+/* 幹部角色佔位（新一屆自行填入姓名） */
+const ROSTER = ['管理組組長','管理組幹部','活動組組長','活動組幹部','公關組組長','公關組幹部','行銷組組長','行銷組幹部','資訊組組長','資訊組幹部'];
+
+/* 一堂 3H 社課的標準工作流範本（off = 相對社課當天的天數；who 為預設負責人，可改） */
+const TEMPLATE = [
+  {group:'行銷組', title:'圖卡 / 圖文設計',        off:-9, who:'行銷組組長'},
+  {group:'行銷組', title:'社課預告貼文＋限動',      off:-7, who:'行銷組組長'},
+  {group:'行銷組', title:'二次宣傳提醒',           off:-3, who:'行銷組組長'},
+  {group:'行銷組', title:'課後花絮 / 感謝文',       off: 2, who:'行銷組組長'},
+  {group:'活動組', title:'申請講師車證',           off:-7, who:'活動組組長'},
+  {group:'活動組', title:'借教室 / 設備',          off:-7, who:'活動組組長'},
+  {group:'活動組', title:'接待分工＋接送時間調查',  off:-5, who:'活動組組長'},
+  {group:'活動組', title:'買咖啡 / 茶點 / 講師禮',  off:-1, who:'活動組組長'},
+  {group:'活動組', title:'簽到表＋當天接待',        off: 0, who:'活動組組長'},
+  {group:'資訊組', title:'社課錄影 / 拍照',         off: 0, who:'資訊組組長'},
+  {group:'資訊組', title:'影片上傳歸檔',           off: 3, who:'資訊組組長'},
+];
+
+const $=id=>document.getElementById(id);
+const uid=()=>Math.random().toString(36).slice(2,9);
+let board=null, MODE='loading', ref=null, connRef=null, dragging=false, pending=null;
+let connected=null, initialLoaded=false, writePending=false, writeBlocked=false;
+let lastCloud=null, preWriteCloud=null, currentView='runbook';
+let syncGeneration=0, boardValueHandler=null, boardErrorHandler=null;
+let connectionValueHandler=null, connectionErrorHandler=null;
+
+const SEED={lists:[
+  {id:uid(),title:'待辦',cards:[
+    {id:uid(),title:'整理 115-1 講師池、跟講師喬時間',who:'活動組組長',group:'活動組',due:'',note:'用「活動組-講師池排程」工具'},
+    {id:uid(),title:'115-1 企業贊助專案啟動',who:'公關組組長',group:'公關組',due:'',note:'用「公關-贊助作戰中心」'},
+    {id:uid(),title:'各類經費申請（校內/青年局/企業）',who:'公關組幹部',group:'公關組',due:'',note:''},
+  ]},
+  {id:uid(),title:'進行中',cards:[
+    {id:uid(),title:'新版社團網站',who:'資訊組幹部',group:'資訊組',due:'',note:'資料庫/工具站整合'},
+    {id:uid(),title:'設計社群經營策略',who:'行銷組組長',group:'行銷組',due:'',note:''},
+  ]},
+  {id:uid(),title:'卡關',cards:[]},
+  {id:uid(),title:'完成',cards:[
+    {id:uid(),title:'期末成果發表 & 頒獎',who:'社長',group:'活動組',due:'',note:'5/22'},
+  ]},
+],events:[],v:0};
+
+/* Firebase 不保留空陣列、有時把陣列轉成物件 → 讀回來要先正規化，否則 render 會炸 */
+function normalize(b){
+  b=b||{};
+  let lists=Array.isArray(b.lists)?b.lists:(b.lists?Object.values(b.lists):[]);
+  lists=lists.filter(Boolean).map(l=>({
+    id:l.id||uid(), title:l.title||'欄位',
+    cards:(Array.isArray(l.cards)?l.cards:(l.cards?Object.values(l.cards):[])).filter(Boolean)
+  }));
+  let events=Array.isArray(b.events)?b.events:(b.events?Object.values(b.events):[]);
+  events=events.filter(Boolean).map(e=>({id:e.id||uid(),no:+e.no||0,date:e.date||'',speaker:e.speaker||''}));
+  return {lists,events,v:b.v||0};
+}
+
+/* ---------- init / auth / sync state ---------- */
+function blankBoard(){
+  return normalize({lists:['待辦','進行中','卡關','完成'].map(title=>({id:uid(),title,cards:[]})),events:[],v:0});
+}
+function cloneBoard(b){ return normalize(JSON.parse(JSON.stringify(b||blankBoard()))); }
+function setConn(cls,txt){ const c=$('conn'); c.className='conn '+cls; c.textContent=txt; }
+function setMutationEnabled(enabled){ document.body.classList.toggle('sync-readonly',!enabled); }
+function setSyncState(kind,txt){
+  const cls=kind==='synced'?'cloud':kind==='pending'?'pending':kind==='loading'?'loading':kind==='dev'?'local':'err';
+  setConn(cls,txt);
+  setMutationEnabled(kind==='synced'||kind==='dev');
+}
+function canMutate(){
+  return MODE==='dev' || (MODE==='cloud'&&initialLoaded&&connected===true&&!writePending&&!writeBlocked);
+}
+function requireMutable(){
+  if(canMutate())return true;
+  toast(writePending?'上一筆變更仍在同步':'目前不是可安全寫入的同步狀態');
+  return false;
+}
+function showGate(u){
+  disconnectCloud();
+  board=blankBoard(); refreshAll();
+  $('authGate').style.display='block';
+  $('view-runbook').style.display='none'; $('view-board').style.display='none';
+  if(!u){
+    $('authGate').innerHTML='<h2>請先登入</h2><p>登入幹部帳號後，才會載入共用任務看板。</p><button class="btn" onclick="ITRCAuth.signIn()">用 Google 登入</button>';
+    setSyncState('error','● 尚未登入（唯讀）');
+  }else{
+    $('authGate').innerHTML='<h2>帳號尚未授權</h2><p>這個 Google 帳號不在幹部名單中，因此不會載入或寫入任務資料。</p>'+(ITRCAuth.isDev()?'':'<button class="btn ghost" onclick="ITRCAuth.signOut()">登出換帳號</button>');
+    setSyncState('error','● 未授權（唯讀）');
+  }
+}
+function showWorkspace(){
+  $('authGate').style.display='none';
+  showView(currentView);
+}
+function init(){
+  board=blankBoard(); refreshAll(); setSyncState('loading','● 驗證登入中…');
+  if(typeof ITRCAuth==='undefined'){
+    $('authGate').innerHTML='<h2>登入模組載入失敗</h2><p>請重新整理頁面；在恢復前不會寫入任何資料。</p>';
+    setSyncState('error','● 登入模組失敗（唯讀）'); return;
+  }
+  try{ ITRCAuth.init({onChange:handleAuthChange}); }
+  catch(e){
+    $('authGate').innerHTML='<h2>登入初始化失敗</h2><p>請重新整理頁面；在恢復前不會寫入任何資料。</p>';
+    setSyncState('error','● 登入初始化失敗（唯讀）');
+  }
+}
+function handleAuthChange(u){
+  if(!u||!u.role){ showGate(u); return; }
+  disconnectCloud(); showWorkspace();
+  if(ITRCAuth.isDev()){ initDev(); return; }
+  connectCloud();
+}
+function initDev(){
+  MODE='dev';
+  try{board=normalize(JSON.parse(localStorage.getItem(DEV_LS_KEY)||'null')||SEED);}catch(e){board=normalize(SEED);}
+  refreshAll(); setSyncState('dev','● 測試模式（本機、不寫雲端）');
+}
+function disconnectCloud(){
+  syncGeneration++;
+  if(ref&&boardValueHandler)try{ref.off('value',boardValueHandler);}catch(e){}
+  if(connRef&&connectionValueHandler)try{connRef.off('value',connectionValueHandler);}catch(e){}
+  ref=null; connRef=null; connected=null; initialLoaded=false; writePending=false; writeBlocked=false;
+  boardValueHandler=null; boardErrorHandler=null; connectionValueHandler=null; connectionErrorHandler=null;
+  lastCloud=null; preWriteCloud=null; pending=null;
+}
+function connectCloud(){
+  MODE='cloud'; connected=null; initialLoaded=false; writePending=false; writeBlocked=false;
+  board=blankBoard(); refreshAll(); setSyncState('loading','● 載入雲端任務…');
+  try{
+    if(!ITRCAuth.db)throw new Error('database unavailable');
+    const generation=syncGeneration;
+    ref=ITRCAuth.db.ref('boards/'+BOARD_KEY);
+    connRef=ITRCAuth.db.ref('.info/connected');
+    boardValueHandler=snap=>{if(generation===syncGeneration)handleSnapshot(snap);};
+    boardErrorHandler=err=>{if(generation===syncGeneration)handleReadError(err);};
+    connectionValueHandler=snap=>{if(generation===syncGeneration)handleConnection(snap);};
+    connectionErrorHandler=err=>{if(generation===syncGeneration)handleConnectionError(err);};
+    ref.on('value',boardValueHandler,boardErrorHandler);
+    connRef.on('value',connectionValueHandler,connectionErrorHandler);
+  }catch(e){ handleReadError(e); }
+}
+function handleSnapshot(snap){
+  const v=snap.val();
+  const next=v?normalize(v):blankBoard(); // 空資料只顯示空白欄位，不自動寫入種子
+  initialLoaded=true;
+  if(writePending){ pending=next; setSyncState('pending','● 儲存中…'); return; }
+  if(dragging){ pending=next; return; }
+  board=next; lastCloud=cloneBoard(next); refreshAll();
+  if(writeBlocked)setSyncState('error','● 雲端拒絕寫入（唯讀）');
+  else if(connected===true)setSyncState('synced','● 已同步（雲端）');
+  else setSyncState('loading','● 已取得資料，確認連線中…');
+}
+function handleReadError(){
+  writeBlocked=true;
+  setSyncState('error','● 雲端讀取失敗（唯讀，未切本機）');
+}
+function handleConnectionError(){
+  connected=false;
+  setSyncState('error','● 無法確認連線（唯讀）');
+}
+function handleConnection(snap){
+  const was=connected; connected=snap.val()===true;
+  if(!connected){
+    setSyncState(initialLoaded?'error':'loading',initialLoaded?'● 網路中斷（唯讀）':'● 等待雲端連線…');
+    return;
+  }
+  if(was===false&&ref){
+    setSyncState('loading','● 重新確認雲端資料…');
+    const generation=syncGeneration;
+    ref.once('value').then(snap=>{if(generation===syncGeneration)handleSnapshot(snap);})
+      .catch(err=>{if(generation===syncGeneration)handleReadError(err);});
+    return;
+  }
+  if(initialLoaded&&!writePending&&!writeBlocked)setSyncState('synced','● 已同步（雲端）');
+  else if(!initialLoaded)setSyncState('loading','● 載入雲端任務…');
+}
+
+/* ---------- persist ---------- */
+function persist(){
+  if(!requireMutable())return Promise.resolve(false);
+  board.v=Math.max(Date.now(),((lastCloud&&lastCloud.v)||0)+1);
+  if(MODE==='dev'){
+    localStorage.setItem(DEV_LS_KEY,JSON.stringify(board));
+    setSyncState('dev','● 測試模式（本機、不寫雲端）');
+    return Promise.resolve(true);
+  }
+  preWriteCloud=cloneBoard(lastCloud); writePending=true;
+  setSyncState('pending','● 儲存中…');
+  const payload=cloneBoard(board);
+  const expectedVersion=(preWriteCloud&&preWriteCloud.v)||0;
+  const generation=syncGeneration, activeRef=ref;
+  return activeRef.transaction(current=>{
+    const currentVersion=(current&&current.v)||0;
+    if(currentVersion!==expectedVersion)return; // 有人先更新：中止，不覆蓋對方
+    return payload;
+  },undefined,false).then(result=>{
+    if(generation!==syncGeneration||ref!==activeRef)return false;
+    writePending=false;
+    if(!result.committed){
+      const newest=result.snapshot&&result.snapshot.val();
+      board=newest?normalize(newest):blankBoard(); lastCloud=cloneBoard(board);
+      preWriteCloud=null; pending=null; refreshAll();
+      if(connected===true)setSyncState('synced','● 已同步（偵測到他人更新）');
+      else setSyncState('error','● 資料已更新，但網路中斷（唯讀）');
+      toast('已有其他人先更新，已載入最新版；請重做剛才操作');
+      return false;
+    }
+    const committed=result.snapshot&&result.snapshot.val();
+    board=committed?normalize(committed):payload; lastCloud=cloneBoard(board); preWriteCloud=null; pending=null;
+    if(connected===true)setSyncState('synced','● 已同步（雲端）');
+    else setSyncState('error','● 已送出但連線已中斷（唯讀）');
+    refreshAll();
+    return true;
+  }).catch(()=>{
+    if(generation!==syncGeneration||ref!==activeRef)return false;
+    board=cloneBoard(preWriteCloud||lastCloud||blankBoard()); preWriteCloud=null; pending=null;
+    writePending=false; writeBlocked=true; refreshAll();
+    setSyncState('error','● 儲存被拒絕，已還原（唯讀）'); toast('儲存失敗，畫面已還原');
+    return false;
+  });
+}
+
+function refreshAll(){ buildWhoFilter(); render(); renderRunbook(); }
+
+/* ---------- view switch ---------- */
+function showView(v){
+  currentView=v;
+  document.querySelectorAll('.vt').forEach(b=>b.classList.toggle('active',b.dataset.v===v));
+  $('view-runbook').style.display=v==='runbook'?'block':'none';
+  $('view-board').style.display=v==='board'?'block':'none';
+}
+
+/* ---------- helpers ---------- */
+function allCards(){const a=[];board.lists.forEach(l=>l.cards.forEach(c=>a.push(c)));return a;}
+function listOf(cid){for(const l of board.lists){if(l.cards.find(c=>c.id===cid))return l;}return null;}
+function addDays(d,n){const t=new Date(d+'T00:00:00');t.setDate(t.getDate()+n);return t.toISOString().slice(0,10);}
+function md(d){return d?d.slice(5).replace('-','/'):'';}
+function dueClass(d){ if(!d)return''; const t=new Date(d+'T23:59:59'),now=new Date(); const diff=(t-now)/86400000; if(diff<0)return'over'; if(diff<3)return'soon'; return''; }
+
+/* ---------- kanban render ---------- */
+function buildWhoFilter(){
+  const names=new Set(ROSTER);
+  board.lists.forEach(l=>l.cards.forEach(c=>{if(c.who)names.add(c.who);}));
+  const arr=[...names];
+  $('whoList').innerHTML=arr.map(n=>`<option value="${esc(n)}">`).join('');
+  const cur=$('fWho').value;
+  $('fWho').innerHTML='<option value="">全部</option>'+arr.map(n=>`<option ${cur===n?'selected':''}>${esc(n)}</option>`).join('');
+}
+function render(){
+  const fw=$('fWho').value, fg=$('fGroup').value;
+  const writable=canMutate();
+  $('board').innerHTML=board.lists.map((l,li)=>{
+    const cards=l.cards.filter(c=>(!fw||c.who===fw)&&(!fg||c.group===fg));
+    return `<div class="list" data-li="${li}">
+      <div class="list-head">
+        <span class="ttl" data-mutate ondblclick="renameList(${li})">${esc(l.title)}</span>
+        <span class="cnt">${l.cards.length}</span>
+        <span class="lh-btn"><button class="btn sm ghost" data-mutate title="刪欄" onclick="delList(${li})">✕</button></span>
+      </div>
+      <div class="cards" data-li="${li}">${cards.map(c=>cardHTML(c,li)).join('')}</div>
+      <div class="addcard" data-mutate onclick="openCard(null,${li})">＋ 加任務</div>
+    </div>`;
+  }).join('');
+  bindDrag();
+}
+function cardHTML(c,li){
+  const dc=dueClass(c.due);
+  const ev=c.wid?board.events.find(e=>e.id===c.wid):null;
+  return `<div class="card" data-mutate draggable="${canMutate()?'true':'false'}" data-id="${c.id}" data-li="${li}" onclick="openCard('${c.id}',${li})">
+    <div class="ti">${esc(c.title)}</div>
+    <div class="row">
+      ${ev?`<span class="tag wk">W${ev.no}</span>`:''}
+      ${c.group?`<span class="tag g-${c.group}">${c.group}</span>`:''}
+      ${c.who?`<span class="who"><svg class="svgic" style="width:12px;height:12px;vertical-align:-2px;margin-right:2px"><use href="#i-user"></use></svg>${esc(c.who)}</span>`:''}
+      ${c.due?`<span class="due ${dc}"><svg class="svgic" style="width:12px;height:12px;vertical-align:-2px;margin-right:2px"><use href="#i-calendar"></use></svg>${md(c.due)}</span>`:''}
+    </div>
+  </div>`;
+}
+
+/* ---------- drag ---------- */
+let dragCardId=null,dragFromLi=null;
+function bindDrag(){
+  document.querySelectorAll('.card').forEach(el=>{
+    el.addEventListener('dragstart',e=>{if(!requireMutable()){e.preventDefault();return;}e.stopPropagation();dragging=true;dragCardId=el.dataset.id;dragFromLi=+el.dataset.li;el.classList.add('dragging');});
+    el.addEventListener('dragend',()=>{dragging=false;el.classList.remove('dragging');if(pending&&!writePending){board=normalize(pending);lastCloud=cloneBoard(board);pending=null;refreshAll();if(connected===true)setSyncState('synced','● 已同步（雲端）');}});
+    el.addEventListener('dragover',e=>{e.preventDefault();});
+    el.addEventListener('drop',e=>{e.preventDefault();e.stopPropagation();dropCard(+el.dataset.li,el.dataset.id);});
+  });
+  document.querySelectorAll('.cards').forEach(z=>{
+    z.addEventListener('dragover',e=>{e.preventDefault();z.parentElement.classList.add('over-list');});
+    z.addEventListener('dragleave',()=>z.parentElement.classList.remove('over-list'));
+    z.addEventListener('drop',e=>{e.preventDefault();z.parentElement.classList.remove('over-list');dropCard(+z.dataset.li,null);});
+  });
+}
+function dropCard(toLi,beforeId){
+  if(!requireMutable()||dragCardId==null)return;
+  const from=board.lists[dragFromLi];
+  const idx=from.cards.findIndex(c=>c.id===dragCardId);
+  if(idx<0)return;
+  const [card]=from.cards.splice(idx,1);
+  const to=board.lists[toLi].cards;
+  if(beforeId&&beforeId!==dragCardId){const bi=to.findIndex(c=>c.id===beforeId);to.splice(bi,0,card);}
+  else to.push(card);
+  dragCardId=null;persist();refreshAll();
+}
+
+/* ---------- card modal ---------- */
+let editId=null,editLi=null;
+function openCard(id,li){
+  if(!requireMutable())return;
+  editId=id||null; editLi=(li!=null?li:0);
+  $('cardTitle').textContent=id?'編輯任務':'新增任務';
+  $('c_list').innerHTML=board.lists.map((l,i)=>`<option value="${i}">${esc(l.title)}</option>`).join('');
+  $('c_week').innerHTML='<option value="">— 無（一般任務）—</option>'+board.events.slice().sort((a,b)=>a.no-b.no).map(e=>`<option value="${e.id}">第${e.no}週${e.date?'（'+md(e.date)+'）':''}</option>`).join('');
+  let c={};
+  if(id){ const f=findCard(id); c=f.card; editLi=f.li; }
+  $('c_title').value=c.title||''; $('c_who').value=c.who||''; $('c_group').value=c.group||'';
+  $('c_due').value=c.due||''; $('c_note').value=c.note||''; $('c_list').value=editLi; $('c_week').value=c.wid||'';
+  $('c_del').style.display=id?'inline-block':'none';
+  $('cardOv').classList.add('show'); setTimeout(()=>$('c_title').focus(),50);
+}
+function closeCard(){$('cardOv').classList.remove('show');}
+function findCard(id){for(let li=0;li<board.lists.length;li++){const c=board.lists[li].cards.find(x=>x.id===id);if(c)return{card:c,li};}return{card:{},li:0};}
+function saveCard(){
+  if(!requireMutable())return;
+  const t=$('c_title').value.trim(); if(!t){toast('請填任務');return;}
+  const data={title:t,who:$('c_who').value.trim(),group:$('c_group').value,due:$('c_due').value,note:$('c_note').value.trim(),wid:$('c_week').value||null};
+  const targetLi=+$('c_list').value;
+  if(editId){
+    const f=findCard(editId); Object.assign(f.card,data);
+    if(f.li!==targetLi){ const i=board.lists[f.li].cards.findIndex(x=>x.id===editId); const [cd]=board.lists[f.li].cards.splice(i,1); board.lists[targetLi].cards.push(cd); }
+  }else{
+    board.lists[targetLi].cards.push({id:uid(),...data});
+  }
+  persist();refreshAll();closeCard();
+}
+function delCard(){ if(!requireMutable()||!editId)return; if(!confirm('刪除這張任務卡？'))return; const f=findCard(editId); const i=board.lists[f.li].cards.findIndex(x=>x.id===editId); if(i<0){closeCard();return;} board.lists[f.li].cards.splice(i,1); persist();refreshAll();closeCard(); }
+
+/* ---------- lists ---------- */
+function addList(){ if(!requireMutable())return; const t=prompt('欄位名稱：','新欄位'); if(!t)return; board.lists.push({id:uid(),title:t,cards:[]}); persist();refreshAll(); }
+function renameList(li){ if(!requireMutable())return; const t=prompt('改欄位名稱：',board.lists[li].title); if(t==null)return; board.lists[li].title=t.trim()||board.lists[li].title; persist();refreshAll(); }
+function delList(li){ if(!requireMutable())return; const l=board.lists[li]; if(l.cards.length&&!confirm(`「${l.title}」還有 ${l.cards.length} 張卡，連卡一起刪？`))return; if(!l.cards.length&&!confirm('刪除這個欄位？'))return; board.lists.splice(li,1); persist();refreshAll(); }
+
+/* ---------- 社課作戰表 ---------- */
+const rbCollapsed=new Set();   // 記住使用者收合的週次，避免雲端同步時整批被重新展開
+function rbToggle(eid,open){ if(open)rbCollapsed.delete(eid); else rbCollapsed.add(eid); }
+function renderRunbook(){
+  const box=$('runbook'); if(!box)return;
+  if(!board.events.length){ box.innerHTML='<div class="small" style="padding:10px">還沒有社課。設好「第 2 週社課日期」後按上面按鈕，一鍵產生第 2~12 週。<br>（一般任務在「看板」分頁，不會不見。）</div>'; return; }
+  const groups=['行銷組','活動組','公關組','資訊組','管理組'];
+  box.innerHTML=board.events.slice().sort((a,b)=>a.no-b.no).map(e=>{
+    const cards=allCards().filter(c=>c.wid===e.id);
+    const done=cards.filter(c=>{const l=listOf(c.id);return l&&l.title==='完成';}).length;
+    const body=groups.map(g=>{
+      const cs=cards.filter(c=>c.group===g).sort((a,b)=>(a.due||'').localeCompare(b.due||''));
+      if(!cs.length)return'';
+      return `<div class="grp"><h4 class="tag g-${g}" style="display:inline-block">${g}</h4>`+cs.map(c=>{
+        const l=listOf(c.id); const isDone=l&&l.title==='完成'; const dc=dueClass(c.due);
+        return `<div class="task-row ${isDone?'done':''}">
+          <input type="checkbox" data-mutate ${isDone?'checked':''} ${canMutate()?'':'disabled'} onchange="toggleDone('${c.id}')">
+          <span class="tt" data-mutate onclick="openCard('${c.id}')">${esc(c.title)}</span>
+          ${c.who?`<span class="who"><svg class="svgic" style="width:12px;height:12px;vertical-align:-2px;margin-right:2px"><use href="#i-user"></use></svg>${esc(c.who)}</span>`:''}
+          ${c.due?`<span class="due ${dc}"><svg class="svgic" style="width:12px;height:12px;vertical-align:-2px;margin-right:2px"><use href="#i-calendar"></use></svg>${md(c.due)}</span>`:''}
+          ${l&&!isDone?`<span class="tag" style="background:#eef0f4;color:#5a6478">${esc(l.title)}</span>`:''}
+        </div>`;
+      }).join('')+`</div>`;
+    }).join('');
+    return `<details class="event" data-eid="${e.id}" ${rbCollapsed.has(e.id)?'':'open'} ontoggle="rbToggle('${e.id}',this.open)">
+      <summary><span class="wk">第 ${e.no} 週</span> · ${e.date?md(e.date):'未定日期'}${e.speaker?' · <svg class="svgic" style="width:13px;height:13px;vertical-align:-2px"><use href="#i-mic"></use></svg>'+esc(e.speaker):''}<span class="small" style="margin-left:auto">${done}/${cards.length} 完成</span></summary>
+      <div class="event-body">
+        <div class="ev-edit">
+          <label class="small">社課日期</label><input type="date" data-mutate value="${e.date||''}" onchange="setEvent('${e.id}','date',this.value)">
+          <label class="small">講師</label><input type="text" data-mutate value="${esc(e.speaker)}" placeholder="選填" onchange="setEvent('${e.id}','speaker',this.value)" style="width:120px">
+          <button class="btn sm" data-mutate onclick="applyTemplate('${e.id}')">套用範本</button>
+          <button class="btn sm danger" data-mutate onclick="delEvent('${e.id}')">刪除社課</button>
+        </div>
+        ${cards.length?body:'<div class="small" style="padding:6px">點「套用範本」生成這堂課的待辦清單。</div>'}
+      </div>
+    </details>`;
+  }).join('');
+}
+function genSemester(){
+  if(!requireMutable())return;
+  const sd=$('rb_start').value; if(!sd){toast('請先選第 2 週社課日期');return;}
+  if(board.events.length && !confirm('重新產生會清掉目前的社課列表（任務卡會留在看板，但需重新套範本）。確定？'))return;
+  board.events=[];
+  for(let i=0;i<11;i++) board.events.push({id:uid(),no:i+2,date:addDays(sd,i*7),speaker:''});
+  persist();renderRunbook();toast('已產生第 2~12 週');
+}
+function addEvent(){ if(!requireMutable())return; const no=board.events.length?Math.max(...board.events.map(e=>e.no))+1:2; board.events.push({id:uid(),no,date:'',speaker:''}); persist();renderRunbook(); }
+function setEvent(eid,k,v){ if(!requireMutable())return; const e=board.events.find(x=>x.id===eid); if(!e)return; e[k]=v; persist();renderRunbook(); }
+function delEvent(eid){
+  if(!requireMutable())return;
+  const e=board.events.find(x=>x.id===eid); if(!e)return;
+  const cs=allCards().filter(c=>c.wid===eid);
+  if(!confirm('刪除第 '+e.no+' 週'+(cs.length?'，連同 '+cs.length+' 項任務一起刪？':'？')))return;
+  board.lists.forEach(l=>l.cards=l.cards.filter(c=>c.wid!==eid));
+  board.events=board.events.filter(x=>x.id!==eid);
+  persist();refreshAll();
+}
+function applyTemplate(eid){
+  if(!requireMutable())return;
+  const e=board.events.find(x=>x.id===eid); if(!e)return;
+  if(!e.date){toast('先設這週的社課日期');return;}
+  const existing=allCards().filter(c=>c.wid===eid).length;
+  if(existing && !confirm('這週已有 '+existing+' 項任務，再套用會重複新增。確定？'))return;
+  const todo=board.lists.find(l=>l.title==='待辦')||board.lists[0];
+  if(!todo){toast('看板沒有欄位');return;}
+  TEMPLATE.forEach(t=>todo.cards.push({id:uid(),title:t.title,who:t.who||'',group:t.group,due:addDays(e.date,t.off),note:'',wid:eid}));
+  persist();refreshAll();toast('已生成 '+TEMPLATE.length+' 項');
+}
+function toggleDone(cid){
+  if(!requireMutable())return;
+  const from=listOf(cid); if(!from)return;
+  const i=from.cards.findIndex(c=>c.id===cid); const [c]=from.cards.splice(i,1);
+  const done=board.lists.find(l=>l.title==='完成')||board.lists[board.lists.length-1];
+  const todo=board.lists.find(l=>l.title==='待辦')||board.lists[0];
+  (from.title==='完成'?todo:done).cards.push(c);
+  persist();refreshAll();
+}
+
+/* ---------- backup ---------- */
+function exportJSON(){const b=new Blob([JSON.stringify(board,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='ITRC_任務看板備份.json';a.click();toast('已備份');}
+function importJSON(e){if(!requireMutable())return;const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{board=normalize(JSON.parse(r.result));persist();refreshAll();toast('已還原');}catch(err){toast('檔案讀不了');}};r.readAsText(f);e.target.value='';}
+
+/* ---------- utils ---------- */
+function esc(s){return(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+let tt;function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('show'),1500);}
+
+init();
+</script>
+</body>
+</html>
