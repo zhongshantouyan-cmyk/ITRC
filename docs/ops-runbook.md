@@ -2,14 +2,14 @@
 
 這一版把活動事實、學期宣傳需求、文案版本、人工審核、Canva 交件與跨組任務放進既有網站。幹部姓名、職稱與當期名單依官網核對，內部 MAIL、固定幹部 ID 和歷史任務保留在私有來源及工作台。更新日期：2026-10-26（Asia/Taipei）。
 
-受保護 Preview 的 Google 登入、後端讀取、角色判斷及同網域 gateway 已完成實際連通驗證；本輪新增程式已部署，17 筆真實人員對照已完成預覽、套用及整頁重新載入回讀。Production 發布與外部服務仍需各自驗收。詳見 [ops-validation.md](ops-validation.md)。
+此前 Preview 版本的 Google 登入、後端讀取、角色判斷及同網域 gateway 已完成連通驗證，17 筆真實人員對照亦已預覽、套用及重新載入回讀。本次發布候選新增離任封存、來源回寫、備份與 GitHub OIDC 排程；不能把前次 Preview 的證據當成本次 Production 已驗收。當前名單依使用者後續確認為 14 位現任、3 位已卸任；各平台套用與正式部署結果須另行回讀。詳見 [release-20261026.md](release-20261026.md) 及 [ops-validation.md](ops-validation.md)。
 
 ## 1. 入口與已提供的功能
 
 | 入口／區塊 | 用途 |
 | --- | --- |
 | `/ops-demo` | 虛構資料的互動展示；資料只存在目前瀏覽器，可切換示範角色與重設；不呼叫正式後端、AI 或 Canva。 |
-| `/ops` | 連接真實後端的工作台；目前在受保護 Preview 驗收，需要既有 Google／Firebase 登入與角色授權。 |
+| `/ops` | 連接真實後端的工作台；需要既有 Google／Firebase 登入與角色授權。正式發布版本及環境以驗收紀錄為準，不能僅依頁面名稱判斷。 |
 | 工作總覽、活動與專案 | 建立負責人、目標、活動資料及贊助要求，查看尚待確認或交付的工作。 |
 | 宣傳製作 | 一列需求對應一則宣傳；產生文案與輪播短文、單位確認、終審、設計與發布證據。 |
 | 我的任務 | 固定幹部 ID 指派承辦人及驗收人、期限、上層／前置任務、交件、驗收、退回與交付證據。 |
@@ -34,7 +34,7 @@
 
 「系統連線」的人員對照接受幹部主表的姓名、職稱、MAIL、LINE 名稱、組別、固定幹部 ID、任期及在任狀態。先預覽差異，再明確套用；預覽後來源或既有人員資料改變時，必須重新預覽。固定 ID 沿用 `ITRC-P0001` 格式，不能按職稱、姓名或新排序換發。沒有 MAIL 的人可以先保留空白；未列入當期官網的人保留歷史，不能據此推斷已離任。名單更新不會授予 Firebase 登入角色或終審權限。`retired`／「已卸任」明確表示已確認離任，與 `inactive`／「非當期名單」分開；兩者均不能新增指派，對應 MAIL 無法再讀寫工作台，包含舊操作的重送。歷史資料保留，其他平台角色仍需同步撤銷。
 
-2026-10-26 已依官網核對並匯入 17 筆人員：15 筆在任、2 筆非當期名單，全部固定 ID 與姓名在重新載入後仍存在。16 筆既有 MAIL 保留，許筠采的 MAIL 留白。來源記錄包含官網網址、115-1 學期、2026-10-26 官網核對的來源版本及幹部主表聯絡資料來源；這次匯入未建立任務、宣傳或財務記錄，也未授予新的登入角色。
+前次依官網匯入 17 筆人員時，狀態為 15 筆在任、2 筆非當期名單；這是當時的驗收紀錄。使用者後續明確確認許筠采（ITRC-P0017）、謝政韋（ITRC-P0013）、王方勳（ITRC-P0015）已離任，因此目前主表為 **14 位現任、3 位已卸任**，原 17 個固定 ID 與歷史保留。16 筆既有 MAIL 不重收，許筠采的空白 MAIL 不需為離任操作補造。工作台更新、舊角色撤權及官網封存都須在正式套用後回讀，主表改好不代表其他平台已同步。人員匯入不建立任務、宣傳或財務記錄，也不授予新登入角色。
 
 任務沒有實際承辦人時保持「待指派」。建立者只在仍未指派時保有整理權限；管理者改派後，原建立者不因建立紀錄而永久保有操作權。有幹部 ID 時以人員對照授權；不接受同時指向另一人的舊負責信箱。
 
@@ -186,27 +186,15 @@ node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("b
 
 `OPS_AUTO_RUN_JOBS=true` 會在人工核准、要求設計或允許的重試之後，立即處理對應的一項工作。Canva 可能回傳「處理中」，之後仍需再查詢結果，因此無狀態服務需要外部排程。
 
-### Vercel 等無狀態部署
+### 本次 Vercel 正式部署：GitHub 短效 OIDC
 
-後端設定 `OPS_CRON_SECRET`，以 Bearer 驗證以下端點；秘密需 32–512 個非空白字元，可另外產生隨機值：
+[.github/workflows/ops-queue.yml](../.github/workflows/ops-queue.yml) 使用 GitHub Actions 臨時簽發的 OIDC token，呼叫固定正式端點 `https://itrc-eight.vercel.app/api/ops/jobs/tick`。**本次不需要新增 `OPS_CRON_SECRET` 或 `OPS_WORKER_URL`，也不保存新的長期排程 API key。** 後端保留 Bearer secret 相容路徑，僅供另有需求的部署使用，不是本次啟用前置條件。
 
-```bash
-node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))'
-```
+後端驗證 GitHub 簽章、issuer、audience、repository／owner ID、`main`、這份 workflow 路徑、GitHub hosted runner，以及 `schedule`／`workflow_dispatch` 事件。只有後端 `VERCEL_ENV=production` 且 `OPS_GITHUB_CRON_ENABLED` 不為 `false` 時啟用這條 OIDC 路徑；Preview 預設不執行工作。每次固定最多處理 3 項既有工作，請求不能增加上限、選操作者、建立提案或替內容核准。
 
-```http
-POST https://backend.example.org/api/ops/jobs/tick
-Authorization: Bearer <OPS_CRON_SECRET>
-```
+工作流程排在每小時 UTC 的 7、22、37、52 分鐘，GitHub 觸發可能延遲。必須把 workflow 發布到 `main`，並確認正式後端已包含相容驗證器，再執行一次真正的 `main` `workflow_dispatch`。成功且 `processed:0` 只證明排程通路連通；外部設計工作完成仍需有實際工作結果。排程啟用與執行紀錄須以 GitHub Actions 驗收，不以程式存在判斷完成。
 
-也接受 GET。每次固定最多處理 3 項既有工作，請求內容不能增加上限或替內容核准。缺少有效秘密時端點不執行工作。
-
-選用排程定義在 [.github/workflows/ops-queue.yml](../.github/workflows/ops-queue.yml)。合併到預設分支後，在 GitHub repository 設定：
-
-- **Variable `OPS_WORKER_URL`**：完整的 HTTPS tick URL。
-- **Secret `OPS_CRON_SECRET`**：與後端相同的排程秘密。
-
-工作流程排在每小時 UTC 的 7、22、37、52 分鐘。尚未設定 URL 時略過；有 URL 但缺少秘密時回報設定錯誤，不發送 HTTP 請求。排程啟用與執行紀錄須在 GitHub Actions 驗收，不能只以環境變數存在判斷完成。
+暫停觸發可設 repository variable `OPS_DISABLE_QUEUE=true`；停用後端 GitHub 身分路徑可設 `OPS_GITHUB_CRON_ENABLED=false`。工作失敗或外部結果不明時，先查看工作台紀錄，不盲目重送設計。
 
 ### 常駐 Node 主機
 
@@ -218,15 +206,15 @@ Authorization: Bearer <OPS_CRON_SECRET>
 
 2026-10-25 實際 UI 顯示後端 Production Branch 為 `feat/vercel-serverless-migration`，本輪未變更。**合併 `main` 不等於後端正式部署**；正式發布前，須核對前後端各自的 Production Branch、部署提交及環境配對。
 
-首次啟動伺服器可能建立／遷移資料表；`OPS_WORKER_ENABLED=true` 也可能啟動工作處理。因此即使只呼叫 `/api/health`，也不能把整個程序啟動宣稱為完全零寫入。測試前確認資料庫及工作執行設定。本輪功能提交 `ab1c5a1b7549dab5401f7153755dc195ece1a486` 的前後端 Preview 及 CI 已成功，真實 17 筆人員匯入亦已重新載入回讀。測試資料庫隔離仍未確認，因此此次未新增虛構業務記錄；正式發布須繼續核對以下環境與整合項目。
+首次啟動伺服器可能建立／遷移資料表；在允許執行工作的環境，`OPS_WORKER_ENABLED=true` 也可能啟動工作處理。因此即使只呼叫 `/api/health`，也不能把整個程序啟動宣稱為完全零寫入。前次提交 `ab1c5a1b7549dab5401f7153755dc195ece1a486` 的 Preview／CI 與 17 筆人員回讀是歷史證據。本次候選預設阻擋 Preview 業務寫入、OAuth callback 及背景 worker；這是隔離未確認時的保護，不等於已有獨立雲端測試資料庫。
 
-1. **先建立 Preview。** 前端與後端必須包含相容且已核對的程式版本，並確認各自部署分支。Preview 指向測試資料庫；正式環境才使用既有正式資料庫，避免測試記錄進入正式流程。
-2. **設定該環境的 API 與身分。** 使用 gateway 時，前端設 `VITE_OPS_API_URL=/api`，前端伺服器的 `OPS_BACKEND_ORIGIN` 指向對應後端 origin，保留其他 CMS 的 `VITE_API_URL`。核對所需的 Trusted Sources 環境規則；後端配置 Firebase 與 Turso。確認穩定 Preview 網域已列入 Firebase 授權網域，並分別驗收 Google 登入與後端角色。
+1. **核對 Preview 與資料庫。** 前後端必須使用相容版本。未證明 Preview 資料庫與正式分離時，維持業務唯讀；虛構寫入、重試與還原在隔離的本機／測試環境驗證。真正建立並核對獨立測試資料庫後，才能另外啟用 Preview 寫入測試。
+2. **設定該環境的 API 與身分。** 本次 Production 沿用官網既有 `VITE_API_URL`，直接連正式後端 `itrc-eight.vercel.app/api`。Preview 保留 `VITE_OPS_API_URL=/api` 與對應 `OPS_BACKEND_ORIGIN` 的 gateway。只有使用 gateway 的環境才需配對該環境的 Trusted Sources；分別驗收 Google 登入與後端角色，不把 Preview 的信任規則當成 Production 已授權。
 3. **設定責任人。** 寫入終審與設計登入信箱名單。實測一般幹部不能冒用終審者，指定終審者可核准當前版本。
-4. **先驗收內部流程。** 用虛構活動匯入、產生草稿、送單位確認、終審、人工附上 Canva 連結與成果證據。重新載入後資料應仍存在；修改活動或文案後應要求重新審核。
+4. **先驗收內部流程。** 在已隔離的測試環境用虛構資料驗證匯入、交件、退回、驗收及改版失效。正式環境只套用已預覽的真實來源草稿並重新載入回讀；不得把示範核准、測試設計連結或虛構發布證據寫成真實成果。
 5. **再接外部服務。** 設定 Canva OAuth、資料欄位與母版，完成一次實際套版，核對圖層仍可編輯；需要 AI 或 Sheets 時再啟用對應設定。來源表分享與外部帳戶權限也須驗收。
-6. **驗收排程。** 設定 tick URL 與秘密，以已核准的測試工作確認「處理中」最終轉為設計交件。失敗與未知結果應留在工作紀錄，不應冒充完成。
-7. **正式啟用。** 核對前後端 Production Branch／部署版本、資料庫、工作台 API 與 gateway 目標、信任規則、OAuth redirect／返回 origin、秘密、責任人名單與排程 URL；Preview → Preview 授權不包含 Production。正式資料移轉仍需預覽及確認，不把 Preview 測試資料直接當成正式資料。
+6. **驗收排程。** 依上節驗證真正 `main` workflow 的短效 OIDC 請求與正式後端結果。排程成功不等於 Canva 已連線；有已授權的真實工作時，再核對其外部結果。設定缺漏、失敗與未知結果須留在工作紀錄。
+7. **正式啟用。** 核對前後端 Production Branch／部署版本、資料庫、API、所使用的 gateway／信任規則、OAuth redirect／返回 origin、責任人與排程固定端點。正式資料移轉須預覽及回讀，離任狀態與舊角色須逐處核對；另完成系統資料備份的受限保管及隔離還原。上線、備份還原和排程證據分別記錄，不以其中一項代表全部完成。
 
 部署新版時保留資料庫與加密金鑰；復原程式版本前先確認 `ops_*` 資料仍可讀取。連線問題看「系統連線」，工作問題看工作紀錄；`blocked_configuration` 先補設定，`failed` 修正後可重試，`needs_reconciliation` 先核對外部結果。
 
@@ -270,3 +258,5 @@ npm --prefix client run build
 5. 工作紀錄在提案後改版，或同一來源已由另一提案回寫時，舊提案無法繼續匯出／登錄；可退回後重新提出。回寫完成標示 `human_recorded`，明確保留人工核對界線。
 
 此版本沒有背景自動讀取 Drive 現況，也不會把核准包直接寫入 Google Sheets／Excel／Markdown。外部 FileOS 原收件匣整併、服務憑證與自動差異比對需另行完成，不能以本頁的存在宣稱已全自動雙向同步。財務仍回原財務站，官網發布仍走 CMS，不由這份來源提案繞過原權責。
+
+現有 UI 可人工銜接原 FileOS 收件匣：在「這次要回寫的原因與差異」貼上管理者保管的原收件匣連結、對應列及來源訊息 ID，並在原收件匣建立同一提案的對照記錄。「正式來源網址」仍保留真正的 Excel／Markdown／指定主表；已存在來源的工作不能改填成收件匣 URL。這段文字不會自動建立收件匣列，也不提供獨立 queue 設定欄。原檔尚未寫入及回讀時，保持待核對／已核准待回寫，不以收件匣已收到提案就登錄回寫完成。
