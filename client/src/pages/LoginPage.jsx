@@ -10,7 +10,7 @@ export default function LoginPage() {
     const [loginError, setLoginError] = useState('');
     const requestedPath = location.state?.from;
     const destination = typeof requestedPath === 'string' && /^\/(ops|admin)(\?|$)/.test(requestedPath)
-        ? requestedPath : '/admin';
+        ? requestedPath : '/ops';
 
     useEffect(() => {
         if (!loading && user && isAdmin) navigate(destination, { replace: true });
@@ -37,8 +37,8 @@ export default function LoginPage() {
     return (
         <div className="login-page">
             <div className="login-card">
-                <h2><span className="section-title-accent">管理員登入</span></h2>
-                <p className="login-subtitle">ITRC Content Management System</p>
+                <h2><span className="section-title-accent">幹部登入</span></h2>
+                <p className="login-subtitle">ITRC 社團工作台</p>
 
                 {loginError && <p className="login-error" role="alert">{loginError}</p>}
 
