@@ -124,26 +124,28 @@
 
   <!-- 工具站 -->
   <section id="tab-tool" class="sec maint none">
-    <p class="lead">你正在用的這個「幹部工具站」：講師排程、任務看板、圖文、贊助、證書、財務站、幹部與權限，以及這份手冊。</p>
+    <p class="lead">講師排程、圖文、贊助、證書、財務、幹部權限與這份手冊，都在同一個社務工作台中使用。日常派工使用工作台的「任務」；原看板保留歷史資料。</p>
     <table class="kv">
-      <tr><th>平台</th><td>Vercel 靜態部署（專案 <code>itrc-tools</code>，team <code>zhongshantouyan-4688s-projects</code>）</td></tr>
-      <tr><th>對外網址</th><td><a class="ext" href="https://itrc-tools.vercel.app" target="_blank" rel="noopener">itrc-tools.vercel.app</a></td></tr>
-      <tr><th>原始碼</th><td>本機 <code>C:\Users\USER\itrc-tools\</code>。單檔 HTML 工具 + 共用 <code>itrc.css</code> / <code>itrc.js</code>（圖示＋導覽列＋toast）/ <code>itrc-auth.js</code>（登入與角色）</td></tr>
+      <tr><th>平台</th><td>與官網共用 Vercel 前端專案 <code>nsysu-itrc</code>；原工具站保留舊網址轉址。</td></tr>
+      <tr><th>使用入口</th><td><a class="ext" href="/ops" target="_top">社務工作台</a>，從左側「財務」或「工具」進入。</td></tr>
+      <tr><th>原始碼</th><td>同一個 <code>zhongshantouyan-cmyk/ITRC</code> repository 的 <code>legacy-tools/</code>。前端建置會將工具打包到主站 <code>/tools/</code>；來源只維護一份。</td></tr>
     </table>
     <h3>如何更新／部署</h3>
-    <p class="lead" style="margin:4px 0">改完本機檔案後，用 <b>scoped CLI</b> 部署（<b>務必帶資料夾路徑</b>——家目錄含機密，不能整包上傳）：</p>
-    <pre>npx vercel deploy "C:/Users/USER/itrc-tools" --prod --yes \
-  --scope zhongshantouyan-4688s-projects --token &lt;一次性 token&gt;</pre>
-    <div class="note"><b>token 安全：</b>每次部署用一次性 token，用完建議到 Vercel 後台撤銷。</div>
+    <p class="lead" style="margin:4px 0">修改 <code>legacy-tools/</code> 後，與主站一起建置、驗收及發布，不另行部署第二個工具介面。</p>
+    <pre>cd client
+npm run build</pre>
+    <div class="note">工具目錄及舊網址對照由 <code>client/src/ops/club-tools-catalog.js</code> 維護。新增工具時更新目錄，再執行 <code>node scripts/build-tools-redirects.mjs</code>。先發布主站，再發布原工具站的轉址設定。</div>
     <h3>後端與資料</h3>
     <ul>
       <li><b>Firebase Realtime Database</b>（專案 <code>itrc-workspace</code>），設定內嵌在 <code>itrc-auth.js</code>。看板／贊助／財務／名單等<b>雲端即時同步</b>；部分個人偏好存各自瀏覽器 <code>localStorage</code>。</li>
+      <li>雲端資料沿用相同路徑與安全規則，沒有複製第二份帳冊或名單。舊網域的個人 SOP 勾選及公關寄件人偏好仍留在原瀏覽器；新入口首次使用可重新填寫。</li>
+      <li><b>Preview 與練習版</b>不載入可修改正式資料的工具。正式工具與工作台使用同一網域的 Firebase 登入狀態。</li>
     </ul>
     <h3>登入與權限</h3>
     <ul>
       <li>Google 登入 + <b>角色白名單</b>（<code>roles</code> 名單存 RTDB，用「<b>幹部與權限</b>」工具線上編、改完即時生效、不用重部署）。</li>
       <li>角色：<code>chair</code>（正副社長）／<code>advisor</code>（顧問）／<code>treasurer</code>（財務長）／<code>officer</code>（一般幹部）。能力：roster／approve／ledger／apply／treasury。</li>
-      <li><b>救命索：</b><code>SUPER_ADMINS</code>（社團信箱 + 顧問信箱）永遠最高權限，換屆走人也不會鎖死。整站權限鎖死時用它登入解。</li>
+      <li><b>保管帳號：</b>只保留社團保管信箱作為救援管理入口；個人幹部依名單角色授權。核銷仍不可由申請人自行簽核。</li>
       <li><b>這份手冊</b>鎖：職稱含「資訊」者 + 社長／副社長／顧問 + SUPER_ADMINS 才看得到。</li>
     </ul>
     <h3>常見排錯</h3>

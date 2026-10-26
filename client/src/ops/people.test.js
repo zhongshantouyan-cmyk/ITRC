@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { canOwn, parseImportText } from './model.js';
-import { LEGACY_ASSIGNEE, assignmentFormValue, assignmentPayload, hasAssignee, matchesPerson, ownerLabel, personOptions, projectPendingTasks, taskDeliveryReason, taskGroups } from './people.js';
+import { LEGACY_ASSIGNEE, assignmentFormValue, assignmentPayload, hasAssignee, matchesPerson, ownerLabel, personOptions, taskDeliveryReason, taskGroups } from './people.js';
 import { changeDemoActor, DEMO_ACTORS, loadDemo, performDemoAction } from './demo.js';
 
 const people = [
@@ -78,41 +78,33 @@ test('existing Chinese roster and task headers map to stable identity fields', (
   assert.throws(() => parseImportText('標題,結案必要\n器材,或許', 'tasks'), /結案必要/);
 });
 
-test('delivery needs a separate reviewer and completed predecessors; required cancelled tasks still block closing', () => {
-  const task = { ownerPersonId: people[0].personId, reviewerPersonId: people[1].personId, acceptanceCriteria: '設備可用', dependsOn: ['prior'] };
-  assert.match(taskDeliveryReason({ ...task, reviewerPersonId: people[0].personId }, []), /分開/);
-  assert.match(taskDeliveryReason(task, [{ id: 'prior', status: 'doing' }]), /前置/);
-  assert.equal(taskDeliveryReason(task, [{ id: 'prior', status: 'done' }]), '');
-  assert.match(taskDeliveryReason({ ...task, ownerPersonId: '', ownerEmail: people[1].email, dependsOn: [] }, [], people), /分開/);
-  assert.match(taskDeliveryReason({ ...task, id: 'parent', dependsOn: [] }, [{ parentId: 'parent', status: 'todo' }]), /必要子任務/);
-  const tasks = [{ projectId: 'p', status: 'done' }, { projectId: 'p', status: 'cancelled' }, { projectId: 'p', status: 'todo', requiredForCompletion: false }];
-  assert.equal(projectPendingTasks('p', tasks).length, 1);
-  assert.equal(projectPendingTasks(undefined, [{ status: 'todo' }]).length, 0);
-});
 
-test('demonstration enforces deliver-review-return without silently assigning the shared account', () => {
+
+test('demonstration lets any current officer complete and reopen without assigning the shared account', () => {
   const demo = localDemo();
-  const empty = demo.act('task.create', null, { title: '待指派測試', ownerEmail: '' });
-  assert.equal(empty.status, 'unassigned'); assert.equal(empty.ownerEmail, '');
-  assert.throws(() => demo.act('task.update', empty.id, { status: 'done', deliverableUrl: 'https://example.org/work' }), /交件與驗收/);
-  demo.act('task.deliver', 'demo-task-5', { deliverableUrl: 'https://example.org/work' });
-  assert.equal(demo.state.tasks.find(task => task.id === 'demo-task-5').status, 'delivered');
-  assert.throws(() => demo.act('task.accept-delivery', 'demo-task-5'), /指定驗收人/);
-  demo.actor(1);
-  demo.act('task.return-delivery', 'demo-task-5', { reason: '補上照片' });
-  assert.equal(demo.state.tasks.find(task => task.id === 'demo-task-5').returnReason, '補上照片');
-  demo.actor(0); demo.act('task.deliver', 'demo-task-5', { deliverableUrl: 'https://example.org/work-2' });
-  demo.actor(1); demo.act('task.accept-delivery', 'demo-task-5');
-  assert.equal(demo.state.tasks.find(task => task.id === 'demo-task-5').reviewIdentityMode, 'individual_account');
-  assert.throws(() => demo.act('project.update', 'demo-project', { status: 'completed' }), /必要任務/);
+  const empty = demo.act('task.create', null, { title: '沒有負責人的任務', ownerEmail: '', notes: '記得帶相機' });
+  assert.equal(empty.status, 'todo'); assert.equal(empty.ownerEmail, '');
+  demo.actor(2);
+  demo.act('task.set-status', empty.id, { status: 'done' });
+  let task = demo.state.tasks.find(item => item.id === empty.id);
+  assert.equal(task.status, 'done'); assert.equal(task.completedBy, DEMO_ACTORS[2].email);
+  assert.equal(task.ownerEmail, ''); assert.equal(task.deliverableUrl, undefined);
+  demo.actor(0); demo.act('task.reopen', empty.id);
+  task = demo.state.tasks.find(item => item.id === empty.id);
+  assert.equal(task.status, 'todo'); assert.equal(task.completedAt, undefined);
+  assert.ok(task.deliveryHistory.some(item => item.completedBy === DEMO_ACTORS[2].email));
+  demo.act('project.update', 'demo-project', { status: 'completed' });
+  assert.equal(demo.state.projects[0].status, 'completed');
 });
 
-test('shared-account acceptance needs external confirmation evidence and remains labeled as recorded', () => {
-  const demo = localDemo(); demo.act('task.deliver', 'demo-task-5', { deliverableUrl: 'https://example.org/work' }); demo.actor(3);
-  assert.throws(() => demo.act('task.accept-delivery', 'demo-task-5', {}), /代登錄/);
-  demo.act('task.accept-delivery', 'demo-task-5', { confirmedExternalReview: true, evidenceUrl: 'https://example.org/review' });
+test('legacy demo delivery actions record completion without inventing independent acceptance', () => {
+  const demo = localDemo(); demo.actor(3);
+  demo.act('task.deliver', 'demo-task-5', {});
   const task = demo.state.tasks.find(item => item.id === 'demo-task-5');
-  assert.equal(task.reviewIdentityMode, 'recorded_external_review'); assert.equal(task.reviewEvidenceUrl, 'https://example.org/review');
+  assert.equal(task.status, 'done'); assert.equal(task.completedBy, DEMO_ACTORS[3].email);
+  assert.equal(task.reviewIdentityMode, undefined); assert.equal(task.acceptedReviewerPersonId, undefined);
+  demo.act('task.return-delivery', 'demo-task-5');
+  assert.equal(demo.state.tasks.find(item => item.id === 'demo-task-5').status, 'todo');
 });
 
 test('roster preview preserves contacts, leaves absent people and rejects stale applies or role injection', () => {

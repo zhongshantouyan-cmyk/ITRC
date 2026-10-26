@@ -85,40 +85,44 @@ test('legacy shared JWT and submitted actor cannot authorize production actions'
   assert.equal(bootstrap.actor.canApprove,false);
 });
 
-test('final approval is restricted and each approval creates exactly one durable design job',async t => {
+test('ordinary members can confirm copy and repeated legacy approval creates one durable design job',async t => {
   const f = await fixture(t); const {post} = await readyPost(f);
-  await assert.rejects(f.command('post.approve',{},post,owner),{code:'FINAL_APPROVER_REQUIRED'});
   await assert.rejects(f.command('post.update',{approvedVersion:post.copyVersion,stage:'ready'},post),{code:'UNSUPPORTED_FIELD'});
   const key = randomUUID();
   const command = {action:'post.approve',id:post.id,expectedVersion:post.version,payload:{},idempotencyKey:key};
-  const [a,b] = await Promise.all([f.service.action(approver,command),f.service.action(approver,command)]);
-  assert.equal(a.record.approvedVersion,post.copyVersion); assert.deepEqual(a.record,b.record);
+  const [a,b] = await Promise.all([f.service.action(owner,command),f.service.action(owner,command)]);
+  assert.equal(a.record.approvedVersion,post.copyVersion); assert.equal(a.record.approvedBy,owner.email); assert.deepEqual(a.record,b.record);
   const state = await f.service.bootstrap(owner); assert.equal(state.jobs.length,1); assert.equal(state.jobs[0].status,'queued');
   assert.equal(state.audit.filter(row => row.action === 'post.approve').length,1);
-  await assert.rejects(f.service.action(approver,{...command,payload:{different:true}}),{code:'IDEMPOTENCY_CONFLICT'});
+  await assert.rejects(f.service.action(owner,{...command,payload:{different:true}}),{code:'IDEMPOTENCY_CONFLICT'});
 });
 
-test('ownership and optimistic versions prevent unauthorized or stale edits',async t => {
+test('collaborative copy edits retain optimistic versions and invalidate the prior confirmation',async t => {
   const f = await fixture(t); const {post} = await readyPost(f);
-  await assert.rejects(f.command('post.update',{caption:'改寫'},post,outsider),{code:'OWNER_REQUIRED'});
-  const edited = (await f.command('post.update',{caption:'新版內容'},post)).record;
+  const edited = (await f.command('post.update',{caption:'其他幹部補充的新版內容'},post,outsider)).record;
   assert.equal(edited.copyVersion,2); assert.equal(edited.stage,'draft'); assert.equal(edited.unitReviewedVersion,undefined);
-  await assert.rejects(f.command('post.approve',{},post,approver),{code:'VERSION_CONFLICT'});
+  assert.equal(edited.approvedVersion,undefined);
+  await assert.rejects(f.command('post.confirm',{},post,owner),{code:'VERSION_CONFLICT'});
+  const confirmed = (await f.command('post.confirm',{},edited,owner)).record;
+  assert.equal(confirmed.approvedVersion,edited.copyVersion);
 });
 
-test('unconfirmed/incomplete event facts cannot pass unit review or final approval',async t => {
+test('incomplete event facts remain visible and do not block ordinary promotional confirmation',async t => {
   const f = await fixture(t);
-  const event = (await f.command('event.create',{title:'待確認活動'})).record;
-  await assert.rejects(f.command('event.confirm',{},event),{code:'EVENT_INCOMPLETE'});
-  const post = (await f.command('post.create',{eventId:event.id,title:'草稿',caption:'內容',slides:[{heading:'標題',body:'內文'}]})).record;
-  await assert.rejects(f.command('post.submit',{},post),{code:'EVENT_UNCONFIRMED'});
+  let event = (await f.command('event.create',{title:'待補活動'})).record;
+  event = (await f.command('event.confirm',{},event)).record;
+  assert.equal(event.confirmationStatus,'reviewed'); assert.equal(event.date,undefined); assert.equal(event.speaker,undefined);
+  let post = (await f.command('post.create',{eventId:event.id,title:'草稿',caption:'日期與地點將另行公布'})).record;
+  post = (await f.command('post.confirm',{},post,outsider)).record;
+  assert.equal(post.stage,'approved'); assert.equal(post.approvedBy,outsider.email); assert.deepEqual(post.slides,[]);
+  assert.deepEqual((await f.service.bootstrap(owner)).events[0].missingFacts,['日期','地點','講者']);
 });
 
 test('event and obligation changes invalidate all dependent unpublished approvals',async t => {
   const f = await fixture(t); const {event,post,project} = await approvedPost(f);
   const updatedEvent = (await f.command('event.update',{date:'2026-11-02'},event)).record;
   let state = await f.service.bootstrap(owner); let updatedPost = state.posts.find(item => item.id === post.id);
-  assert.equal(updatedEvent.confirmationStatus,'changed'); assert.equal(updatedPost.stage,'needs_revision');
+  assert.equal(updatedEvent.confirmationStatus,'changed'); assert.equal(updatedPost.stage,'draft');
   assert.equal(updatedPost.approvedVersion,undefined); assert.equal(state.jobs[0].status,'obsolete');
   const version = updatedPost.copyVersion;
   await f.command('obligation.create',{projectId:project.id,title:'新增贊助義務',requirements:'需附指定標誌',requiresSponsorReview:true});
@@ -126,14 +130,12 @@ test('event and obligation changes invalidate all dependent unpublished approval
   assert.equal(updatedPost.copyVersion,version+1);
 });
 
-test('Canva jobs preserve version lineage and require sponsor evidence before recording publication',async t => {
+test('Canva jobs preserve copy lineage while optional sponsor notes do not block publication',async t => {
   const f = await fixture(t); let {post} = await deliveredPost(f,{sponsor:true});
-  assert.equal(post.stage,'sponsor_review'); assert.equal(post.designCopyVersion,post.copyVersion);
-  await assert.rejects(f.command('post.publish',{publishedUrl:'https://example.org/post',publishedAt:new Date().toISOString()},post,designer),{code:'NOT_READY'});
+  assert.equal(post.stage,'approved'); assert.equal(post.designCopyVersion,post.copyVersion);
   await assert.rejects(f.command('post.sponsor-review',{confirmed:true,evidenceUrl:'http://example.org/evidence'},post,designer),{code:'INVALID_URL'});
-  post = (await f.command('post.sponsor-review',{confirmed:true,evidenceUrl:'https://example.org/evidence'},post,designer)).record;
-  post = (await f.command('post.publish',{publishedUrl:'https://example.org/post',publishedAt:new Date().toISOString()},post,designer)).record;
-  assert.equal(post.stage,'published'); assert.equal(post.sponsorApprovedVersion,post.copyVersion);
+  post = (await f.command('post.publish',{},post,owner)).record;
+  assert.equal(post.stage,'published'); assert.equal(post.publishedUrl,''); assert.equal(post.sponsorApprovedVersion,undefined);
 });
 
 test('published evidence remains immutable and fact changes create a correction task',async t => {
@@ -146,23 +148,17 @@ test('published evidence remains immutable and fact changes create a correction 
   await assert.rejects(f.command('post.update',{caption:'直接覆蓋歷史'},post),{code:'PUBLISHED_IMMUTABLE'});
 });
 
-test('task dependency cycles, missing references and missing deliverables are rejected',async t => {
+test('task dependencies reject broken graphs but never require a delivery or independent reviewer',async t => {
   const f = await fixture(t);
-  const people = [{personId:'ITRC-P0001',name:'示範驗收人',email:outsider.email,status:'active'}];
-  const preview = (await f.command('people.import-preview',{people},null,admin)).record;
-  await f.command('people.import-apply',{people,previewToken:preview.previewToken},null,admin);
-  const first = (await f.command('task.create',{title:'前置任務',ownerEmail:owner.email,reviewerPersonId:'ITRC-P0001',acceptanceCriteria:'成果可開啟並包含完整內容'})).record;
-  const second = (await f.command('task.create',{title:'後續任務',ownerEmail:owner.email,dependsOn:[first.id]})).record;
+  let first = (await f.command('task.create',{title:'前置任務'})).record;
+  let second = (await f.command('task.create',{title:'後續任務',dependsOn:[first.id]})).record;
   await assert.rejects(f.command('task.update',{dependsOn:[second.id]},first),{code:'DEPENDENCY_CYCLE'});
   await assert.rejects(f.command('task.update',{dependsOn:['missing']},first),{code:'DEPENDENCY_MISSING'});
-  await assert.rejects(f.command('task.update',{status:'doing'},second),{code:'DEPENDENCY_BLOCKED'});
-  await assert.rejects(f.command('task.update',{status:'done'},first),{code:'TASK_REVIEW_ACTION_REQUIRED'});
-  await assert.rejects(f.command('task.deliver',{},first),{code:'INVALID_URL'});
-  await assert.rejects(f.command('task.update',{status:'blocked'},first),{code:'BLOCKER_REQUIRED'});
-  const delivered = (await f.command('task.deliver',{deliverableUrl:'https://example.org/result'},first)).record;
-  const done = (await f.command('task.accept-delivery',{},delivered,outsider)).record;
-  assert.equal(done.status,'done');
-  const doing = (await f.command('task.update',{status:'doing'},second)).record; assert.equal(doing.status,'doing');
+  second = (await f.command('task.set-status',{status:'doing'},second,outsider)).record;
+  assert.equal(second.status,'doing');
+  first = (await f.command('task.deliver',{},first,outsider)).record;
+  assert.equal(first.status,'done'); assert.equal(first.completedBy,outsider.email); assert.equal(first.deliverableUrl,undefined);
+  assert.equal((await f.command('task.set-status',{status:'done'},second,owner)).record.status,'done');
 });
 
 test('missing provider configuration remains visible; ambiguous Canva writes cannot be blindly retried',async t => {
@@ -205,7 +201,7 @@ test('records and audit survive a fresh database connection',async t => {
   const state = await reopened.bootstrap(owner); assert.equal(state.projects[0].id,created.id); assert.equal(state.audit.length,1);
 });
 
-test('people, accepted deliveries and complete source-linked copy history persist across reconnection',async t => {
+test('people, member-recorded completion and source-linked copy history persist across reconnection',async t => {
   const f = await fixture(t);
   const people = [
     {personId:'ITRC-P0001',name:'示範承辦人',email:owner.email,status:'active'},
@@ -224,7 +220,8 @@ test('people, accepted deliveries and complete source-linked copy history persis
   const reopened = createOpsService({db:db2,providers,env});
   const state = await reopened.bootstrap(owner);
   assert.equal(state.people.length,2);
-  assert.equal(state.tasks.find(row => row.id === task.id).reviewIdentityMode,'individual_account');
+  assert.equal(state.tasks.find(row => row.id === task.id).completionMode,'member_recorded');
+  assert.equal(state.tasks.find(row => row.id === task.id).completedBy,owner.email);
   assert.equal(state.tasks.find(row => row.id === task.id).deliveryHistory.at(-1).deliverableUrl,'https://example.org/result');
   const saved = state.posts.find(row => row.id === post.id);
   assert.equal(saved.caption,'需保留的新版本');
@@ -235,10 +232,13 @@ test('people, accepted deliveries and complete source-linked copy history persis
   assert.equal(savedApproval.approvedBy,approver.email);
 });
 
-test('manual design attachments cannot use lookalike domains or bypass final approval',async t => {
-  const f = await fixture(t); let {post} = await readyPost(f);
-  await assert.rejects(f.command('post.attach-design',{canvaEditUrl:'https://www.canva.com/design/TEST/edit'},post,designer),{code:'APPROVAL_REQUIRED'});
-  post = (await f.command('post.approve',{},post,approver)).record;
+test('manual design attachments validate Canva URLs without pretending the draft has been confirmed',async t => {
+  const f = await fixture(t);
+  const event = (await f.command('event.create',{title:'尚待補資料'})).record;
+  let post = (await f.command('post.create',{title:'待寫文案',eventId:event.id})).record;
+  post = (await f.command('post.attach-design',{canvaEditUrl:'https://www.canva.com/design/TEST/edit'},post,owner)).record;
+  assert.equal(post.stage,'draft'); assert.equal(post.approvedVersion,undefined);
+  await assert.rejects(f.command('post.request-design',{},post),{code:'APPROVAL_REQUIRED'});
   await assert.rejects(f.command('post.attach-design',{canvaEditUrl:'https://canva.com.attacker.example/design/TEST/edit'},post,designer),{code:'INVALID_CANVA_URL'});
 });
 
@@ -256,6 +256,23 @@ test('in-flight Canva results never overwrite later copy edits and keep the exte
   assert.equal(state.jobs[0].status,'obsolete'); assert.equal(state.jobs[0].providerJobId,'external-late-job');
 });
 
+test('in-flight Canva results cannot reopen a completed promotion or overwrite its manual design',async t => {
+  let release, entered;
+  const waiting = new Promise(resolve => {release=resolve;});
+  const started = new Promise(resolve => {entered=resolve;});
+  const f = await fixture(t,{createCanvaDesign:async () => {entered();return waiting;}});
+  const {post} = await approvedPost(f);
+  const running = f.service.runJobs({limit:1}); await started;
+  const completed = (await f.command('post.complete',{canvaEditUrl:'https://www.canva.com/design/manual-completed/edit'},post,owner)).record;
+  release({status:'success',providerJobId:'late-completed-job',canvaDesignId:'late-design',canvaEditUrl:'https://www.canva.com/design/late-design/edit'});
+  await running;
+  const state = await f.service.bootstrap(owner);
+  assert.equal(state.posts[0].stage,'completed'); assert.equal(state.posts[0].version,completed.version);
+  assert.equal(state.posts[0].canvaEditUrl,completed.canvaEditUrl); assert.equal(state.jobs[0].status,'obsolete');
+  assert.equal(state.jobs[0].externalResult.canvaDesignId,'late-design');
+  assert.equal(state.jobs[0].providerJobId,'late-completed-job');
+});
+
 test('configured sheet previews are read-only, preserve source evidence and reject arbitrary source IDs',async t => {
   let calls=0;
   const f = await fixture(t,{readSheetSource:async ({spreadsheetId,range}) => {
@@ -269,7 +286,7 @@ test('configured sheet previews are read-only, preserve source evidence and reje
   assert.equal((await f.service.bootstrap(owner)).events.length,0);
 });
 
-test('automatic design execution is opt-in and retains final human approval as the gate',async t => {
+test('automatic design execution is opt-in and requires only a current human copy confirmation',async t => {
   let creations=0;
   const f = await fixture(t,{createCanvaDesign:async () => {creations++; return {providerJobId:'auto-job',status:'in_progress'};}},{OPS_AUTO_RUN_JOBS:'true'});
   const {post} = await readyPost(f); assert.equal(creations,0);
@@ -343,7 +360,7 @@ test('retrying an earlier failed copy job can never reopen a published post',asy
   assert.equal(preserved.stage,'published'); assert.equal(preserved.caption,post.caption); assert.equal(preserved.publishedUrl,post.publishedUrl);
 });
 
-test('server derives project scope from the event so omitted or cleared project IDs cannot bypass sponsor review',async t => {
+test('server retains event-derived project and sponsor information without imposing a sponsor review gate',async t => {
   const f = await fixture(t);
   const project = (await f.command('project.create',{title:'含贊助要求的示範專案'})).record;
   let event = (await f.command('event.create',{title:'示範課程',projectId:project.id,date:'2026-11-01',speaker:'講者',venue:'教室'})).record;
@@ -355,7 +372,9 @@ test('server derives project scope from the event so omitted or cleared project 
   post = (await f.command('post.submit',{},post)).record; post = (await f.command('post.unit-review',{},post)).record;
   post = (await f.command('post.approve',{},post,approver)).record;
   post = (await f.command('post.attach-design',{canvaEditUrl:'https://www.canva.com/design/project-scope/edit'},post,designer)).record;
-  post = (await f.command('post.design-review',{},post,designer)).record; assert.equal(post.stage,'sponsor_review');
+  post = (await f.command('post.design-review',{},post,designer)).record; assert.equal(post.stage,'approved');
+  assert.equal((await f.service.bootstrap(owner)).obligations[0].projectId,project.id);
+  assert.equal((await f.command('post.complete',{},post,owner)).record.stage,'completed');
 });
 
 test('owning a separate project does not authorize attaching obligations to another person’s unassigned event',async t => {

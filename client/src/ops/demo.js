@@ -1,12 +1,13 @@
-import { canOwn, isAdviser } from './model.js';
-import { hasAssignee, isInactivePerson, personById, projectPendingTasks, taskDeliveryReason } from './people.js';
+import { canOwn, isAdviser, EVENT_TYPES, eventMissingFacts, eventSpeakerText } from './model.js';
+import { isInactivePerson, personById } from './people.js';
 
-const KEY = 'itrc-ops-fictional-demo-v1';
+// Refresh the fictional practice seeds without changing or deleting live data.
+const KEY = 'itrc-ops-fictional-demo-v2';
 const uuid = () => globalThis.crypto?.randomUUID?.() || `demo-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 const clone = data => JSON.parse(JSON.stringify(data));
 export const DEMO_ACTORS = [
   { email: 'activity@example.invalid', name: '活動負責人（示範）', role: 'officer', canApprove: false, canDesign: false },
-  { email: 'approver@example.invalid', name: '最終審核者（示範）', role: 'chair', canApprove: true, canDesign: false },
+  { email: 'approver@example.invalid', name: '社長（示範）', role: 'chair', canApprove: true, canDesign: false },
   { email: 'design@example.invalid', name: '行銷負責人（示範）', role: 'officer', canApprove: false, canDesign: true },
   { email: 'adviser@example.invalid', name: '管理顧問（示範）', role: 'advisor', canApprove: false, canDesign: false },
 ];
@@ -19,7 +20,7 @@ function addDemoPeople(state) {
   for (const collection of ['projects', 'events', 'posts', 'tasks', 'obligations']) for (const record of state[collection]) {
     record.createdByEmail ||= record.ownerEmail || DEMO_ACTORS[3].email;
     if (record.ownerPersonId === undefined) record.ownerPersonId = state.people.find(person => person.email === record.ownerEmail)?.personId || '';
-    if (collection === 'tasks') { record.requiredForCompletion ??= true; record.reviewerPersonId ??= state.people.find(person => person.email === DEMO_ACTORS[1].email)?.personId || ''; }
+    if (collection === 'tasks') { record.requiredForCompletion ??= false; record.reviewerPersonId ??= ''; }
   }
   return state;
 }
@@ -29,20 +30,20 @@ function seeded() {
   const base = { version: 1, createdAt: now, updatedAt: now };
   return addDemoPeople({
     schemaVersion: 1, actor: DEMO_ACTORS[0],
-    projects: [{ ...base, id: 'demo-project', title: '秋季交流活動（虛構示範）', objective: '練習將活動資料、宣傳與現場交付接起來。', ownerEmail: DEMO_ACTORS[0].email, adviserEmail: DEMO_ACTORS[3].email, status: 'active', dueDate: day(21), completionCriteria: '活動完成、宣傳留存、場務與收支交件。' }],
+    projects: [{ ...base, id: 'demo-project', title: '秋季交流活動（虛構示範）', objective: '練習把活動資料、宣傳與現場工作放在一起。', ownerEmail: DEMO_ACTORS[0].email, adviserEmail: DEMO_ACTORS[3].email, status: 'active', dueDate: day(21), completionCriteria: '活動做完，整理文案與照片；收支另按財務規則處理。' }],
     events: [{ ...base, id: 'demo-event', projectId: 'demo-project', title: '從研究到表達：交流工作坊（示範）', speaker: '示範講者', date: day(14), time: '18:30', venue: '示範教室 A', audience: '對研究與交流有興趣的同學', fee: '免費（示範）', registrationUrl: 'https://example.org/demo-registration', highlights: '用一張圖整理想法\n分組交換研究觀察\n帶走自己的簡報草稿', ownerEmail: DEMO_ACTORS[0].email, confirmationStatus: 'confirmed', sourceUrl: '', sourceDate: day(0), sourceRevision: '虛構示範 v1' }],
     posts: [{ ...base, id: 'demo-post', projectId: 'demo-project', eventId: 'demo-event', title: '工作坊首波宣傳（示範）', purpose: '讓同學了解活動內容並完成報名', audience: '初次參與的同學', highlights: '不需要先備知識；帶著一個問題來交流。', cta: '查看活動資訊並報名', channel: 'instagram', scheduledAt: `${day(3)}T12:00`, ownerEmail: DEMO_ACTORS[0].email, caption: '', slides: [], copyVersion: 1, stage: 'brief', sourceEventVersion: 1, unitReviewedVersion: null, approvedVersion: null, designCopyVersion: null }],
     tasks: [
-      { id: 'demo-task-1', title: '活動組｜確認講者與教室', ownerEmail: DEMO_ACTORS[0].email, status: 'done', dueDate: day(-1), acceptanceCriteria: '講者與場地皆已獲得確認', deliverableUrl: 'https://example.org/demo-confirmation' },
-      { id: 'demo-task-2', title: '行銷組｜完成貼文與分層設計', ownerEmail: DEMO_ACTORS[2].email, status: 'todo', dueDate: day(3), dependsOn: ['demo-task-1'], acceptanceCriteria: '當前文案版本通過終審，Canva 可編輯連結已交件' },
-      { id: 'demo-task-3', title: '資訊組｜測試投影與錄影', ownerEmail: '', status: 'unassigned', dueDate: day(12), acceptanceCriteria: '完成器材測試並附現場清單' },
-      { id: 'demo-task-4', title: '財務組｜整理活動預算', ownerEmail: DEMO_ACTORS[3].email, status: 'blocked', dueDate: day(2), blocker: '等候場地費用確認（示範）', acceptanceCriteria: '預算列有金額、用途與佐證' },
-      { id: 'demo-task-5', title: '公關組｜核對合作交付內容', ownerEmail: DEMO_ACTORS[0].email, status: 'doing', dueDate: day(4), acceptanceCriteria: '逐項登錄要求與確認證據' },
-      { id: 'demo-task-6', title: '管理組｜驗收活動紀錄', ownerEmail: DEMO_ACTORS[3].email, status: 'todo', dueDate: day(18), dependsOn: ['demo-task-2', 'demo-task-3', 'demo-task-4', 'demo-task-5'], acceptanceCriteria: '活動紀錄、宣傳網址及交付證據完整' },
+      { id: 'demo-task-1', title: '活動組｜確認講者與教室', ownerEmail: DEMO_ACTORS[0].email, status: 'done', dueDate: day(-1), acceptanceCriteria: '先和講者約好時間，再確認教室。', deliverableUrl: 'https://example.org/demo-confirmation' },
+      { id: 'demo-task-2', title: '行銷組｜完成貼文與分層設計', ownerEmail: DEMO_ACTORS[2].email, status: 'todo', dueDate: day(3), dependsOn: ['demo-task-1'], acceptanceCriteria: '文案看過 OK，貼上可編輯的 Canva 連結。' },
+      { id: 'demo-task-3', title: '資訊組｜測試投影與錄影', ownerEmail: '', status: 'unassigned', dueDate: day(12), acceptanceCriteria: '試播簡報、確認錄影；有問題寫在備註。' },
+      { id: 'demo-task-4', title: '財務組｜整理活動預算', ownerEmail: DEMO_ACTORS[3].email, status: 'blocked', dueDate: day(2), blocker: '等候場地費用確認（示範）', acceptanceCriteria: '列出預估金額與用途；實際核銷另走財務流程。' },
+      { id: 'demo-task-5', title: '公關組｜確認合作內容', ownerEmail: DEMO_ACTORS[0].email, status: 'doing', dueDate: day(4), acceptanceCriteria: '和合作方說好露出內容，重點留在備註。' },
+      { id: 'demo-task-6', title: '管理組｜整理活動紀錄', ownerEmail: DEMO_ACTORS[3].email, status: 'todo', dueDate: day(18), dependsOn: ['demo-task-2', 'demo-task-3', 'demo-task-4', 'demo-task-5'], acceptanceCriteria: '把活動照片、文字與宣傳連結整理在一起。' },
     ].map(task => ({ ...base, projectId: 'demo-project', eventId: 'demo-event', dependsOn: [], ...task })),
-    obligations: [{ ...base, id: 'demo-obligation', projectId: 'demo-project', eventId: 'demo-event', title: '合作露出檢查（虛構）', requirements: '發布前確認合作標示位置；現場照片於結案時交付。', channel: 'instagram', requiresSponsorReview: true, status: 'active', ownerEmail: DEMO_ACTORS[0].email, sourceUrl: '' }],
+    obligations: [{ ...base, id: 'demo-obligation', projectId: 'demo-project', eventId: 'demo-event', title: '合作露出提醒（虛構）', requirements: '發布前看看合作標示；活動後整理現場照片。', channel: 'instagram', requiresSponsorReview: true, status: 'active', ownerEmail: DEMO_ACTORS[0].email, sourceUrl: '' }],
     jobs: [], audit: [],
-    settings: { mode: 'demo', approverConfigured: true, designerConfigured: true, sources: [], integrations: { drafting: { status: 'demo', configured: false, message: '使用本機規則草稿；未呼叫 AI。' }, canva: { status: 'demo', configured: false, message: '展示模式不建立外部設計；可體驗交件與校對欄位。' }, sheets: { status: 'demo', configured: false, message: '可試用 CSV / TSV / JSON 匯入；資料只留在此瀏覽器。' } } },
+    settings: { mode: 'demo', approverConfigured: true, designerConfigured: true, sources: [], integrations: { drafting: { status: 'demo', configured: false, message: '用活動資料整理基本草稿；未呼叫外部 AI。' }, canva: { status: 'demo', configured: false, message: '練習貼上 Canva 連結；不會建立外部設計。' }, sheets: { status: 'demo', configured: false, message: '可練習 CSV / TSV / JSON 匯入；資料只留在此瀏覽器。' } } },
   });
 }
 export function loadDemo() {
@@ -74,14 +75,32 @@ export function performDemoAction(current, command) {
       state.tasks.push({ id: uuid(), version: 1, createdAt: now, updatedAt: now, title: `核對已發布資訊：${post.title}`, projectId: post.projectId, eventId: post.eventId, postId: post.id, ownerEmail: post.ownerEmail, status: 'todo', dependsOn: [], acceptanceCriteria: '核對已發布內容與最新資料，留下更正紀錄。' }); return;
     }
     if (post.canvaEditUrl) post.previousDesigns = [...(post.previousDesigns || []), { copyVersion: post.designCopyVersion, canvaEditUrl: post.canvaEditUrl, canvaDesignId: post.canvaDesignId || '' }];
-    post.copyVersion += 1; post.stage = 'needs_revision'; post.unitReviewedVersion = null; post.approvedVersion = null; post.approvedBy = null; post.approvedAt = null; post.designCopyVersion = null; post.designApprovedBy = null; post.sponsorApprovedVersion = null;
+    post.copyVersion += 1; post.stage = 'draft'; post.unitReviewedVersion = null; post.approvedVersion = null; post.approvedBy = null; post.approvedAt = null; post.designCopyVersion = null; post.designApprovedBy = null; post.sponsorApprovedVersion = null;
     delete post.canvaEditUrl; delete post.canvaDesignId;
+    delete post.completedAt; delete post.completedBy;
     post.sourceEventVersion = state.events.find(event => event.id === post.eventId)?.version || 0;
     state.jobs.filter(j => j.postId === post.id && !['succeeded', 'obsolete'].includes(j.status)).forEach(j => { j.status = 'obsolete'; touch(j); });
     touch(post);
   };
-  const confirmed = post => need(state.events.find(e => e.id === post.eventId)?.confirmationStatus === 'confirmed', '先確認活動日期、講者與地點，再繼續送審。');
-  const approved = post => need(post.approvedVersion === post.copyVersion, '這一版文案尚未通過終審。');
+  need(!isInactivePerson(state.people.find(person => person.email === actor.email)), '此帳號已不在現任幹部名單。');
+  if (kind === 'post' && record) need(record.stage !== 'published', '已發布紀錄保留原始證據，請另開新版文案。');
+  const approved = post => need(post.approvedVersion === post.copyVersion, '請先確認目前這一版文案。');
+  const eventType = value => { const type = value === undefined ? 'lecture' : value; need(Object.hasOwn(EVENT_TYPES, type), '活動類型請選擇講座／社課或一般活動。'); return type; };
+  const taskStatus = value => ({ unassigned: 'todo', accepted: 'todo', blocked: 'doing', delivered: 'done' })[value] || value || 'todo';
+  const importTaskStatus = value => ({ unassigned: 'todo', accepted: 'todo', blocked: 'doing', delivered: 'doing', '待辦': 'todo', '待開始': 'todo', '進行中': 'doing', '完成': 'done', '已完成': 'done' })[value] || value || 'todo';
+  const validatePeople = fields => {
+    for (const key of ['ownerPersonId', 'reviewerPersonId', 'adviserPersonId']) if (fields[key]) {
+      const person = personById(state.people, fields[key]); need(person && !isInactivePerson(person), '請選擇目前在任的幹部。');
+    }
+  };
+  const taskSnapshot = (task, name) => {
+    const { deliveryHistory, ...saved } = clone(task);
+    task.deliveryHistory ||= []; task.deliveryHistory.push({ ...saved, id: uuid(), action: name, actorEmail: actor.email, createdAt: now, taskVersion: task.version });
+  };
+  const completion = item => {
+    if (item.status === 'done') Object.assign(item, { completedAt: now, completedBy: actor.email, completionMode: 'member_recorded' });
+    else for (const key of ['completedAt', 'completedBy', 'completionMode']) delete item[key];
+  };
   const addJob = post => {
     const existing = state.jobs.find(j => j.postId === post.id && j.copyVersion === post.copyVersion && j.type === 'canva' && j.status !== 'obsolete');
     if (!existing) state.jobs.push({ id: uuid(), version: 1, postId: post.id, copyVersion: post.copyVersion, type: 'canva', status: 'blocked_configuration', attempts: 0, lastError: '展示模式沒有外部 Canva 連線，沒有建立設計。', createdAt: now, updatedAt: now });
@@ -108,6 +127,9 @@ export function performDemoAction(current, command) {
     const rows = [...(payload.events || []), ...(payload.posts || []), ...(payload.tasks || [])];
     need(rows.length > 0 && rows.length <= 200, '每次匯入 1–200 筆資料。');
     rows.forEach(row => need(row.title?.trim(), '每筆資料都需要標題。'));
+    for (const event of payload.events || []) eventType(event.eventType);
+    for (const task of payload.tasks || []) need(['todo', 'doing', 'done', 'cancelled'].includes(importTaskStatus(task.status)), '任務狀態不正確。');
+    rows.forEach(validatePeople);
     for (const post of payload.posts || []) need(state.events.some(event => event.id === post.eventId || post.eventSourceKey && event.sourceKey === post.eventSourceKey) || (payload.events || []).some(event => post.eventSourceKey && event.sourceKey === post.eventSourceKey), '每則宣傳需要有效的活動 ID 或活動來源鍵。');
     if (action === 'import.preview') return { state: current, result: { ok: true, record: { eventCount: (payload.events || []).length, postCount: (payload.posts || []).length, taskCount: (payload.tasks || []).length, message: '格式可匯入；活動與宣傳將以待確認草稿建立。' } } };
     need(isAdviser(actor), '請切換管理顧問示範身分後確認匯入。');
@@ -115,40 +137,38 @@ export function performDemoAction(current, command) {
       const sourceKey = row.sourceKey || `${row.sourceUrl || row.sourceLabel || 'manual'}:${row.title}:${row.date || row.dueDate || ''}:${row.eventId || row.eventSourceKey || ''}:${row.channel || ''}`;
       if (state[entity].some(item => item.sourceKey === sourceKey)) continue;
       const event = entity === 'posts' ? state.events.find(item => item.id === row.eventId || row.eventSourceKey && item.sourceKey === row.eventSourceKey) : null;
-      state[entity].push({ ...row, id: uuid(), version: 1, createdAt: now, updatedAt: now, sourceKey, ownerEmail: row.ownerEmail || '', createdByEmail: actor.email, ...(entity === 'events' ? { confirmationStatus: 'draft' } : entity === 'posts' ? { eventId: event.id, projectId: event.projectId, stage: 'brief', copyVersion: 1, sourceEventVersion: event.version, caption: row.caption || '', slides: row.slides || [], channel: row.channel || 'instagram' } : { status: row.ownerPersonId || row.ownerEmail ? 'todo' : 'unassigned', dependsOn: [], requiredForCompletion: true }) });
+      state[entity].push({ ...row, id: uuid(), version: 1, createdAt: now, updatedAt: now, sourceKey, ownerEmail: row.ownerEmail || '', ownerPersonId: row.ownerPersonId || '', createdByEmail: actor.email, ...(entity === 'events' ? { eventType: eventType(row.eventType), status: 'todo', confirmationStatus: 'draft' } : entity === 'posts' ? { eventId: event.id, projectId: event.projectId, stage: 'brief', copyVersion: 1, sourceEventVersion: event.version, caption: row.caption || '', slides: row.slides || [], channel: row.channel || 'instagram' } : { status: importTaskStatus(row.status), reviewerPersonId: row.reviewerPersonId || '', ...(importTaskStatus(row.status) === 'done' ? {completionMode:'imported_status'} : {}), dependsOn: row.dependsOn || [], requiredForCompletion: row.requiredForCompletion ?? false }) });
     }
     record = { id: 'import', version: 1, title: `${rows.length} 筆匯入資料` };
   } else if (action.endsWith('.create')) {
     need(payload.title?.trim(), '請填寫標題。');
+    validatePeople(payload);
     record = { ...payload, id: uuid(), version: 1, createdAt: now, updatedAt: now, ownerEmail: payload.ownerEmail || '', createdByEmail: actor.email };
-    if (kind === 'event') record.confirmationStatus = 'draft';
-    if (kind === 'task') { need(!['delivered', 'done'].includes(record.status), '請先建立任務，再交件與驗收。'); record.status = hasAssignee(record) ? record.status === 'unassigned' ? 'todo' : record.status || 'todo' : 'unassigned'; record.dependsOn ||= []; record.requiredForCompletion ??= true; }
+    if (kind === 'event') { record.eventType = eventType(record.eventType); record.status = 'todo'; record.confirmationStatus = 'draft'; }
+    if (kind === 'task') { record.status = taskStatus(record.status); need(['todo','doing','done','cancelled'].includes(record.status), '任務狀態不正確。'); record.dependsOn ||= []; record.requiredForCompletion ??= false; completion(record); }
     if (kind === 'post') { need(state.events.some(e => e.id === record.eventId), '請先選擇一個活動。'); Object.assign(record, { caption: payload.caption || '', slides: payload.slides || [], stage: payload.caption ? 'draft' : 'brief', copyVersion: 1, sourceEventVersion: state.events.find(e => e.id === record.eventId)?.version }); }
     state[collection].push(record);
   } else if (action.endsWith('.update')) {
-    owner();
+    if (!['task', 'event', 'post'].includes(kind)) owner();
+    validatePeople(payload);
+    if (kind === 'event' && payload.eventType !== undefined) eventType(payload.eventType);
     if (kind === 'post') { need(record.stage !== 'published', '已發布文案需另開修訂需求，保留原發布證據。'); invalidate(record); }
     if (kind === 'event' || kind === 'obligation') state.posts.filter(post => kind === 'event' ? post.eventId === record.id : (record.eventId ? post.eventId === record.eventId : post.projectId === record.projectId)).forEach(invalidate);
-    if (kind === 'project' && payload.status === 'completed') need(projectPendingTasks(record.id, state.tasks).length === 0, '結案必要任務尚未全部通過驗收。');
     if (kind === 'task') {
-      need(record.status !== 'done', '已驗收任務需先重新開啟。');
-      need(!['delivered', 'done'].includes(payload.status), '請使用交件與驗收動作。');
-      if (record.status === 'delivered') payload.status = 'doing';
+      taskSnapshot(record, 'task.before-update');
+      if (payload.status !== undefined) { payload.status = taskStatus(payload.status); need(['todo','doing','done','cancelled'].includes(payload.status), '任務狀態不正確。'); }
       const proposed = state.tasks.map(t => t.id === id ? { ...t, ...payload } : t);
       const check = (taskId, path = []) => { need(!path.includes(taskId), '任務不能形成循環依賴。'); const task = proposed.find(t => t.id === taskId); need(!!task, '找不到相依任務。'); for (const dependency of [...(task.dependsOn || []), ...(task.parentId ? [task.parentId] : [])]) check(dependency, [...path, taskId]); };
       check(id);
-      const status = payload.status || record.status;
-      if (['doing', 'delivered', 'done'].includes(status)) need((payload.dependsOn || record.dependsOn || []).every(dependency => state.tasks.find(t => t.id === dependency)?.status === 'done'), '前置任務尚未完成。');
-      if (['delivered', 'done'].includes(status)) need(/^https:\/\//.test(payload.deliverableUrl || record.deliverableUrl || ''), '交件與完成需要有效的 https 成果連結。');
-      if (status === 'blocked') need(payload.blocker || record.blocker, '請填寫卡點。');
+      if (payload.deliverableUrl) need(/^https:\/\//.test(payload.deliverableUrl), '成果連結需使用 https。');
     }
     Object.assign(record, payload);
-    if (kind === 'task' && !hasAssignee(record)) record.status = 'unassigned';
-    if (kind === 'event') record.confirmationStatus = record.confirmationStatus === 'confirmed' ? 'changed' : 'draft';
+    if (kind === 'task' && payload.status !== undefined) completion(record);
+    if (kind === 'event') record.confirmationStatus = ['confirmed', 'reviewed'].includes(record.confirmationStatus) ? 'changed' : 'draft';
     if (kind === 'post') record.stage = 'draft';
     touch(record);
+    if (kind === 'task') taskSnapshot(record, action);
   } else if (action === 'task.comment' || action === 'task.add-link') {
-    need(canOwn(actor,record,state.projects,state.people,state.tasks) || personById(state.people,record.reviewerPersonId)?.email === actor.email,'請由承辦人、驗收人或管理顧問補充。');
     if (action === 'task.comment') {
       need(typeof payload.text === 'string' && payload.text.trim() && payload.text.length <= 2000,'請填寫 2000 字以內的留言。');
       need(!payload.attachmentUrl || /^https:\/\//.test(payload.attachmentUrl),'補充連結需使用 https。');
@@ -159,52 +179,65 @@ export function performDemoAction(current, command) {
       record.links.push({id:uuid(),title:payload.title.trim(),url:payload.url,actorEmail:actor.email,createdAt:now});
     }
     touch(record);
-  } else if (action === 'task.deliver') {
-    owner(); need(!['done', 'delivered', 'cancelled'].includes(record.status), '目前任務不可交件。'); need(!taskDeliveryReason(record, state.tasks, state.people), taskDeliveryReason(record, state.tasks, state.people)); need(/^https:\/\//.test(payload.deliverableUrl || record.deliverableUrl || ''), '請填入有效的 https 成果連結。');
-    Object.assign(record, { status: 'delivered', deliverableUrl: payload.deliverableUrl || record.deliverableUrl, deliveredBy: actor.email, deliveredAt: now, returnReason: '' }); touch(record);
-  } else if (['task.accept-delivery', 'task.return-delivery', 'task.reopen'].includes(action)) {
-    const reviewer = personById(state.people, record.reviewerPersonId);
-    const personal = !isInactivePerson(reviewer) && !!reviewer?.email && reviewer.email === actor.email && (action !== 'task.accept-delivery' || record.deliveredBy !== actor.email);
-    need(personal || isAdviser(actor) || action === 'task.reopen' && canOwn(actor, record, state.projects, state.people), '請由指定驗收人或管理顧問操作。');
-    if (action === 'task.reopen') { need(['done', 'cancelled'].includes(record.status) && payload.reason?.trim(), '重新開啟需要已驗收或已取消任務與原因。'); record.status = 'todo'; record.returnReason = payload.reason; }
-    else {
-      need(record.status === 'delivered', '請先交件。');
-      if (action === 'task.return-delivery') { need(payload.reason?.trim(), '請填寫退回原因。'); record.status = 'doing'; record.returnReason = payload.reason; }
-      else { need(!taskDeliveryReason(record, state.tasks, state.people), taskDeliveryReason(record, state.tasks, state.people)); need(personal || payload.confirmedExternalReview && /^https:\/\//.test(payload.evidenceUrl || ''), '代登錄驗收需要驗收人確認與證據連結。'); Object.assign(record, { status: 'done', acceptedBy: actor.email, acceptedAt: now, acceptedReviewerPersonId: record.reviewerPersonId, reviewIdentityMode: personal ? 'individual_account' : 'recorded_external_review', reviewEvidenceUrl: personal ? '' : payload.evidenceUrl }); }
-    }
-    touch(record);
+  } else if (['task.set-status', 'task.deliver', 'task.submit', 'task.accept-delivery', 'task.return-delivery', 'task.reopen'].includes(action)) {
+    const status = action === 'task.set-status' ? payload.status : ['task.deliver', 'task.submit', 'task.accept-delivery'].includes(action) ? 'done' : 'todo';
+    need(['todo', 'doing', 'done'].includes(status), '任務進度請選擇待辦、進行中或完成。');
+    if (payload.deliverableUrl) need(/^https:\/\//.test(payload.deliverableUrl), '成果連結需使用 https。');
+    taskSnapshot(record, 'task.before-status-change'); record.status = status;
+    for (const key of ['deliveredAt', 'deliveredBy', 'acceptedAt', 'acceptedBy', 'acceptedReviewerPersonId', 'reviewIdentityMode', 'reviewEvidenceUrl', 'reviewComment']) delete record[key];
+    if (payload.deliverableUrl !== undefined) record.deliverableUrl = payload.deliverableUrl;
+    completion(record); touch(record); taskSnapshot(record, action);
+  } else if (action === 'event.set-status') {
+    need(['todo', 'doing', 'done'].includes(payload.status), '活動進度請選擇待辦、進行中或完成。');
+    record.progressHistory ||= []; record.progressHistory.push({ status: record.status || 'todo', completedAt: record.completedAt || '', completedBy: record.completedBy || '', actorEmail: actor.email, createdAt: now });
+    record.status = payload.status; completion(record); touch(record);
   } else if (action === 'post.restore-version') {
-    owner(); need(record.stage !== 'published', '已發布紀錄不能直接還原。'); const saved = record.history?.find(version => version.id === payload.historyId); need(saved, '找不到已保存版本。'); invalidate(record); for (const key of ['title', 'purpose', 'audience', 'highlights', 'cta', 'channel', 'caption', 'slides']) record[key] = clone(saved[key] ?? (key === 'slides' ? [] : '')); record.stage = 'draft';
+    need(record.stage !== 'published', '已發布紀錄不能直接還原。'); const saved = record.history?.find(version => version.id === payload.historyId); need(saved, '找不到已保存版本。'); invalidate(record); for (const key of ['title', 'purpose', 'audience', 'highlights', 'cta', 'channel', 'caption', 'slides']) record[key] = clone(saved[key] ?? (key === 'slides' ? [] : '')); record.stage = 'draft';
   } else if (action === 'event.confirm') {
-    owner(); need(record.date && record.speaker && record.venue, '需要日期、講者與地點才能確認。'); record.confirmationStatus = 'confirmed'; touch(record); state.posts.filter(post => post.eventId === record.id).forEach(invalidate);
+    record.confirmationStatus = eventMissingFacts(record).length ? 'reviewed' : 'confirmed'; record.reviewedAt = now; record.reviewedBy = actor.email; touch(record); state.posts.filter(post => post.eventId === record.id).forEach(invalidate);
   } else if (action === 'post.generate') {
-    owner(); need(!['published', 'ready'].includes(record.stage), '請先退回修訂再產生草稿。');
+    need(['brief', 'draft', 'needs_revision'].includes(record.stage), '請先撤回文案確認，再產生新版草稿。');
     const event = state.events.find(e => e.id === record.eventId); invalidate(record);
-    record.caption = `${event.title}\n\n${record.highlights || event.highlights || '請補上活動重點。'}\n\n日期｜${event.date || '待確認'} ${event.time || ''}\n地點｜${event.venue || '待確認'}\n講者｜${event.speaker || '待確認'}\n\n${record.cta || '查看活動資訊'}\n${event.registrationUrl || '報名連結待補'}`;
+    const speaker = eventSpeakerText(event);
+    record.caption = `${event.title}\n\n${record.highlights || event.highlights || '請補上活動重點。'}\n\n日期｜${event.date || '待確認'} ${event.time || ''}\n地點｜${event.venue || '待確認'}${speaker ? `\n講者／帶領者｜${speaker}` : ''}\n\n${record.cta || '查看活動資訊'}\n${event.registrationUrl || '報名連結待補'}`;
     record.slides = [{ heading: event.title, body: record.purpose || '活動介紹' }, { heading: '這次會帶走什麼', body: record.highlights || event.highlights || '請補上重點' }, { heading: '一起參與', body: `${event.date || '日期待確認'}｜${event.venue || '地點待確認'}\n${record.cta || '查看活動資訊'}` }];
     record.generationMethod = 'demo_rules'; record.stage = 'draft'; record.sourceEventVersion = event.version;
-  } else if (action === 'post.submit') {
-    owner(); confirmed(record); need(record.caption?.trim() && record.slides?.length, '請先填寫文案與輪播文字。'); need(['draft', 'needs_revision'].includes(record.stage), '目前不在可送審階段。'); record.stage = 'unit_review'; touch(record);
-  } else if (action === 'post.unit-review') {
-    need(canOwn(actor, record, state.projects, state.people) || canOwn(actor, state.events.find(event => event.id === record.eventId), state.projects, state.people), '請由活動負責人或顧問確認。'); confirmed(record); need(record.stage === 'unit_review', '目前不在單位確認階段。'); record.unitReviewedVersion = record.copyVersion; record.stage = 'approval'; touch(record);
-  } else if (action === 'post.approve') {
-    need(actor.canApprove, '請切換最終審核者示範身分。'); confirmed(record); need(record.stage === 'approval' && record.unitReviewedVersion === record.copyVersion, '需要當前版本的單位確認。'); Object.assign(record, { approvedVersion: record.copyVersion, approvedBy: actor.email, approvedAt: now }); addJob(record); touch(record);
-  } else if (action === 'post.reject') {
-    need(canOwn(actor, record, state.projects, state.people) || actor.canApprove || actor.canDesign, '目前身分不能退回這筆文案。'); need(payload.reason?.trim(), '請填寫退回原因。'); need(record.stage !== 'published', '已發布紀錄需另開修正任務。'); invalidate(record); record.rejectionReason = payload.reason;
+  } else if (['post.confirm', 'post.submit', 'post.unit-review', 'post.approve'].includes(action)) {
+    need(record.caption?.trim(), '請先填寫文案，再確認這一版內容。');
+    if (action === 'post.confirm' && record.approvedVersion === record.copyVersion) return { state: current, result: { ok: true, record } };
+    Object.assign(record, { approvedVersion: record.copyVersion, approvedBy: actor.email, approvedAt: now, sourceEventVersion: state.events.find(event => event.id === record.eventId)?.version, stage: 'approved' });
+    if (action === 'post.unit-review') record.unitReviewedVersion = record.copyVersion;
+    if (action === 'post.approve') addJob(record);
+    touch(record);
+  } else if (['post.unconfirm', 'post.reject'].includes(action)) {
+    invalidate(record); record.rejectionReason = payload.reason || '';
   } else if (action === 'post.request-design') {
-    approved(record); addJob(record); touch(record);
+    approved(record); delete record.completedAt; delete record.completedBy; addJob(record); touch(record);
   } else if (action === 'post.attach-design') {
-    need(actor.canDesign || isAdviser(actor), '請由行銷負責人或管理顧問登錄。'); approved(record);
     let url; try { url = new URL(payload.canvaEditUrl); } catch { /* validated below */ }
-    need(url?.protocol === 'https:' && (url.hostname === 'canva.com' || url.hostname.endsWith('.canva.com')), '請輸入有效的 https Canva 設計連結。');
-    Object.assign(record, { canvaEditUrl: url.href, canvaDesignId: payload.canvaDesignId || '', designCopyVersion: record.copyVersion, stage: 'design_review' }); touch(record);
+    need(url?.protocol === 'https:' && !url.username && !url.password && url.pathname !== '/' && (url.hostname === 'canva.com' || url.hostname.endsWith('.canva.com')), '請輸入有效的 https Canva 設計連結。');
+    Object.assign(record, { canvaEditUrl: url.href, canvaDesignId: payload.canvaDesignId || '', designCopyVersion: record.copyVersion, stage: record.stage === 'completed' ? 'completed' : record.approvedVersion === record.copyVersion ? 'approved' : 'draft' }); touch(record);
     for (const job of state.jobs.filter(job => job.postId === record.id && job.copyVersion === record.copyVersion && job.type === 'canva' && !['obsolete', 'succeeded'].includes(job.status))) { job.status = 'succeeded'; job.lastError = ''; job.result = { manual: true, canvaEditUrl: url.href }; touch(job); }
   } else if (action === 'post.design-review') {
-    need(actor.canDesign || isAdviser(actor), '請由行銷負責人或管理顧問校對。'); approved(record); need(record.designCopyVersion === record.copyVersion && record.stage === 'design_review', '請先登錄當前版本的設計。'); record.designApprovedBy = actor.email; record.stage = state.obligations.some(o => (o.eventId === record.eventId || (!o.eventId && o.projectId === record.projectId)) && o.requiresSponsorReview && o.status !== 'cancelled') ? 'sponsor_review' : 'ready'; touch(record);
+    record.designApprovedBy = actor.email; record.designApprovedAt = now; if (record.stage !== 'completed') record.stage = record.approvedVersion === record.copyVersion ? 'approved' : 'draft'; touch(record);
   } else if (action === 'post.sponsor-review') {
-    need(actor.canDesign || canOwn(actor, record, state.projects, state.people) || canOwn(actor, state.events.find(event => event.id === record.eventId), state.projects, state.people), '請由負責人或行銷人員記錄。'); need(record.stage === 'sponsor_review' && payload.confirmed && /^https:\/\//.test(payload.evidenceUrl || ''), '需要確認勾選與 https 證據連結。'); record.sponsorApprovedVersion = record.copyVersion; record.sponsorEvidenceUrl = payload.evidenceUrl; record.stage = 'ready'; touch(record);
-  } else if (action === 'post.publish') {
-    need(actor.canDesign || canOwn(actor, record, state.projects, state.people), '請由發布負責人登錄。'); approved(record); need(record.stage === 'ready' && /^https:\/\//.test(payload.publishedUrl || ''), '需要通過設計校對與有效的 https 發布連結。'); Object.assign(record, { publishedUrl: payload.publishedUrl, publishedAt: payload.publishedAt || now, stage: 'published' }); touch(record);
+    if (payload.evidenceUrl) need(/^https:\/\//.test(payload.evidenceUrl), '證據連結需使用 https。');
+    if (payload.confirmed) { record.sponsorApprovedVersion = record.copyVersion; record.sponsorEvidenceUrl = payload.evidenceUrl || ''; }
+    if (record.stage !== 'completed') record.stage = record.approvedVersion === record.copyVersion ? 'approved' : 'draft'; touch(record);
+  } else if (['post.complete', 'post.publish'].includes(action)) {
+    approved(record);
+    if (payload.canvaEditUrl) {
+      let url; try { url = new URL(payload.canvaEditUrl); } catch { /* validated below */ }
+      need(url?.protocol === 'https:' && !url.username && !url.password && url.pathname !== '/' && (url.hostname === 'canva.com' || url.hostname.endsWith('.canva.com')), '請輸入有效的 https Canva 設計連結。');
+      Object.assign(record, { canvaEditUrl: url.href, canvaDesignId: payload.canvaDesignId || '', designCopyVersion: record.copyVersion });
+    }
+    if (payload.publishedUrl) need(/^https:\/\//.test(payload.publishedUrl), '發布連結需使用 https。');
+    if (payload.publishedAt) need(!Number.isNaN(Date.parse(payload.publishedAt)) && Date.parse(payload.publishedAt) <= Date.parse(now) + 60000, '發布時間不可使用未來時間。');
+    const published = action === 'post.publish' || !!payload.publishedUrl;
+    Object.assign(record, { stage: published ? 'published' : 'completed', completedAt: now, completedBy: actor.email });
+    if (published) Object.assign(record, { publishedUrl: payload.publishedUrl || '', publishedAt: payload.publishedAt || now });
+    state.jobs.filter(job => job.postId === record.id && !['succeeded', 'obsolete'].includes(job.status)).forEach(job => { job.status = 'obsolete'; touch(job); });
+    touch(record);
   } else if (action === 'job.retry' || action === 'jobs.run') {
     need(isAdviser(actor), '請由管理顧問處理工作。');
     if (record) need(record.status !== 'needs_reconciliation', '先核對外部結果，不能直接重試。');

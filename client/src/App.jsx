@@ -39,9 +39,11 @@ function ProtectedRoute({ children }) {
 }
 
 export default function App() {
+    const location = useLocation();
+    const inWorkspace = /^\/ops(?:-demo)?(?:\/|$)/.test(location.pathname);
     return (
         <>
-            <Navbar />
+            {!inWorkspace && <Navbar />}
             <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route path="/achievements" element={<AchievementsPage />} />
