@@ -5,7 +5,7 @@ const { createOpsStore } = require('./store');
 const { OpsError, assert } = require('./errors');
 const { emails } = require('./auth');
 const { assertActorActive } = require('./people');
-const { executeAction, isAdvisor, find, touch, audit, relevantObligations, clearApproval, obsoleteJobs, httpsUrl, cleanFields, capturePostRevision } = require('./domain');
+const { executeAction, isAdvisor, find, touch, audit, relevantObligations, clearApproval, obsoleteJobs, eventMissingFacts, httpsUrl, cleanFields, capturePostRevision } = require('./domain');
 
 const SYSTEM = {email:'system@itrc.local',name:'工作台排程',role:'advisor',canApprove:false,canDesign:false};
 const safeError = error => {
@@ -44,6 +44,7 @@ function createOpsService({ db, store = createOpsStore(db), providers, env = pro
     assertActorActive(state,actor);
     return {
       actor, ...state,
+      events:state.events.map(event => ({...event,missingFacts:eventMissingFacts(event)})),
       settings:{
         mode:'live', integrations:provider().getIntegrationStatus(env),
         approverConfigured:emails(env.OPS_APPROVER_EMAILS).size > 0,
@@ -121,7 +122,7 @@ function createOpsService({ db, store = createOpsStore(db), providers, env = pro
       const job = state.jobs.find(item => item.id === jobId);
       if (!job) return null;
       const post = state.posts.find(item => item.id === job.postId);
-      if (!post || post.copyVersion !== job.copyVersion || (job.type === 'canva' && post.approvedVersion !== post.copyVersion) || (job.type === 'copy' && !['brief','draft','needs_revision'].includes(post.stage))) {
+      if (!post || ['completed','published'].includes(post.stage) || post.copyVersion !== job.copyVersion || (job.type === 'canva' && post.approvedVersion !== post.copyVersion) || (job.type === 'copy' && !['brief','draft','needs_revision'].includes(post.stage))) {
         if (['queued','running'].includes(job.status)) { job.status = 'obsolete'; touch(job,stamp); }
         return null;
       }
@@ -160,7 +161,7 @@ function createOpsService({ db, store = createOpsStore(db), providers, env = pro
       }
       const post = find(state,'posts',job.postId); const from = job.version;
       delete job.leaseUntil; delete job.claimToken;
-      if (post.copyVersion !== job.copyVersion || (job.type === 'copy' && (post.version !== job.expectedPostVersion || !['brief','draft','needs_revision'].includes(post.stage))) || (job.type === 'canva' && post.approvedVersion !== post.copyVersion)) {
+      if (['completed','published'].includes(post.stage) || post.copyVersion !== job.copyVersion || (job.type === 'copy' && (post.version !== job.expectedPostVersion || !['brief','draft','needs_revision'].includes(post.stage))) || (job.type === 'canva' && post.approvedVersion !== post.copyVersion)) {
         job.status = 'obsolete'; job.lastError = '工作執行期間內容已修改，保留結果供核對，不套用舊版。';
         if (result?.providerJobId) job.providerJobId = result.providerJobId;
         if (result?.canvaEditUrl) job.result = {canvaEditUrl:result.canvaEditUrl,canvaDesignId:result.canvaDesignId || ''};
@@ -181,7 +182,7 @@ function createOpsService({ db, store = createOpsStore(db), providers, env = pro
         job.status = 'succeeded'; job.result = {postId:post.id,copyVersion:post.copyVersion,generationMethod:post.generationMethod}; job.lastError = '';
       } else if (['success','succeeded'].includes(result.status) && result.canvaEditUrl) {
         httpsUrl(result.canvaEditUrl,'Canva 編輯網址',{canva:true,optional:false});
-        post.canvaEditUrl = result.canvaEditUrl; post.canvaDesignId = result.canvaDesignId || ''; post.designCopyVersion = job.copyVersion; post.stage = 'design_review'; touch(post,stamp);
+        post.canvaEditUrl = result.canvaEditUrl; post.canvaDesignId = result.canvaDesignId || ''; post.designCopyVersion = job.copyVersion; post.stage = 'approved'; touch(post,stamp);
         capturePostRevision(state,post,actor,stamp,'post.generated-design');
         job.status = 'succeeded'; job.result = {canvaEditUrl:post.canvaEditUrl,canvaDesignId:post.canvaDesignId}; job.lastError = '';
       } else if (['failed','failure'].includes(result.status)) {

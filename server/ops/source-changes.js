@@ -5,9 +5,9 @@ const { assert } = require('./errors');
 
 // These are review/export snapshots. The existing FileOS files remain authoritative.
 const SOURCE_FIELDS = {
-  events: ['title','speaker','date','time','venue','audience','fee','registrationUrl','highlights','ownerPersonId','confirmationStatus'],
-  posts: ['title','eventId','purpose','audience','highlights','cta','channel','scheduledAt','caption','slides','copyVersion','stage','approvedVersion','approvedAt','canvaEditUrl','designCopyVersion','publishedUrl','publishedAt','ownerPersonId'],
-  tasks: ['title','projectId','eventId','postId','ownerPersonId','reviewerPersonId','dueDate','status','acceptanceCriteria','deliverableUrl','acceptedAt','reviewIdentityMode','reviewEvidenceUrl'],
+  events: ['title','eventType','speaker','date','time','venue','audience','fee','registrationUrl','highlights','ownerPersonId','confirmationStatus','status','reviewedAt','completedAt'],
+  posts: ['title','eventId','purpose','audience','highlights','cta','channel','scheduledAt','caption','slides','copyVersion','stage','approvedVersion','approvedAt','canvaEditUrl','designCopyVersion','publishedUrl','publishedAt','completedAt','ownerPersonId'],
+  tasks: ['title','projectId','eventId','postId','ownerPersonId','reviewerPersonId','dueDate','status','notes','acceptanceCriteria','deliverableUrl','acceptedAt','reviewIdentityMode','reviewEvidenceUrl','completedAt','completionMode'],
 };
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 function text(value, label, limit = 2000) {

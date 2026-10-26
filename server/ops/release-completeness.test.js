@@ -72,24 +72,22 @@ test('revocation blocks bootstrap and cached idempotent replay even with a still
   assert.equal((await service.bootstrap(admin)).tasks.length,1);
 });
 
-test('task discussions and supplemental links preserve delivery evidence and reject unrelated authors', () => {
+test('current collaborators can discuss tasks while earlier completion evidence remains unchanged', () => {
   const f = fixture();
-  let task = f.call('task.create',{title:'成果驗收',ownerPersonId:roster[0].personId,reviewerPersonId:roster[1].personId,acceptanceCriteria:'文件完整且可讀'});
-  assert.throws(() => f.call('task.comment',{text:'無關人員不能寫'},task,stranger),{code:'OWNER_REQUIRED'});
+  let task = f.call('task.create',{title:'成果整理',ownerPersonId:roster[0].personId,reviewerPersonId:roster[1].personId});
+  task = f.call('task.comment',{text:'其他幹部補充現場資訊'},task,stranger);
+  assert.equal(task.comments[0].actorEmail,stranger.email);
   assert.throws(() => f.call('task.comment',{text:'',actorEmail:admin.email},task,owner),{code:'UNSUPPORTED_FIELD'});
   task = f.call('task.comment',{text:'已核對場地資料',attachmentUrl:'https://example.org/evidence'},task,reviewer);
-  assert.equal(task.comments[0].actorEmail,reviewer.email);
   assert.throws(() => f.call('task.add-link',{title:'不可執行',url:'javascript:alert(1)'},task,owner),{code:'INVALID_URL'});
   task = f.call('task.add-link',{title:'原始文件',url:'https://example.org/file-a'},task,owner);
   assert.throws(() => f.call('task.add-link',{title:'重複',url:'https://example.org/file-a'},task,owner),{code:'LINK_EXISTS'});
   task = f.call('task.deliver',{deliverableUrl:'https://example.org/result'},task,owner);
   const deliveredLinks = structuredClone(task.deliveryHistory.at(-1).links);
-  task = f.call('task.accept-delivery',{},task,reviewer);
-  task = f.call('task.add-link',{title:'後續補充',url:'https://example.org/file-b'},task,owner);
-  assert.equal(task.status,'done');
-  assert.equal(task.links.length,2);
+  task = f.call('task.add-link',{title:'後續補充',url:'https://example.org/file-b'},task,reviewer);
+  assert.equal(task.status,'done'); assert.equal(task.links.length,2);
   assert.deepEqual(task.deliveryHistory.find(row => row.action === 'task.deliver').links,deliveredLinks);
-  assert.equal(task.deliveryHistory.find(row => row.action === 'task.accept-delivery').links.length,1);
+  assert.equal(task.completedBy,owner.email);
 });
 
 test('source proposals capture a fixed workflow version and deduplicate identical pending work', () => {
@@ -162,7 +160,7 @@ test('lesson checklist previews are read-only, require confirmation, and repeate
   assert.throws(() => f.call('event.apply-checklist',{templateId:preview.templateId},f.event,owner),{code:'TEMPLATE_CONFIRMATION_REQUIRED'});
   const result = f.call('event.apply-checklist',{templateId:preview.templateId,confirmed:true},f.event,owner);
   assert.equal(result.created,8);
-  assert.ok(f.read().tasks.every(task => task.status === 'unassigned' && task.ownerEmail === '' && task.ownerPersonId === '' && task.reviewerPersonId === ''));
+  assert.ok(f.read().tasks.every(task => task.status === 'todo' && task.ownerEmail === '' && task.ownerPersonId === '' && task.reviewerPersonId === ''));
   const again = f.call('event.apply-checklist',{templateId:preview.templateId,confirmed:true},f.event,owner);
   assert.equal(again.created,0); assert.equal(again.skipped,8); assert.equal(f.read().tasks.length,8);
 });

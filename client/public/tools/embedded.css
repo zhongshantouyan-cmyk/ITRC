@@ -1,0 +1,26 @@
+/* Only remove the second application shell. Keep all tool controls, financial
+   tabs, permission gates, connection statuses, downloads and print styles. */
+html.itrc-embedded { --bg:#fff; --bg-2:#f7f9f8; --card:#fff; --line:#dfe5e5; --line-2:#eef1f1; --maxw:none; }
+html.itrc-embedded body { background:#fff; }
+html.itrc-embedded .sitebar,
+html.itrc-embedded header.itrc,
+html.itrc-embedded header.apphead h1,
+html.itrc-embedded header.apphead>.sub,
+html.itrc-embedded header.apphead>div>.sub,
+html.itrc-embedded header.apphead>.logo { display:none!important; }
+html.itrc-embedded header.apphead { background:#f7f9f8; color:#475d63; border-bottom:1px solid #e7eceb; padding:9px 16px; min-height:0; }
+html.itrc-embedded header.apphead::after { display:none; }
+html.itrc-embedded header.apphead .term { color:#475d63; margin-left:0; }
+html.itrc-embedded header.apphead .term input { background:#fff; color:#34474e; border-color:#ccd7da; }
+html.itrc-embedded header.apphead .who,
+html.itrc-embedded header.apphead .right { margin-left:auto; color:#475d63; }
+html.itrc-embedded header.apphead .conn,
+html.itrc-embedded header.apphead #certConn,
+html.itrc-embedded header.apphead #autosave { color:#59766d!important; }
+html.itrc-embedded .container { max-width:none; padding:18px 16px 35px; }
+html.itrc-embedded .wrap { max-width:none; margin-left:0; margin-right:0; }
+html.itrc-embedded #itrcCloudSession { font-size:12px!important; background:#f4f7f5!important; color:#52655d!important; border-color:#e2e9e4!important; }
+@media print {
+  html.itrc-embedded header.apphead,
+  html.itrc-embedded #itrcCloudSession { display:none!important; }
+}

@@ -4,16 +4,21 @@ const { LESSON_TEMPLATE_ID, lessonTasks } = require('./task-templates');
 const { executeSourceAction } = require('./source-changes');
 const { randomUUID, createHash } = require('node:crypto');
 const { assert, fail } = require('./errors');
-const { assertActorActive, person, personMatches, requirePerson, validatePersonReferences, normalizePeopleImport } = require('./people');
+const { assertActorActive, personMatches, validatePersonReferences, normalizePeopleImport } = require('./people');
 
 const FIELDS = {
   projects: ['title','objective','ownerEmail','ownerPersonId','adviserEmail','adviserPersonId','status','dueDate','completionCriteria'],
-  events: ['projectId','title','speaker','date','time','venue','audience','fee','registrationUrl','highlights','ownerEmail','ownerPersonId','sourceUrl','sourceLabel','sourceDate','sourceRevision','sourceKey'],
+  events: ['projectId','title','eventType','speaker','date','time','venue','audience','fee','registrationUrl','highlights','ownerEmail','ownerPersonId','sourceUrl','sourceLabel','sourceDate','sourceRevision','sourceKey'],
   obligations: ['projectId','eventId','title','requirements','channel','requiresSponsorReview','sourceUrl','status','ownerEmail','ownerPersonId','evidenceUrl'],
   posts: ['projectId','eventId','title','purpose','audience','highlights','cta','channel','scheduledAt','ownerEmail','ownerPersonId','caption','slides','sourceUrl','sourceLabel','sourceDate','sourceRevision','sourceKey'],
-  tasks: ['projectId','eventId','postId','title','ownerEmail','ownerPersonId','reviewerPersonId','requiredForCompletion','parentId','dependsOn','dueDate','status','blocker','deliverableUrl','acceptanceCriteria','sourceUrl','sourceLabel','sourceDate','sourceRevision','sourceKey'],
+  tasks: ['projectId','eventId','postId','title','ownerEmail','ownerPersonId','reviewerPersonId','requiredForCompletion','parentId','dependsOn','dueDate','status','notes','blocker','deliverableUrl','acceptanceCriteria','sourceUrl','sourceLabel','sourceDate','sourceRevision','sourceKey'],
 };
 const TASK_STATUS = new Set(['unassigned','accepted','todo','doing','blocked','delivered','done','cancelled']);
+const SIMPLE_TASK_STATUS = new Set(['todo','doing','done']);
+const COLLABORATIVE_KINDS = new Set(['events','posts','tasks']);
+const EVENT_TYPES = new Set(['lecture','activity']);
+const EVENT_TYPE_ALIASES = {'講座':'lecture','社課':'lecture','講座／社課':'lecture','一般活動':'activity','一般活動（競賽、參訪等）':'activity'};
+const IMPORT_TASK_STATUS = {unassigned:'todo',accepted:'todo',blocked:'doing',delivered:'doing','待辦':'todo','待開始':'todo','進行中':'doing','完成':'done','已完成':'done'};
 const COPY_FIELDS = new Set(['projectId','eventId','title','purpose','audience','highlights','cta','channel','caption','slides']);
 const ACTIVE_JOB_STATES = new Set(['queued','running','blocked_configuration','needs_reconciliation']);
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -49,6 +54,12 @@ function validDate(value) {
   const d = new Date(`${value}T00:00:00Z`);
   return !Number.isNaN(d.valueOf()) && d.toISOString().slice(0,10) === value;
 }
+function eventMissingFacts(event) {
+  return [!validDate(event?.date || '') && '日期', !event?.venue?.trim() && '地點', event?.eventType !== 'activity' && !event?.speaker?.trim() && '講者'].filter(Boolean);
+}
+function simpleTaskStatus(value) {
+  return ({unassigned:'todo',accepted:'todo',blocked:'doing',delivered:'done'})[value] || value;
+}
 function httpsUrl(value, name, {canva = false, optional = true} = {}) {
   if (!value && optional) return '';
   let url;
@@ -76,8 +87,10 @@ function cleanFields(kind, payload, { importing = false } = {}) {
     } else {
       assert(typeof value === 'string' || (key === 'fee' && typeof value === 'number'),400,'INVALID_FIELD',`${key}需填入文字。`);
       const text = String(value).trim();
-      assert(text.length <= (['caption','requirements','highlights','acceptanceCriteria','objective','completionCriteria'].includes(key) ? 12000 : 2000),400,'FIELD_TOO_LONG',`${key}內容太長。`);
+      assert(text.length <= (['caption','requirements','highlights','acceptanceCriteria','objective','completionCriteria','notes'].includes(key) ? 12000 : 2000),400,'FIELD_TOO_LONG',`${key}內容太長。`);
       cleaned[key] = key.endsWith('Email') ? text.toLowerCase() : text;
+      if (key === 'eventType' && importing) cleaned[key] = EVENT_TYPE_ALIASES[text] || text || 'lecture';
+      if (key === 'status' && kind === 'tasks' && importing) cleaned[key] = IMPORT_TASK_STATUS[text] || text || 'todo';
       if (key.endsWith('Email') && text) assert(EMAIL.test(text),400,'INVALID_EMAIL','請填入有效的負責人信箱。');
       if (key.endsWith('Url') && text) httpsUrl(text,key);
       if (['date','dueDate','sourceDate'].includes(key) && text) assert(validDate(text),400,'INVALID_DATE','日期請使用 YYYY-MM-DD。');
@@ -85,6 +98,7 @@ function cleanFields(kind, payload, { importing = false } = {}) {
     }
   }
   if (cleaned.title !== undefined) assert(cleaned.title.length > 0,400,'TITLE_REQUIRED','請填入標題。');
+  if (cleaned.eventType !== undefined) assert(EVENT_TYPES.has(cleaned.eventType),400,'INVALID_EVENT_TYPE','活動類型請選擇講座／社課或一般活動。');
   if (cleaned.channel) assert(['instagram','story','announcement','all'].includes(cleaned.channel) && (kind !== 'posts' || cleaned.channel !== 'all'),400,'INVALID_CHANNEL','宣傳渠道格式不正確。');
   if (kind === 'tasks' && cleaned.status) assert(TASK_STATUS.has(cleaned.status),400,'INVALID_STATUS','任務狀態不正確。');
   if (kind === 'projects' && cleaned.status) assert(['planning','active','on_hold','completed','cancelled'].includes(cleaned.status),400,'INVALID_STATUS','專案狀態不正確。');
@@ -92,8 +106,15 @@ function cleanFields(kind, payload, { importing = false } = {}) {
   if (!importing) assert(!('sourceKey' in cleaned),400,'SOURCE_KEY_RESERVED','來源識別由匯入流程管理。');
   return cleaned;
 }
-function references(state, kind, record) {
-  validatePersonReferences(state,record);
+function references(state, kind, record, previous) {
+  const assignments = {...record};
+  // Editing other facts must not require replacing a historical assignee who has left.
+  // New or changed assignments still require a current person and matching identity.
+  if (previous) for (const key of ['ownerPersonId','reviewerPersonId','adviserPersonId']) {
+    const emailKey = key.replace('PersonId','Email');
+    if (record[key] === previous[key] && record[emailKey] === previous[emailKey]) delete assignments[key];
+  }
+  validatePersonReferences(state,assignments);
   if (record.postId) {
     const post = find(state,'posts',record.postId);
     assert(!record.eventId || post.eventId === record.eventId,400,'REFERENCE_MISMATCH','任務連結的活動與宣傳不一致。');
@@ -131,55 +152,27 @@ function validateTaskGraph(state, candidate) {
     visiting.delete(id); visited.add(id);
   }
   for (const id of map.keys()) visit(id);
-  if (['doing','delivered','done'].includes(candidate.status)) {
-    assert((candidate.dependsOn || []).every(id => map.get(id)?.status === 'done'),409,'DEPENDENCY_BLOCKED','前置任務尚未完成，請先處理依賴項目。');
-    assert(candidate.ownerPersonId || candidate.ownerEmail,409,'TASK_UNASSIGNED','請先指派實際承辦人，再開始或交付任務。');
-  }
-  if (candidate.status === 'blocked') assert(candidate.blocker,400,'BLOCKER_REQUIRED','請說明卡關原因。');
-  if (['delivered','done'].includes(candidate.status)) {
-    assert(candidate.deliverableUrl,400,'DELIVERABLE_REQUIRED','交付或完成任務前，請附上成果網址。');
-    httpsUrl(candidate.deliverableUrl,'成果網址',{optional:false});
-  }
 }
 function canAssign(state, actor, record) {
   const project = projectOf(state,record);
   return isAdvisor(actor) || Boolean(project && canManage(state,actor,project));
 }
-function assertOpenProject(state, task) {
-  const project = projectOf(state,task);
-  assert(!project || !['completed','cancelled'].includes(project.status),409,'PROJECT_CLOSED','請先重新開啟專案，再新增或修改任務。');
-  const parent = state.tasks.find(row => row.id === task.parentId);
-  assert(!parent || !['done','cancelled'].includes(parent.status),409,'PARENT_TASK_CLOSED','請先重新開啟上層任務，再新增或修改子任務。');
-}
-function requireCompletedChildren(state, task) {
-  assert(state.tasks.filter(item => item.parentId === task.id && item.requiredForCompletion !== false).every(item => item.status === 'done'),409,'CHILD_TASKS_INCOMPLETE','必要子任務尚未驗收完成。取消必要子任務前，請由管理者確認是否移出結案要求。');
-}
-function requireProjectCompletion(state, project) {
-  assert(project.completionCriteria?.trim(),400,'PROJECT_CRITERIA_REQUIRED','結案前請填寫專案完成標準。');
-  const tasks = state.tasks.filter(task => task.projectId === project.id && task.requiredForCompletion !== false);
-  assert(tasks.every(task => task.status === 'done'),409,'PROJECT_TASKS_INCOMPLETE','必要任務尚未驗收完成，專案不能結案。');
-}
 function clearTaskReview(task) {
   for (const key of ['deliveredAt','deliveredBy','acceptedAt','acceptedBy','acceptedReviewerPersonId','reviewIdentityMode','reviewEvidenceUrl','reviewComment']) delete task[key];
 }
+function recordTaskProgress(task, actor, now) {
+  if (task.status === 'done') {
+    task.completedAt = now; task.completedBy = actor.email; task.completionMode = 'member_recorded';
+  } else {
+    for (const key of ['completedAt','completedBy','completionMode']) delete task[key];
+  }
+}
 function captureTaskDelivery(task, actor, now, action, extra = {}) {
   task.deliveryHistory ||= [];
-  task.deliveryHistory.push({id:randomUUID(),action,actorEmail:actor.email,createdAt:now,taskVersion:task.version,status:task.status,ownerPersonId:task.ownerPersonId || '',reviewerPersonId:task.reviewerPersonId || '',deliverableUrl:task.deliverableUrl || '',acceptanceCriteria:task.acceptanceCriteria || '',links:structuredClone(task.links || []),...extra});
+  const evidence = Object.fromEntries(['notes','deliveredAt','deliveredBy','acceptedAt','acceptedBy','acceptedReviewerPersonId','reviewIdentityMode','reviewEvidenceUrl','reviewComment','completedAt','completedBy','completionMode'].filter(key => task[key] !== undefined).map(key => [key,structuredClone(task[key])]));
+  task.deliveryHistory.push({id:randomUUID(),action,actorEmail:actor.email,createdAt:now,taskVersion:task.version,status:task.status,ownerPersonId:task.ownerPersonId || '',reviewerPersonId:task.reviewerPersonId || '',deliverableUrl:task.deliverableUrl || '',acceptanceCriteria:task.acceptanceCriteria || '',links:structuredClone(task.links || []),...evidence,...extra});
 }
-function taskReviewAuthority(state, task, actor, payload, {accepting = false} = {}) {
-  assert(task.reviewerPersonId,400,'TASK_REVIEWER_REQUIRED','請先指定驗收人。');
-  const reviewer = requirePerson(state,task.reviewerPersonId,'驗收人');
-  const owner = task.ownerPersonId ? requirePerson(state,task.ownerPersonId,'承辦人') : null;
-  assert(task.ownerPersonId !== task.reviewerPersonId && (!reviewer.email || reviewer.email !== (owner?.email || task.ownerEmail)),409,'INDEPENDENT_REVIEW_REQUIRED','承辦人與驗收人需要是不同人。');
-  if (personMatches(state,task.reviewerPersonId,actor) && (!accepting || actor.email !== task.deliveredBy)) return {reviewIdentityMode:'individual_account',reviewEvidenceUrl:''};
-  assert(isAdvisor(actor),403,'TASK_REVIEWER_REQUIRED','請由指定驗收人登入，或由社長／顧問登錄外部驗收結果。');
-  if (accepting) {
-    assert(payload.confirmedExternalReview === true,400,'EXTERNAL_REVIEW_CONFIRMATION_REQUIRED','共用帳號代登錄時，請確認指定驗收人已在外部完成驗收。');
-    httpsUrl(payload.evidenceUrl,'外部驗收證據',{optional:false});
-  }
-  return {reviewIdentityMode:'recorded_external_review',reviewEvidenceUrl:accepting ? payload.evidenceUrl : ''};
-}
-const HISTORY_FIELDS = ['title','purpose','audience','highlights','cta','channel','caption','slides','projectId','eventId','sourceUrl','sourceLabel','sourceDate','sourceRevision','sourceEventVersion','stage','generationMethod','unitReviewedVersion','unitReviewedBy','approvedVersion','approvedBy','approvedAt','designCopyVersion','canvaDesignId','canvaEditUrl','designApprovedBy','designApprovedAt','sponsorApprovedVersion','sponsorApprovedBy','sponsorEvidenceUrl','publishedUrl','publishedAt','revisionReason'];
+const HISTORY_FIELDS = ['title','purpose','audience','highlights','cta','channel','caption','slides','projectId','eventId','sourceUrl','sourceLabel','sourceDate','sourceRevision','sourceEventVersion','stage','generationMethod','unitReviewedVersion','unitReviewedBy','approvedVersion','approvedBy','approvedAt','designCopyVersion','canvaDesignId','canvaEditUrl','designApprovedBy','designApprovedAt','sponsorApprovedVersion','sponsorApprovedBy','sponsorEvidenceUrl','publishedUrl','publishedAt','completedAt','completedBy','revisionReason'];
 function capturePostRevision(state, post, actor, now, action) {
   const values = Object.fromEntries(HISTORY_FIELDS.filter(key => post[key] !== undefined).map(key => [key,structuredClone(post[key])]));
   const signature = createHash('sha256').update(JSON.stringify({copyVersion:post.copyVersion,postVersion:post.version,...values})).digest('hex');
@@ -194,14 +187,11 @@ function relevantObligations(state, post) {
   return state.obligations.filter(item => !['cancelled','waived'].includes(item.status) && (item.eventId ? item.eventId === post.eventId : item.projectId && item.projectId === projectId) && (!item.channel || item.channel === 'all' || item.channel === post.channel));
 }
 function requireFacts(state, post) {
-  const event = find(state,'events',post.eventId);
-  assert(event.confirmationStatus === 'confirmed',409,'EVENT_UNCONFIRMED','活動事實尚未確認，請先由活動負責人確認。');
-  assert(validDate(event.date || '') && event.speaker && event.venue,409,'EVENT_INCOMPLETE','活動需確認日期、講者與地點後才能送審。');
-  assert(post.sourceEventVersion === event.version,409,'SOURCE_CHANGED','活動資料已變更，請更新文案並重新送審。');
-  return event;
+  // Incomplete event details are shown as missing, never filled in or used as a review gate.
+  return find(state,'events',post.eventId);
 }
 function clearApproval(post) {
-  for (const key of ['unitReviewedVersion','unitReviewedBy','approvedVersion','approvedBy','approvedAt','designCopyVersion','designApprovedBy','designApprovedAt','sponsorApprovedVersion','sponsorApprovedBy','sponsorEvidenceUrl','canvaDesignId','canvaEditUrl']) delete post[key];
+  for (const key of ['unitReviewedVersion','unitReviewedBy','approvedVersion','approvedBy','approvedAt','designCopyVersion','designApprovedBy','designApprovedAt','sponsorApprovedVersion','sponsorApprovedBy','sponsorEvidenceUrl','canvaDesignId','canvaEditUrl','completedAt','completedBy']) delete post[key];
 }
 function obsoleteJobs(state, post, now) {
   for (const job of state.jobs.filter(item => item.postId === post.id && ACTIVE_JOB_STATES.has(item.status))) {
@@ -212,7 +202,7 @@ function invalidatePost(state, post, actor, now, reason, { incrementCopy = true,
   if (post.stage === 'published') {
     const dedupe = `${post.id}:${reason}`;
     if (!state.tasks.some(task => task.correctionKey === dedupe && task.status !== 'done' && task.status !== 'cancelled')) {
-      const task = newRecord({title:`檢查已發布內容：${post.title}`,projectId:post.projectId || '',eventId:post.eventId,postId:post.id,ownerEmail:post.ownerEmail || '',ownerPersonId:post.ownerPersonId || '',createdByEmail:actor.email,status:post.ownerPersonId || post.ownerEmail?'todo':'unassigned',dependsOn:[],requiredForCompletion:true,acceptanceCriteria:'核對公開內容；如需修正，另建新版宣傳並附修正證據。',blocker:reason,correctionKey:dedupe},now);
+      const task = newRecord({title:`檢查已發布內容：${post.title}`,projectId:post.projectId || '',eventId:post.eventId,postId:post.id,ownerEmail:post.ownerEmail || '',ownerPersonId:post.ownerPersonId || '',createdByEmail:actor.email,status:'todo',dependsOn:[],requiredForCompletion:false,notes:'核對公開內容；如需修正，另建新版宣傳。',blocker:reason,correctionKey:dedupe},now);
       state.tasks.push(task); audit(state,actor,'post.correction-required',task,0,now,reason);
     }
     return;
@@ -222,7 +212,7 @@ function invalidatePost(state, post, actor, now, reason, { incrementCopy = true,
   if (post.canvaEditUrl) post.previousDesigns = [...(post.previousDesigns || []),{copyVersion:post.designCopyVersion,canvaDesignId:post.canvaDesignId || '',canvaEditUrl:post.canvaEditUrl}];
   clearApproval(post);
   if (incrementCopy) post.copyVersion += 1;
-  post.stage = 'needs_revision'; post.revisionReason = reason;
+  post.stage = 'draft'; post.revisionReason = reason;
   const event = state.events.find(item => item.id === post.eventId);
   post.sourceEventVersion = event?.version || 0;
   touch(post,now); obsoleteJobs(state,post,now);
@@ -234,10 +224,6 @@ function enqueue(state, post, type, actor, now) {
   if (existing) return existing;
   const job = newRecord({postId:post.id,copyVersion:post.copyVersion,type,status:'queued',attempts:0,lastError:'',requestedBy:actor.email,expectedPostVersion:post.version},now);
   state.jobs.push(job); return job;
-}
-function canReviewUnit(state,actor,post) {
-  const event = state.events.find(item => item.id === post.eventId);
-  return canManage(state,actor,post) || (event && canManage(state,actor,event));
 }
 function normalizeImport(state, payload, actor, now) {
   assert(payload && typeof payload === 'object',400,'INVALID_IMPORT','請提供活動與任務陣列。');
@@ -267,8 +253,12 @@ function normalizeImport(state, payload, actor, now) {
         if (eventSourceKey) record.eventSourceKey = eventSourceKey;
         if (linked.id) record.eventId = linked.id;
       } else references(state,kind,record);
-      if (kind === 'events') record.confirmationStatus = 'draft';
-      if (kind === 'tasks') { record.status = record.ownerPersonId || record.ownerEmail ? 'todo' : 'unassigned'; record.requiredForCompletion ??= true; record.dependsOn = fields.dependsOn || []; assertOpenProject(state,record); validateTaskGraph(state,{...record,id:`import-${sourceKey}`}); }
+      if (kind === 'events') { record.eventType ||= 'lecture'; record.status = 'todo'; record.confirmationStatus = 'draft'; }
+      if (kind === 'tasks') {
+        record.status = fields.status || 'todo'; record.requiredForCompletion ??= false; record.dependsOn = fields.dependsOn || [];
+        if (record.status === 'done') record.completionMode = 'imported_status';
+        validateTaskGraph(state,{...record,id:`import-${sourceKey}`});
+      }
       preview[kind].push(record);
     }
   }
@@ -336,22 +326,19 @@ function executeAction(state, command, actor, now) {
     const fields = cleanFields(kind,payload);
     assert(fields.title,400,'TITLE_REQUIRED','請填入標題。');
     const ownerEmail = fields.ownerEmail ?? (kind === 'tasks' || fields.ownerPersonId !== undefined ? '' : actor.email);
-    if ((ownerEmail && ownerEmail !== actor.email) || (fields.ownerPersonId && !personMatches(state,fields.ownerPersonId,actor))) assert(canAssign(state,actor,fields),403,'ASSIGNMENT_REQUIRED','替他人指派工作需要專案負責人或顧問執行。');
+    if (!COLLABORATIVE_KINDS.has(kind) && ((ownerEmail && ownerEmail !== actor.email) || (fields.ownerPersonId && !personMatches(state,fields.ownerPersonId,actor)))) assert(canAssign(state,actor,fields),403,'ASSIGNMENT_REQUIRED','替他人指派工作需要專案負責人或顧問執行。');
     const record = newRecord({...fields,ownerEmail,createdByEmail:actor.email},now);
     references(state,kind,record);
-    if (record.projectId) requireManage(state,actor,find(state,'projects',record.projectId));
-    if (record.eventId) requireManage(state,actor,find(state,'events',record.eventId));
-    if (kind === 'tasks' && record.parentId) requireManage(state,actor,find(state,'tasks',record.parentId));
-    if (kind === 'events') record.confirmationStatus = 'draft';
-    if (kind === 'projects') { record.status ||= 'planning'; assert(record.status !== 'completed',400,'INVALID_INITIAL_STATUS','新專案需先建立及交付必要成果，再完成結案。'); }
+    if (!COLLABORATIVE_KINDS.has(kind) && record.projectId) requireManage(state,actor,find(state,'projects',record.projectId));
+    if (!COLLABORATIVE_KINDS.has(kind) && record.eventId) requireManage(state,actor,find(state,'events',record.eventId));
+    if (kind === 'events') { record.eventType ||= 'lecture'; record.status = 'todo'; record.confirmationStatus = 'draft'; }
+    if (kind === 'projects') record.status ||= 'planning';
     if (kind === 'obligations') record.status ||= 'pending';
     if (kind === 'tasks') {
-      record.status ||= record.ownerPersonId || record.ownerEmail ? 'todo' : 'unassigned';
-      if (!record.ownerPersonId && !record.ownerEmail && ['todo','accepted'].includes(record.status)) record.status = 'unassigned';
-      record.dependsOn ||= []; record.requiredForCompletion ??= true;
-      if (!record.requiredForCompletion) assert(canAssign(state,actor,record),403,'ASSIGNMENT_REQUIRED','移出必要結案項目需要專案負責人或顧問確認。');
-      assert(!['done','cancelled','delivered'].includes(record.status),400,'INVALID_INITIAL_STATUS','新任務需從待辦或進行中開始。');
-      assertOpenProject(state,record); validateTaskGraph(state,record);
+      record.status = simpleTaskStatus(record.status || 'todo');
+      record.dependsOn ||= []; record.requiredForCompletion ??= false;
+      validateTaskGraph(state,record);
+      if (record.status === 'done') recordTaskProgress(record,actor,now);
     }
     if (kind === 'posts') { record.copyVersion = 1; record.stage = fields.caption ? 'draft' : 'brief'; record.channel ||= 'instagram'; record.slides ||= []; record.caption ||= ''; record.sourceEventVersion = find(state,'events',record.eventId).version; }
     state[kind].push(record);
@@ -362,47 +349,32 @@ function executeAction(state, command, actor, now) {
   }
   const record = find(state,kind,id); versionCheck(record,expectedVersion); const from = record.version;
   if (operation === 'update') {
-    requireManage(state,actor,record);
+    if (!COLLABORATIVE_KINDS.has(kind)) requireManage(state,actor,record);
     const fields = cleanFields(kind,payload);
     assert(Object.keys(fields).length > 0,400,'EMPTY_UPDATE','沒有可更新的欄位。');
-    const candidate = {...record,...fields}; references(state,kind,candidate);
+    const candidate = {...record,...fields}; references(state,kind,candidate,record);
     if (candidate.projectId !== record.projectId || fields.projectId !== undefined) fields.projectId = candidate.projectId || '';
     if (candidate.eventId !== record.eventId) fields.eventId = candidate.eventId;
-    if (fields.projectId && fields.projectId !== record.projectId) requireManage(state,actor,find(state,'projects',fields.projectId));
-    if (fields.eventId && fields.eventId !== record.eventId) requireManage(state,actor,find(state,'events',fields.eventId));
-    if (kind === 'tasks' && fields.parentId && fields.parentId !== record.parentId) requireManage(state,actor,find(state,'tasks',fields.parentId));
+    if (!COLLABORATIVE_KINDS.has(kind) && fields.projectId && fields.projectId !== record.projectId) requireManage(state,actor,find(state,'projects',fields.projectId));
+    if (!COLLABORATIVE_KINDS.has(kind) && fields.eventId && fields.eventId !== record.eventId) requireManage(state,actor,find(state,'events',fields.eventId));
     if (kind === 'posts') assert(record.stage !== 'published',409,'PUBLISHED_IMMUTABLE','已發布內容保留原始證據；請建立新版貼文處理修正。');
     if (kind === 'tasks') {
-      assert(record.status !== 'done',409,'TASK_COMPLETED_IMMUTABLE','已驗收任務需先以原因重新開啟，不能直接覆寫交付紀錄。');
-      assert(!['delivered','done'].includes(fields.status) || fields.status === record.status,409,'TASK_REVIEW_ACTION_REQUIRED','請使用「交件」或「驗收通過」操作，不能直接把任務改成待驗收或完成。');
-      assertOpenProject(state,record); assertOpenProject(state,candidate);
-      if (candidate.projectId !== record.projectId && record.projectId) assert(canManage(state,actor,find(state,'projects',record.projectId)),403,'TASK_SCOPE_CHANGE_REQUIRED','移動或移除專案中的任務，需要原專案負責人或顧問確認。');
-      if (candidate.parentId !== record.parentId && record.parentId) assert(canManage(state,actor,find(state,'tasks',record.parentId)),403,'TASK_SCOPE_CHANGE_REQUIRED','移動或移除必要子任務，需要原上層任務負責人或顧問確認。');
-      if (['ownerEmail','ownerPersonId'].some(key => fields[key] !== undefined && fields[key] !== record[key])) {
-        const claimingSelf = !record.ownerPersonId && !record.ownerEmail && (personMatches(state,candidate.ownerPersonId,actor) || candidate.ownerEmail === actor.email);
-        const matchingLegacyOwner = !record.ownerPersonId && record.ownerEmail === actor.email && personMatches(state,candidate.ownerPersonId,actor);
-        const clearingOwnLegacyEmail = record.ownerPersonId && candidate.ownerPersonId === record.ownerPersonId && personMatches(state,record.ownerPersonId,actor) && fields.ownerEmail === '';
-        assert(canAssign(state,actor,record) || claimingSelf || matchingLegacyOwner || clearingOwnLegacyEmail,403,'ASSIGNMENT_REQUIRED','改派負責人需要專案負責人或顧問執行。');
-      }
-      if (fields.requiredForCompletion !== undefined && fields.requiredForCompletion !== (record.requiredForCompletion !== false)) assert(canAssign(state,actor,record),403,'ASSIGNMENT_REQUIRED','調整必要結案項目需要專案負責人或顧問確認。');
-      if (record.status === 'delivered' && (fields.status === undefined || fields.status === 'delivered')) candidate.status = fields.status = candidate.ownerPersonId || candidate.ownerEmail ? 'todo' : 'unassigned';
-      if (!candidate.ownerPersonId && !candidate.ownerEmail && ['todo','accepted','unassigned'].includes(candidate.status)) candidate.status = fields.status = 'unassigned';
-      else if ((candidate.ownerPersonId || candidate.ownerEmail) && candidate.status === 'unassigned') candidate.status = fields.status = 'todo';
+      if (fields.status !== undefined) candidate.status = fields.status = simpleTaskStatus(fields.status);
       validateTaskGraph(state,candidate);
     }
-    if (kind === 'projects' && candidate.status === 'completed') requireProjectCompletion(state,candidate);
     const changed = Object.keys(fields).filter(key => JSON.stringify(record[key]) !== JSON.stringify(fields[key]));
     if (!changed.length) return {ok:true,record};
     if (kind === 'posts') capturePostRevision(state,record,actor,now,'post.before-update');
     if (kind === 'events') for (const post of state.posts.filter(post => post.eventId === record.id && post.stage !== 'published')) capturePostRevision(state,post,actor,now,'event.before-update');
-    if (kind === 'tasks' && record.status === 'delivered') {
-      captureTaskDelivery(record,actor,now,'task.delivery-invalidated',{reason:'任務資料更新，需要重新交件。'});
-      clearTaskReview(record);
-    }
+    if (kind === 'tasks') captureTaskDelivery(record,actor,now,'task.before-update');
     const affectedBefore = kind === 'obligations' ? state.posts.filter(post => relevantObligations(state,post).some(item => item.id === record.id)).map(post => post.id) : [];
-    Object.assign(record,fields); touch(record,now);
+    const taskStatusChanged = kind === 'tasks' && fields.status !== undefined && fields.status !== record.status;
+    Object.assign(record,fields);
+    if (taskStatusChanged) { clearTaskReview(record); recordTaskProgress(record,actor,now); }
+    touch(record,now);
+    if (kind === 'tasks') captureTaskDelivery(record,actor,now,action);
     if (kind === 'events') {
-      record.confirmationStatus = record.confirmationStatus === 'confirmed' ? 'changed' : record.confirmationStatus;
+      record.confirmationStatus = ['confirmed','reviewed'].includes(record.confirmationStatus) ? 'changed' : record.confirmationStatus;
       for (const post of state.posts.filter(post => post.eventId === record.id)) invalidatePost(state,post,actor,now,'活動資料已變更，需要重新確認文案。');
     }
     if (kind === 'obligations' && changed.some(key => ['projectId','eventId','title','requirements','channel','requiresSponsorReview','sourceUrl'].includes(key) || (key === 'status' && (fields.status === 'cancelled' || !affectedBefore.length)))) {
@@ -414,6 +386,17 @@ function executeAction(state, command, actor, now) {
     }
     if (kind === 'posts') capturePostRevision(state,record,actor,now,action);
     audit(state,actor,action,record,from,now,`更新 ${changed.join('、')}`); return {ok:true,record};
+  }
+  if (entity === 'event' && operation === 'set-status') {
+    assert(Object.keys(payload).every(key => key === 'status'),400,'UNSUPPORTED_FIELD','活動進度只接受狀態欄位。');
+    assert(SIMPLE_TASK_STATUS.has(payload.status),400,'INVALID_STATUS','活動進度請選擇待辦、進行中或完成。');
+    if ((record.status || 'todo') === payload.status) return {ok:true,record};
+    record.progressHistory ||= [];
+    record.progressHistory.push({status:record.status || 'todo',completedAt:record.completedAt || '',completedBy:record.completedBy || '',actorEmail:actor.email,createdAt:now});
+    record.status = payload.status; recordTaskProgress(record,actor,now);
+    touch(record,now);
+    audit(state,actor,action,record,from,now,`活動進度：${({todo:'待辦',doing:'進行中',done:'完成'})[record.status]}；未變更活動事實。`);
+    return {ok:true,record};
   }
   if (entity === 'event' && ['preview-checklist','apply-checklist'].includes(operation)) {
     requireManage(state,actor,record);
@@ -434,13 +417,13 @@ function executeAction(state, command, actor, now) {
     return {ok:true,record:{created:created.length,skipped:existing.size,tasks:created}};
   }
   if (entity === 'event' && operation === 'confirm') {
-    requireManage(state,actor,record);
-    assert(validDate(record.date || '') && record.speaker && record.venue,400,'EVENT_INCOMPLETE','請先填妥日期、講者與場地。');
-    if (record.confirmationStatus === 'confirmed') return {ok:true,record};
+    const missing = eventMissingFacts(record);
+    const status = missing.length ? 'reviewed' : 'confirmed';
+    if (record.confirmationStatus === status && record.reviewedAt) return {ok:true,record};
     for (const post of state.posts.filter(post => post.eventId === record.id && post.stage !== 'published')) capturePostRevision(state,post,actor,now,'event.before-confirm');
-    record.confirmationStatus = 'confirmed'; touch(record,now);
+    record.confirmationStatus = status; record.reviewedAt = now; record.reviewedBy = actor.email; touch(record,now);
     for (const post of state.posts.filter(post => post.eventId === record.id)) invalidatePost(state,post,actor,now,'活動事實已確認，請核對新版活動資料。');
-    audit(state,actor,action,record,from,now,'確認活動日期、講者與地點'); return {ok:true,record};
+    audit(state,actor,action,record,from,now,missing.length ? `已看過目前活動資料；${missing.join('、')}仍待補，未代填事實。` : '已核對目前活動資料'); return {ok:true,record};
   }
   if (entity === 'event' && operation === 'cancel') {
     requireManage(state,actor,record);
@@ -452,7 +435,6 @@ function executeAction(state, command, actor, now) {
   }
   if (entity === 'task') {
     if (operation === 'comment' || operation === 'add-link') {
-      assert(canManage(state,actor,record) || personMatches(state,record.reviewerPersonId,actor),403,'OWNER_REQUIRED','請由承辦人、驗收人或管理顧問補充這項交付。');
       if (operation === 'comment') {
         assert(Object.keys(payload).every(key => ['text','attachmentUrl'].includes(key)),400,'UNSUPPORTED_FIELD','留言只接受內容與補充連結。');
         assert(typeof payload.text === 'string' && payload.text.trim() && payload.text.length <= 2000,400,'COMMENT_REQUIRED','留言需有內容，最多 2000 字。');
@@ -473,53 +455,26 @@ function executeAction(state, command, actor, now) {
       touch(record,now); audit(state,actor,action,record,from,now,operation === 'comment' ? '追加任務討論；保留既有交付及驗收證據。' : '追加補充連結；既有交付快照不被覆寫。');
       return {ok:true,record};
     }
-    assertOpenProject(state,record);
-    if (operation === 'deliver') {
-      requireManage(state,actor,record);
-      assert(['todo','accepted','doing','blocked'].includes(record.status),409,'INVALID_STAGE','任務需已指派並處於待辦或進行中，才能交件。');
-      assert(record.ownerPersonId || record.ownerEmail,409,'TASK_UNASSIGNED','請先指派實際承辦人。');
-      assert(record.acceptanceCriteria?.trim(),400,'ACCEPTANCE_CRITERIA_REQUIRED','交件前請填寫可核對的驗收標準。');
-      assert(record.reviewerPersonId,400,'TASK_REVIEWER_REQUIRED','交件前請指定驗收人。');
-      const reviewer = requirePerson(state,record.reviewerPersonId,'驗收人');
-      const owner = record.ownerPersonId ? requirePerson(state,record.ownerPersonId,'承辦人') : null;
-      assert(record.ownerPersonId !== record.reviewerPersonId && (!reviewer.email || reviewer.email !== (owner?.email || record.ownerEmail)),409,'INDEPENDENT_REVIEW_REQUIRED','承辦人與驗收人需要是不同人。');
-      const deliverableUrl = payload.deliverableUrl || record.deliverableUrl;
-      httpsUrl(deliverableUrl,'交付成果網址',{optional:false});
-      const candidate = {...record,status:'delivered',deliverableUrl};
-      validateTaskGraph(state,candidate); requireCompletedChildren(state,record);
-      clearTaskReview(record);
-      Object.assign(record,{status:'delivered',deliverableUrl,deliveredBy:actor.email,deliveredAt:now,blocker:''});
-      delete record.returnReason;
-      touch(record,now); captureTaskDelivery(record,actor,now,action);
-      audit(state,actor,action,record,from,now,'已交件，等待指定驗收人確認；尚未記為完成。');
-      return {ok:true,record};
-    }
-    if (operation === 'accept-delivery' || operation === 'return-delivery') {
-      assert(record.status === 'delivered',409,'INVALID_STAGE','只有已交件的任務可驗收或退回。');
-      const accepting = operation === 'accept-delivery';
-      const review = taskReviewAuthority(state,record,actor,payload,{accepting});
-      if (accepting) {
-        assert(record.acceptanceCriteria?.trim(),400,'ACCEPTANCE_CRITERIA_REQUIRED','請先補齊驗收標準並重新交件。');
-        validateTaskGraph(state,{...record,status:'done'}); requireCompletedChildren(state,record);
-        assert(payload.comment === undefined || (typeof payload.comment === 'string' && payload.comment.length <= 2000),400,'INVALID_COMMENT','驗收備註最多 2000 字。');
-        Object.assign(record,review,{status:'done',acceptedAt:now,acceptedBy:actor.email,acceptedReviewerPersonId:record.reviewerPersonId,reviewComment:payload.comment?.trim() || ''});
-        touch(record,now); captureTaskDelivery(record,actor,now,action,review);
-        audit(state,actor,action,record,from,now,review.reviewIdentityMode === 'individual_account' ? '指定驗收人以個人帳號確認成果。' : '社長／顧問代登錄指定驗收人的外部確認，已附證據；此為代登錄紀錄。');
-      } else {
-        assert(typeof payload.reason === 'string' && payload.reason.trim() && payload.reason.length <= 2000,400,'REASON_REQUIRED','請填寫退回修改的原因。');
-        record.status = 'todo'; record.returnReason = payload.reason.trim();
-        Object.assign(record,review); touch(record,now); captureTaskDelivery(record,actor,now,action,{...review,reason:record.returnReason});
-        audit(state,actor,action,record,from,now,record.returnReason);
+    if (['set-status','deliver','submit','accept-delivery','return-delivery','reopen'].includes(operation)) {
+      if (operation === 'set-status') assert(Object.keys(payload).every(key => key === 'status'),400,'UNSUPPORTED_FIELD','任務進度只接受狀態欄位。');
+      const status = operation === 'set-status' ? payload.status : ['deliver','submit','accept-delivery'].includes(operation) ? 'done' : 'todo';
+      assert(SIMPLE_TASK_STATUS.has(status),400,'INVALID_STATUS','任務進度請選擇待辦、進行中或完成。');
+      const extra = {};
+      for (const key of ['reason','comment']) if (payload[key] !== undefined) {
+        assert(typeof payload[key] === 'string' && payload[key].length <= 2000,400,'INVALID_COMMENT','備註最多 2000 字。');
+        extra[key] = payload[key].trim();
       }
+      if (payload.deliverableUrl !== undefined) { httpsUrl(payload.deliverableUrl,'成果連結'); extra.deliverableUrl = payload.deliverableUrl; }
+      if (payload.evidenceUrl !== undefined) { httpsUrl(payload.evidenceUrl,'補充證據'); extra.evidenceUrl = payload.evidenceUrl; }
+      if (record.status === status && Object.keys(extra).length === 0) return {ok:true,record};
+      captureTaskDelivery(record,actor,now,'task.before-status-change');
+      if (record.status !== status) clearTaskReview(record);
+      record.status = status;
+      if (extra.deliverableUrl !== undefined) record.deliverableUrl = extra.deliverableUrl;
+      recordTaskProgress(record,actor,now);
+      touch(record,now); captureTaskDelivery(record,actor,now,action,extra);
+      audit(state,actor,action,record,from,now,`任務進度：${({todo:'待辦',doing:'進行中',done:'完成'})[status]}；由 ${actor.email} 登錄。`);
       return {ok:true,record};
-    }
-    if (operation === 'reopen') {
-      assert(canManage(state,actor,record) || personMatches(state,record.reviewerPersonId,actor),403,'OWNER_REQUIRED','重新開啟任務需要負責人、驗收人或管理者。');
-      assert(['done','cancelled'].includes(record.status),409,'INVALID_STAGE','只有已完成或已取消任務需要重新開啟。');
-      assert(typeof payload.reason === 'string' && payload.reason.trim() && payload.reason.length <= 2000,400,'REASON_REQUIRED','請填寫重新開啟的原因。');
-      captureTaskDelivery(record,actor,now,'task.before-reopen',{reason:payload.reason.trim()});
-      clearTaskReview(record); record.status = record.ownerPersonId || record.ownerEmail ? 'todo' : 'unassigned'; record.reopenReason = payload.reason.trim();
-      touch(record,now); audit(state,actor,action,record,from,now,record.reopenReason); return {ok:true,record};
     }
     fail(400,'UNKNOWN_ACTION','不支援這項任務操作。');
   }
@@ -527,7 +482,6 @@ function executeAction(state, command, actor, now) {
   assert(record.stage !== 'published',409,'PUBLISHED_IMMUTABLE','已發布記錄不可重寫；請建立新版貼文。');
   switch (operation) {
     case 'restore-version': {
-      requireManage(state,actor,record);
       const historical = (record.history || []).find(item => item.id === payload.historyId);
       assert(historical,404,'HISTORY_NOT_FOUND','找不到要回復的文案版本。');
       capturePostRevision(state,record,actor,now,'post.before-restore');
@@ -537,65 +491,78 @@ function executeAction(state, command, actor, now) {
       capturePostRevision(state,record,actor,now,action); audit(state,actor,action,record,from,now,record.revisionReason); return {ok:true,record};
     }
     case 'generate': {
-      requireManage(state,actor,record);
       assert(['brief','draft','needs_revision'].includes(record.stage),409,'INVALID_STAGE','請先退回修改，再重新產生文案。');
       const job = enqueue(state,record,'copy',actor,now);
       audit(state,actor,action,job,0,now,'排入文案草稿產生工作'); return {ok:true,record:job};
     }
+    case 'confirm':
     case 'submit':
-      requireManage(state,actor,record);
-      assert(['draft','needs_revision'].includes(record.stage),409,'INVALID_STAGE','目前階段無法送出單位審核。');
-      assert(record.caption?.trim() && record.slides?.length,400,'COPY_REQUIRED','請先完成文案與輪播短文。');
-      requireFacts(state,record); record.stage = 'unit_review'; break;
     case 'unit-review':
-      assert(canReviewUnit(state,actor,record),403,'UNIT_REVIEWER_REQUIRED','請由活動負責人或顧問確認內容。');
-      assert(record.stage === 'unit_review',409,'INVALID_STAGE','這篇貼文尚未進入單位審核。');
-      requireFacts(state,record); record.unitReviewedVersion = record.copyVersion; record.unitReviewedBy = actor.email; record.stage = 'approval'; break;
-    case 'approve':
-      assert(actor.canApprove,403,'FINAL_APPROVER_REQUIRED','只有指定的最終審核人能核准這一版文案。');
-      assert(record.stage === 'approval' && record.unitReviewedVersion === record.copyVersion,409,'INVALID_STAGE','請先完成目前版本的單位審核。');
-      requireFacts(state,record); record.approvedVersion = record.copyVersion; record.approvedBy = actor.email; record.approvedAt = now; record.stage = 'design_pending';
-      touch(record,now); capturePostRevision(state,record,actor,now,action); enqueue(state,record,'canva',actor,now); audit(state,actor,action,record,from,now,`核准文案第 ${record.copyVersion} 版並排入設計工作`); return {ok:true,record};
+    case 'approve': {
+      assert(record.caption?.trim(),400,'COPY_REQUIRED','請先填寫文案，再確認這一版內容。');
+      if (operation === 'confirm' && record.approvedVersion === record.copyVersion) return {ok:true,record};
+      const event = requireFacts(state,record);
+      record.approvedVersion = record.copyVersion; record.approvedBy = actor.email; record.approvedAt = now;
+      record.sourceEventVersion = event.version;
+      if (operation === 'unit-review') { record.unitReviewedVersion = record.copyVersion; record.unitReviewedBy = actor.email; }
+      // Old clients used approve to enqueue a design. New clients request it explicitly.
+      record.stage = operation === 'approve' ? 'design_pending' : 'approved';
+      touch(record,now); capturePostRevision(state,record,actor,now,action);
+      if (operation === 'approve') enqueue(state,record,'canva',actor,now);
+      audit(state,actor,action,record,from,now,`已確認文案第 ${record.copyVersion} 版；未填的活動資料仍待補。`);
+      return {ok:true,record};
+    }
+    case 'unconfirm':
     case 'reject':
-      assert(canReviewUnit(state,actor,record) || actor.canApprove || actor.canDesign,403,'REVIEWER_REQUIRED','這項操作需要負責人或審核人執行。');
-      assert(typeof payload.reason === 'string' && payload.reason.trim().length > 0 && payload.reason.length <= 2000,400,'REASON_REQUIRED','請說明需要修改的原因。');
-      invalidatePost(state,record,actor,now,payload.reason.trim(),{incrementCopy:false}); return {ok:true,record};
+      assert(payload.reason === undefined || (typeof payload.reason === 'string' && payload.reason.length <= 2000),400,'INVALID_COMMENT','備註最多 2000 字。');
+      invalidatePost(state,record,actor,now,payload.reason?.trim() || '撤回文案確認，回到草稿。');
+      audit(state,actor,action,record,from,now,'撤回目前文案確認；尚未完成的設計工作已作廢。');
+      return {ok:true,record};
     case 'request-design': {
-      assert(canManage(state,actor,record) || actor.canDesign || actor.canApprove,403,'DESIGNER_REQUIRED','請由負責人或行銷人員安排設計。');
-      requireFacts(state,record); assert(record.approvedVersion === record.copyVersion,409,'APPROVAL_REQUIRED','只有已核准的目前版本能產生設計。');
-      const job = enqueue(state,record,'canva',actor,now); return {ok:true,record:job};
+      requireFacts(state,record); assert(record.approvedVersion === record.copyVersion,409,'APPROVAL_REQUIRED','先確認目前這一版文案，即可產生設計。');
+      if (record.stage === 'completed') { delete record.completedAt; delete record.completedBy; }
+      record.stage = 'approved'; touch(record,now);
+      const job = enqueue(state,record,'canva',actor,now);
+      capturePostRevision(state,record,actor,now,action); audit(state,actor,action,record,from,now,'依目前已確認的文案建立設計工作。');
+      return {ok:true,record:job};
     }
     case 'attach-design':
-      assert(actor.canDesign || isAdvisor(actor),403,'DESIGNER_REQUIRED','設計交付需要指定的行銷負責人或顧問執行。');
-      requireFacts(state,record); assert(record.approvedVersion === record.copyVersion,409,'APPROVAL_REQUIRED','文案目前版本尚未核准。');
       httpsUrl(payload.canvaEditUrl,'Canva 編輯網址',{canva:true,optional:false});
       assert(!payload.canvaDesignId || (typeof payload.canvaDesignId === 'string' && /^[A-Za-z0-9_-]{3,100}$/.test(payload.canvaDesignId)),400,'INVALID_DESIGN_ID','Canva 設計識別碼不正確。');
-      record.canvaEditUrl = payload.canvaEditUrl; record.canvaDesignId = payload.canvaDesignId || ''; record.designCopyVersion = record.copyVersion; record.stage = 'design_review';
+      capturePostRevision(state,record,actor,now,'post.before-attached-design');
+      if (record.canvaEditUrl && record.canvaEditUrl !== payload.canvaEditUrl) record.previousDesigns = [...(record.previousDesigns || []),{copyVersion:record.designCopyVersion,canvaDesignId:record.canvaDesignId || '',canvaEditUrl:record.canvaEditUrl}];
+      record.canvaEditUrl = payload.canvaEditUrl; record.canvaDesignId = payload.canvaDesignId || ''; record.designCopyVersion = record.copyVersion;
+      if (record.stage !== 'completed') record.stage = record.approvedVersion === record.copyVersion ? 'approved' : 'draft';
       delete record.designApprovedBy; delete record.sponsorApprovedVersion;
       for (const job of state.jobs.filter(job => job.postId === record.id && job.copyVersion === record.copyVersion && job.type === 'canva' && job.status !== 'obsolete')) { job.status = 'succeeded'; job.result = {canvaEditUrl:record.canvaEditUrl,canvaDesignId:record.canvaDesignId,manual:true}; job.lastError = ''; touch(job,now); }
       break;
     case 'design-review':
-      assert(actor.canDesign || isAdvisor(actor),403,'DESIGNER_REQUIRED','設計完稿需要指定的行銷負責人或顧問確認。');
-      requireFacts(state,record); assert(record.stage === 'design_review' && record.designCopyVersion === record.copyVersion && record.approvedVersion === record.copyVersion && record.canvaEditUrl,409,'DESIGN_REVIEW_REQUIRED','請先交付與核准文案一致的 Canva 設計。');
       record.designApprovedBy = actor.email; record.designApprovedAt = now;
-      record.stage = relevantObligations(state,record).some(item => item.requiresSponsorReview) ? 'sponsor_review' : 'ready'; break;
+      if (record.stage !== 'completed') record.stage = record.approvedVersion === record.copyVersion ? 'approved' : 'draft'; break;
     case 'sponsor-review':
-      assert(canReviewUnit(state,actor,record) || actor.canDesign || isAdvisor(actor),403,'REVIEWER_REQUIRED','請由負責人或行銷人員記錄贊助方確認。');
-      requireFacts(state,record); assert(record.stage === 'sponsor_review' && record.designCopyVersion === record.copyVersion && record.approvedVersion === record.copyVersion && record.designApprovedBy,409,'INVALID_STAGE','這篇貼文目前不在贊助方審核階段。');
-      assert(payload.confirmed === true,400,'CONFIRMATION_REQUIRED','請確認已取得贊助方同意。'); httpsUrl(payload.evidenceUrl,'贊助方確認證據',{optional:false});
-      record.sponsorApprovedVersion = record.copyVersion; record.sponsorApprovedBy = actor.email; record.sponsorEvidenceUrl = payload.evidenceUrl; record.stage = 'ready'; break;
-    case 'publish':
-      assert(canManage(state,actor,record) || actor.canDesign || isAdvisor(actor),403,'PUBLISHER_REQUIRED','發布紀錄需要負責人或行銷人員填寫。');
-      requireFacts(state,record);
-      assert(record.stage === 'ready' && record.approvedVersion === record.copyVersion && record.unitReviewedVersion === record.copyVersion && record.designCopyVersion === record.copyVersion && record.designApprovedBy,409,'NOT_READY','目前版本尚未完成所有審核。');
-      assert(!relevantObligations(state,record).some(item => item.requiresSponsorReview) || record.sponsorApprovedVersion === record.copyVersion,409,'SPONSOR_REVIEW_REQUIRED','請先記錄贊助方確認。');
-      httpsUrl(payload.publishedUrl,'發布證據網址',{optional:false});
-      assert(typeof payload.publishedAt === 'string' && !Number.isNaN(Date.parse(payload.publishedAt)) && Date.parse(payload.publishedAt) <= Date.parse(now) + 60000,400,'INVALID_DATE','請填入實際發布時間，不能使用未來時間。');
-      record.publishedUrl = payload.publishedUrl; record.publishedAt = new Date(payload.publishedAt).toISOString(); record.stage = 'published'; break;
+      if (payload.evidenceUrl) httpsUrl(payload.evidenceUrl,'贊助方確認證據');
+      if (payload.confirmed === true) { record.sponsorApprovedVersion = record.copyVersion; record.sponsorApprovedBy = actor.email; record.sponsorEvidenceUrl = payload.evidenceUrl || ''; }
+      if (record.stage !== 'completed') record.stage = record.approvedVersion === record.copyVersion ? 'approved' : 'draft'; break;
+    case 'complete':
+    case 'publish': {
+      assert(record.approvedVersion === record.copyVersion,409,'APPROVAL_REQUIRED','先確認目前這一版文案，再標記完成。');
+      if (payload.canvaEditUrl) {
+        httpsUrl(payload.canvaEditUrl,'Canva 編輯網址',{canva:true,optional:false});
+        assert(!payload.canvaDesignId || (typeof payload.canvaDesignId === 'string' && /^[A-Za-z0-9_-]{3,100}$/.test(payload.canvaDesignId)),400,'INVALID_DESIGN_ID','Canva 設計識別碼不正確。');
+        record.canvaEditUrl = payload.canvaEditUrl; record.canvaDesignId = payload.canvaDesignId || ''; record.designCopyVersion = record.copyVersion;
+      }
+      if (payload.publishedUrl) httpsUrl(payload.publishedUrl,'發布連結');
+      if (payload.publishedAt) assert(typeof payload.publishedAt === 'string' && !Number.isNaN(Date.parse(payload.publishedAt)) && Date.parse(payload.publishedAt) <= Date.parse(now) + 60000,400,'INVALID_DATE','發布時間不可使用未來時間。');
+      const published = operation === 'publish' || Boolean(payload.publishedUrl);
+      record.stage = published ? 'published' : 'completed'; record.completedAt = now; record.completedBy = actor.email;
+      if (published) { record.publishedUrl = payload.publishedUrl || ''; record.publishedAt = payload.publishedAt ? new Date(payload.publishedAt).toISOString() : now; }
+      obsoleteJobs(state,record,now);
+      break;
+    }
     default: fail(400,'UNKNOWN_ACTION','不支援這項操作。');
   }
   touch(record,now); capturePostRevision(state,record,actor,now,action); audit(state,actor,action,record,from,now,`${action}（文案第 ${record.copyVersion} 版）`);
   return {ok:true,record};
 }
 
-module.exports = { executeAction, isAdvisor, canManage, find, versionCheck, newRecord, touch, audit, relevantObligations, clearApproval, obsoleteJobs, requireFacts, httpsUrl, cleanFields, capturePostRevision };
+module.exports = { executeAction, isAdvisor, canManage, find, versionCheck, newRecord, touch, audit, relevantObligations, clearApproval, obsoleteJobs, requireFacts, eventMissingFacts, httpsUrl, cleanFields, capturePostRevision };
