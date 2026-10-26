@@ -1,17 +1,114 @@
 {
-    "functions": {
-        "api/ops.js": {
-            "maxDuration": 60
-        }
+  "functions": {
+    "api/ops.js": {
+      "maxDuration": 60
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/ops/:path*",
+      "destination": "/api/ops?path=:path*"
     },
-    "rewrites": [
-        {
-            "source": "/api/ops/:path*",
-            "destination": "/api/ops?path=:path*"
-        },
-        {
-            "source": "/((?!assets/|images/|.*\\..*).*)",
-            "destination": "/index.html"
-        }
-    ]
+    {
+      "source": "/((?!assets/|images/|.*\\..*).*)",
+      "destination": "/index.html"
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/tools/index.html",
+      "destination": "/ops",
+      "permanent": false
+    },
+    {
+      "source": "/ITRC財務站.html",
+      "destination": "/ops?tool=finance",
+      "permanent": false
+    },
+    {
+      "source": "/tools/ITRC財務站.html",
+      "destination": "/ops?tool=finance",
+      "permanent": false
+    },
+    {
+      "source": "/ITRC活動組-講師池排程.html",
+      "destination": "/ops?tool=speakers",
+      "permanent": false
+    },
+    {
+      "source": "/tools/ITRC活動組-講師池排程.html",
+      "destination": "/ops?tool=speakers",
+      "permanent": false
+    },
+    {
+      "source": "/ITRC公關拉贊助小幫手.html",
+      "destination": "/ops?tool=sponsors",
+      "permanent": false
+    },
+    {
+      "source": "/tools/ITRC公關拉贊助小幫手.html",
+      "destination": "/ops?tool=sponsors",
+      "permanent": false
+    },
+    {
+      "source": "/ITRC圖文小幫手.html",
+      "destination": "/ops?tool=marketing",
+      "permanent": false
+    },
+    {
+      "source": "/tools/ITRC圖文小幫手.html",
+      "destination": "/ops?tool=marketing",
+      "permanent": false
+    },
+    {
+      "source": "/ITRC證書產生器.html",
+      "destination": "/ops?tool=certificates",
+      "permanent": false
+    },
+    {
+      "source": "/tools/ITRC證書產生器.html",
+      "destination": "/ops?tool=certificates",
+      "permanent": false
+    },
+    {
+      "source": "/ITRC管理組-幹部與權限.html",
+      "destination": "/ops?tool=permissions",
+      "permanent": false
+    },
+    {
+      "source": "/tools/ITRC管理組-幹部與權限.html",
+      "destination": "/ops?tool=permissions",
+      "permanent": false
+    },
+    {
+      "source": "/ITRC資訊組維護手冊.html",
+      "destination": "/ops?tool=maintenance",
+      "permanent": false
+    },
+    {
+      "source": "/tools/ITRC資訊組維護手冊.html",
+      "destination": "/ops?tool=maintenance",
+      "permanent": false
+    },
+    {
+      "source": "/使用說明.html",
+      "destination": "/ops?tool=help",
+      "permanent": false
+    },
+    {
+      "source": "/tools/使用說明.html",
+      "destination": "/ops?tool=help",
+      "permanent": false
+    },
+    {
+      "source": "/ITRC管理組-任務看板.html",
+      "destination": "/ops?view=tasks&source=legacy",
+      "permanent": false
+    },
+    {
+      "source": "/tools/ITRC管理組-任務看板.html",
+      "destination": "/ops?view=tasks&source=legacy",
+      "permanent": false
+    }
+  ]
 }
