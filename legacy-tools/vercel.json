@@ -1,0 +1,59 @@
+{
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "https://nsysu-itrc.vercel.app/ops",
+      "permanent": false
+    },
+    {
+      "source": "/index.html",
+      "destination": "https://nsysu-itrc.vercel.app/ops",
+      "permanent": false
+    },
+    {
+      "source": "/ITRC財務站.html",
+      "destination": "https://nsysu-itrc.vercel.app/ops?tool=finance",
+      "permanent": false
+    },
+    {
+      "source": "/ITRC活動組-講師池排程.html",
+      "destination": "https://nsysu-itrc.vercel.app/ops?tool=speakers",
+      "permanent": false
+    },
+    {
+      "source": "/ITRC公關拉贊助小幫手.html",
+      "destination": "https://nsysu-itrc.vercel.app/ops?tool=sponsors",
+      "permanent": false
+    },
+    {
+      "source": "/ITRC圖文小幫手.html",
+      "destination": "https://nsysu-itrc.vercel.app/ops?tool=marketing",
+      "permanent": false
+    },
+    {
+      "source": "/ITRC證書產生器.html",
+      "destination": "https://nsysu-itrc.vercel.app/ops?tool=certificates",
+      "permanent": false
+    },
+    {
+      "source": "/ITRC管理組-幹部與權限.html",
+      "destination": "https://nsysu-itrc.vercel.app/ops?tool=permissions",
+      "permanent": false
+    },
+    {
+      "source": "/ITRC資訊組維護手冊.html",
+      "destination": "https://nsysu-itrc.vercel.app/ops?tool=maintenance",
+      "permanent": false
+    },
+    {
+      "source": "/使用說明.html",
+      "destination": "https://nsysu-itrc.vercel.app/ops?tool=help",
+      "permanent": false
+    },
+    {
+      "source": "/ITRC管理組-任務看板.html",
+      "destination": "https://nsysu-itrc.vercel.app/ops?view=tasks&source=legacy",
+      "permanent": false
+    }
+  ]
+}

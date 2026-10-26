@@ -1,16 +1,18 @@
 const express = require('express');
 const db = require('../db');
+const { publicSectionSearchRows } = require('../public-content');
 
 const router = express.Router();
 
 // GET /api/search?q=keyword
 router.get('/', async (req, res) => {
     const { q } = req.query;
-    if (!q || q.trim().length === 0) {
+    if (typeof q !== 'string' || q.trim().length === 0) {
         return res.json({ results: [] });
     }
 
-    const keyword = `%${q.trim()}%`;
+    const query = q.trim().slice(0, 200);
+    const keyword = `%${query}%`;
 
     try {
         const [
@@ -37,14 +39,14 @@ router.get('/', async (req, res) => {
                 args: [keyword, keyword, keyword]
             }),
             db.execute({
-                sql: "SELECT 'member' as type, id, name as title, role as snippet FROM members WHERE name LIKE ? OR role LIKE ? OR department LIKE ?",
+                sql: "SELECT 'member' as type, id, name as title, role as snippet FROM members WHERE archived_at IS NULL AND (name LIKE ? OR role LIKE ? OR department LIKE ?)",
                 args: [keyword, keyword, keyword]
             })
         ]);
 
         res.json({
             results: [
-                ...sections.rows,
+                ...publicSectionSearchRows(sections.rows, query),
                 ...achievements.rows,
                 ...activities.rows,
                 ...experiences.rows,

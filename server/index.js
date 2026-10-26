@@ -3,15 +3,15 @@ const cors = require('cors');
 const path = require('path');
 
 // Initialize database (creates tables)
-require('./db');
+const db = require('./db');
 
 // Initialize Firebase Admin (verify Google ID tokens + load roles allowlist).
 // No-op if FIREBASE_SERVICE_ACCOUNT is unset — backend then accepts legacy JWT only.
 const _firebaseOk = require('./firebase').initFirebase();
 // 自鎖守衛：若舊 JWT 已關閉（cutover）但 Firebase 沒初始化成功，
 // 則此刻沒有任何可用的登入路徑 —— 大聲示警，避免無聲把後台鎖死。
-if (!_firebaseOk && String(process.env.ALLOW_LEGACY_JWT ?? '').trim().toLowerCase() === 'false') {
-    console.error('[FATAL] ALLOW_LEGACY_JWT=false 但 Firebase 未初始化 — 目前沒有任何登入路徑可用！請設定 FIREBASE_SERVICE_ACCOUNT 或暫時重新開啟舊 JWT。');
+if (!_firebaseOk && !require('./middleware/auth').legacyJwtEnabled) {
+    console.error('[FATAL] Firebase 未初始化，舊 JWT 亦未有有效設定或已停用 — 目前沒有可用的後台登入路徑。請檢查服務設定。');
 }
 
 const app = express();
@@ -19,7 +19,18 @@ const PORT = process.env.PORT || 3001;
 
 // Middleware
 app.use(cors());
+app.use(require('./preview-policy').createPreviewWriteGuard());
+app.use(async (_req, res, next) => {
+    try { await db.ready; next(); }
+    catch { res.status(503).json({ error: '資料庫初始化尚未完成，請稍後重試。' }); }
+});
+app.use('/api/ops', express.json({ limit: '256kb' }));
 app.use(express.json());
+app.use('/api/ops', (error, _req, res, next) => {
+    if (error.type === 'entity.too.large') return res.status(413).json({ code: 'PAYLOAD_TOO_LARGE', error: '一次傳入的資料超過 256 KB，請分批匯入。' });
+    if (error instanceof SyntaxError && error.status === 400) return res.status(400).json({ code: 'INVALID_JSON', error: 'JSON 格式不正確。' });
+    return next(error);
+});
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Routes
@@ -35,6 +46,19 @@ app.use('/api/activities', autoSnapshotMiddleware, require('./routes/activities'
 app.use('/api/experiences', autoSnapshotMiddleware, require('./routes/experiences'));
 app.use('/api/resources', autoSnapshotMiddleware, require('./routes/resources'));
 app.use('/api/search', require('./routes/search'));
+
+// Operations uses separate durable tables and Firebase-only authorization.
+const { createOpsRouter } = require('./ops');
+const { createCanvaConnection, createConnectionRouter, withCanvaConnection } = require('./ops-connection');
+const canvaConnection = createCanvaConnection({ db });
+app.use('/api/ops/connections/canva', createConnectionRouter({ manager: canvaConnection }));
+const opsProviders = withCanvaConnection(require('./ops/providers'), canvaConnection);
+const opsRouter = createOpsRouter({ db, providers: opsProviders });
+app.use('/api/ops/jobs', require('./ops-cron').createOpsCronRouter(opsRouter.service));
+app.use('/api/ops', opsRouter);
+if (require('./preview-policy').previewWritePolicy().allowed) {
+    require('./ops-worker').startOpsWorker(opsRouter.service);
+}
 
 // Upload route (Cloudinary)
 const multer = require('multer');
@@ -60,6 +84,14 @@ const upload = multer({
 });
 
 const { authMiddleware } = require('./middleware/auth');
+app.use('/api/system-backup', require('./routes/system-backup').createSystemBackupRouter({
+    db, authMiddleware,
+    ready: Promise.all([db.ready, opsRouter.service.ready, canvaConnection.ready]),
+    readRTDB: async location => {
+        if (!require('./firebase').isInitialized()) throw new Error('Firebase unavailable');
+        return (await require('firebase-admin').database().ref(location).once('value')).val();
+    },
+}));
 
 app.post('/api/upload', authMiddleware, upload.single('file'), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: '未選擇檔案' });
@@ -157,6 +189,9 @@ app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
-app.listen(PORT, () => {
-    console.log(`ITRC Server running on http://localhost:${PORT}`);
-});
+if (require.main === module) {
+    app.listen(PORT, () => {
+        console.log(`ITRC Server running on http://localhost:${PORT}`);
+    });
+}
+module.exports = app;

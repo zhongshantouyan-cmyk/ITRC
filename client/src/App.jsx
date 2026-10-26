@@ -1,4 +1,5 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import HomePage from './pages/HomePage';
 import AchievementsPage from './pages/AchievementsPage';
@@ -10,10 +11,13 @@ import LoginPage from './pages/LoginPage';
 import AdminPage from './pages/AdminPage';
 import { useAuth } from './context/AuthContext';
 
+const OpsPage = lazy(() => import('./pages/OpsPage'));
+
 function ProtectedRoute({ children }) {
     const { user, isAdmin, loading, logout } = useAuth();
+    const location = useLocation();
     if (loading) return <div className="login-page"><div className="login-card">載入中…</div></div>;
-    if (!user) return <Navigate to="/login" replace />;
+    if (!user) return <Navigate to="/login" state={{ from: location.pathname + location.search }} replace />;
     if (!isAdmin) return (
         <div className="login-page">
             <div className="login-card">
@@ -35,9 +39,11 @@ function ProtectedRoute({ children }) {
 }
 
 export default function App() {
+    const location = useLocation();
+    const inWorkspace = /^\/ops(?:-demo)?(?:\/|$)/.test(location.pathname);
     return (
         <>
-            <Navbar />
+            {!inWorkspace && <Navbar />}
             <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route path="/achievements" element={<AchievementsPage />} />
@@ -47,6 +53,8 @@ export default function App() {
                 <Route path="/resources" element={<ResourcesPage />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/admin" element={<ProtectedRoute><AdminPage /></ProtectedRoute>} />
+                <Route path="/ops" element={<ProtectedRoute><Suspense fallback={<div className="login-page">工作台載入中…</div>}><OpsPage /></Suspense></ProtectedRoute>} />
+                <Route path="/ops-demo" element={<Suspense fallback={<div className="login-page">示範工作台載入中…</div>}><OpsPage demo /></Suspense>} />
             </Routes>
         </>
     );

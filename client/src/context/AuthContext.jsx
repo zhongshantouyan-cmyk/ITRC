@@ -9,13 +9,19 @@ export function AuthProvider({ children }) {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
+        let revision = 0;
+        let active = true;
         const unsub = onAuthStateChanged(auth, async (u) => {
+            const currentRevision = ++revision;
+            setLoading(true);
             if (!u) {
                 setUser(null);
                 setLoading(false);
                 return;
             }
-            const role = await resolveRole(u.email);
+            let role = '';
+            try { role = u.emailVerified ? await resolveRole(u.email) : ''; } catch { /* An unavailable role source grants no access. */ }
+            if (!active || currentRevision !== revision || auth.currentUser?.uid !== u.uid) return;
             setUser({
                 uid: u.uid,
                 email: u.email,
@@ -24,7 +30,7 @@ export function AuthProvider({ children }) {
             });
             setLoading(false);
         });
-        return unsub;
+        return () => { active = false; revision++; unsub(); };
     }, []);
 
     const login = () => googleLogin();
