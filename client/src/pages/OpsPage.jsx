@@ -95,12 +95,14 @@ function AiHelper({ post, event, execute, busy, close }) {
     e.preventDefault(); setError('');
     try {
       let text = result.trim(); if (text.startsWith('```')) text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
-      const draft = JSON.parse(text);
-      if (typeof draft.caption !== 'string' || !draft.caption.trim() || draft.caption.length > 12000 || !Array.isArray(draft.slides) || draft.slides.length > 10 || draft.slides.some(slide => !slide || typeof slide.heading !== 'string' || typeof slide.body !== 'string' || slide.heading.length > 200 || slide.body.length > 2000)) throw new Error('請貼上含 caption 和 slides 的完整 JSON；也可以關閉後直接編輯文案。');
+      let draft;
+      try { draft = text.startsWith('{') ? JSON.parse(text) : { caption: text, slides: [] }; }
+      catch { throw new Error('貼上的內容似乎少了一部分。請完整複製 AI 的回覆，或只貼文案文字。'); }
+      if (typeof draft.caption !== 'string' || !draft.caption.trim() || draft.caption.length > 12000 || !Array.isArray(draft.slides) || draft.slides.length > 10 || draft.slides.some(slide => !slide || typeof slide.heading !== 'string' || typeof slide.body !== 'string' || slide.heading.length > 200 || slide.body.length > 2000)) throw new Error('請貼上完整文案，或關閉後直接編輯。');
       await execute('post.update', post, { caption: draft.caption, slides: draft.slides.map(slide => ({ heading: slide.heading, body: slide.body })) }); close();
     } catch (issue) { setError(humanError(issue)); }
   };
-  return <Dialog title="用你平常的 AI 寫文案" onClose={busy ? noop : close} wide><p className="ops-muted">把活動資料帶到你已連接的 AI，寫好貼回來就能繼續用。只包含這場活動與宣傳資料。</p><textarea className="ops-import-input" aria-label="給 AI 的活動資料" value={prompt} readOnly rows={6} /><button type="button" className="ops-button quiet" onClick={async () => { try { await navigator.clipboard.writeText(prompt); setCopied(true); } catch { setError('請直接選取上方文字複製。'); } }}>{copied ? '已複製' : '複製給 AI'}</button><form onSubmit={save}><Field label="貼回 AI 的 JSON 文案" type="textarea" rows={7} value={result} onChange={setResult} placeholder='{"caption":"…","slides":[…]}' wide />{error && <p className="ops-inline-error" role="alert">{error}</p>}<SaveBar busy={busy} close={close} label="存成文案草稿" /></form></Dialog>;
+  return <Dialog title="用你平常的 AI 寫文案" onClose={busy ? noop : close} wide><p className="ops-muted">複製活動資料給你平常用的 AI，再把寫好的內容貼回來。</p><button type="button" className="ops-button quiet" onClick={async () => { try { await navigator.clipboard.writeText(prompt); setCopied(true); } catch { setError('請展開「查看活動資料」，選取文字複製。'); } }}>{copied ? '已複製' : '複製給 AI'}</button><details className="ops-form-extra"><summary>查看活動資料</summary><textarea className="ops-import-input" aria-label="給 AI 的活動資料" value={prompt} readOnly rows={6} /></details><form onSubmit={save}><Field label="把 AI 寫好的內容貼在這裡" type="textarea" rows={7} value={result} onChange={setResult} placeholder="貼上完整回覆，也可以只貼文案文字。" wide />{error && <p className="ops-inline-error" role="alert">{error}</p>}<SaveBar busy={busy} close={close} label="存成文案草稿" /></form></Dialog>;
 }
 function TaskRow({ task, data, busy, run, edit, compact = false }) {
   const status = taskState(task); const overdue = status !== 'done' && task.dueDate && task.dueDate < today();

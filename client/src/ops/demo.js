@@ -1,12 +1,13 @@
 import { canOwn, isAdviser, EVENT_TYPES, eventMissingFacts, eventSpeakerText } from './model.js';
 import { isInactivePerson, personById } from './people.js';
 
-const KEY = 'itrc-ops-fictional-demo-v1';
+// Refresh the fictional practice seeds without changing or deleting live data.
+const KEY = 'itrc-ops-fictional-demo-v2';
 const uuid = () => globalThis.crypto?.randomUUID?.() || `demo-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 const clone = data => JSON.parse(JSON.stringify(data));
 export const DEMO_ACTORS = [
   { email: 'activity@example.invalid', name: '活動負責人（示範）', role: 'officer', canApprove: false, canDesign: false },
-  { email: 'approver@example.invalid', name: '最終審核者（示範）', role: 'chair', canApprove: true, canDesign: false },
+  { email: 'approver@example.invalid', name: '社長（示範）', role: 'chair', canApprove: true, canDesign: false },
   { email: 'design@example.invalid', name: '行銷負責人（示範）', role: 'officer', canApprove: false, canDesign: true },
   { email: 'adviser@example.invalid', name: '管理顧問（示範）', role: 'advisor', canApprove: false, canDesign: false },
 ];
@@ -29,20 +30,20 @@ function seeded() {
   const base = { version: 1, createdAt: now, updatedAt: now };
   return addDemoPeople({
     schemaVersion: 1, actor: DEMO_ACTORS[0],
-    projects: [{ ...base, id: 'demo-project', title: '秋季交流活動（虛構示範）', objective: '練習將活動資料、宣傳與現場交付接起來。', ownerEmail: DEMO_ACTORS[0].email, adviserEmail: DEMO_ACTORS[3].email, status: 'active', dueDate: day(21), completionCriteria: '活動完成、宣傳留存、場務與收支交件。' }],
+    projects: [{ ...base, id: 'demo-project', title: '秋季交流活動（虛構示範）', objective: '練習把活動資料、宣傳與現場工作放在一起。', ownerEmail: DEMO_ACTORS[0].email, adviserEmail: DEMO_ACTORS[3].email, status: 'active', dueDate: day(21), completionCriteria: '活動做完，整理文案與照片；收支另按財務規則處理。' }],
     events: [{ ...base, id: 'demo-event', projectId: 'demo-project', title: '從研究到表達：交流工作坊（示範）', speaker: '示範講者', date: day(14), time: '18:30', venue: '示範教室 A', audience: '對研究與交流有興趣的同學', fee: '免費（示範）', registrationUrl: 'https://example.org/demo-registration', highlights: '用一張圖整理想法\n分組交換研究觀察\n帶走自己的簡報草稿', ownerEmail: DEMO_ACTORS[0].email, confirmationStatus: 'confirmed', sourceUrl: '', sourceDate: day(0), sourceRevision: '虛構示範 v1' }],
     posts: [{ ...base, id: 'demo-post', projectId: 'demo-project', eventId: 'demo-event', title: '工作坊首波宣傳（示範）', purpose: '讓同學了解活動內容並完成報名', audience: '初次參與的同學', highlights: '不需要先備知識；帶著一個問題來交流。', cta: '查看活動資訊並報名', channel: 'instagram', scheduledAt: `${day(3)}T12:00`, ownerEmail: DEMO_ACTORS[0].email, caption: '', slides: [], copyVersion: 1, stage: 'brief', sourceEventVersion: 1, unitReviewedVersion: null, approvedVersion: null, designCopyVersion: null }],
     tasks: [
-      { id: 'demo-task-1', title: '活動組｜確認講者與教室', ownerEmail: DEMO_ACTORS[0].email, status: 'done', dueDate: day(-1), acceptanceCriteria: '講者與場地皆已獲得確認', deliverableUrl: 'https://example.org/demo-confirmation' },
-      { id: 'demo-task-2', title: '行銷組｜完成貼文與分層設計', ownerEmail: DEMO_ACTORS[2].email, status: 'todo', dueDate: day(3), dependsOn: ['demo-task-1'], acceptanceCriteria: '當前文案版本通過終審，Canva 可編輯連結已交件' },
-      { id: 'demo-task-3', title: '資訊組｜測試投影與錄影', ownerEmail: '', status: 'unassigned', dueDate: day(12), acceptanceCriteria: '完成器材測試並附現場清單' },
-      { id: 'demo-task-4', title: '財務組｜整理活動預算', ownerEmail: DEMO_ACTORS[3].email, status: 'blocked', dueDate: day(2), blocker: '等候場地費用確認（示範）', acceptanceCriteria: '預算列有金額、用途與佐證' },
-      { id: 'demo-task-5', title: '公關組｜核對合作交付內容', ownerEmail: DEMO_ACTORS[0].email, status: 'doing', dueDate: day(4), acceptanceCriteria: '逐項登錄要求與確認證據' },
-      { id: 'demo-task-6', title: '管理組｜驗收活動紀錄', ownerEmail: DEMO_ACTORS[3].email, status: 'todo', dueDate: day(18), dependsOn: ['demo-task-2', 'demo-task-3', 'demo-task-4', 'demo-task-5'], acceptanceCriteria: '活動紀錄、宣傳網址及交付證據完整' },
+      { id: 'demo-task-1', title: '活動組｜確認講者與教室', ownerEmail: DEMO_ACTORS[0].email, status: 'done', dueDate: day(-1), acceptanceCriteria: '先和講者約好時間，再確認教室。', deliverableUrl: 'https://example.org/demo-confirmation' },
+      { id: 'demo-task-2', title: '行銷組｜完成貼文與分層設計', ownerEmail: DEMO_ACTORS[2].email, status: 'todo', dueDate: day(3), dependsOn: ['demo-task-1'], acceptanceCriteria: '文案看過 OK，貼上可編輯的 Canva 連結。' },
+      { id: 'demo-task-3', title: '資訊組｜測試投影與錄影', ownerEmail: '', status: 'unassigned', dueDate: day(12), acceptanceCriteria: '試播簡報、確認錄影；有問題寫在備註。' },
+      { id: 'demo-task-4', title: '財務組｜整理活動預算', ownerEmail: DEMO_ACTORS[3].email, status: 'blocked', dueDate: day(2), blocker: '等候場地費用確認（示範）', acceptanceCriteria: '列出預估金額與用途；實際核銷另走財務流程。' },
+      { id: 'demo-task-5', title: '公關組｜確認合作內容', ownerEmail: DEMO_ACTORS[0].email, status: 'doing', dueDate: day(4), acceptanceCriteria: '和合作方說好露出內容，重點留在備註。' },
+      { id: 'demo-task-6', title: '管理組｜整理活動紀錄', ownerEmail: DEMO_ACTORS[3].email, status: 'todo', dueDate: day(18), dependsOn: ['demo-task-2', 'demo-task-3', 'demo-task-4', 'demo-task-5'], acceptanceCriteria: '把活動照片、文字與宣傳連結整理在一起。' },
     ].map(task => ({ ...base, projectId: 'demo-project', eventId: 'demo-event', dependsOn: [], ...task })),
-    obligations: [{ ...base, id: 'demo-obligation', projectId: 'demo-project', eventId: 'demo-event', title: '合作露出檢查（虛構）', requirements: '發布前確認合作標示位置；現場照片於結案時交付。', channel: 'instagram', requiresSponsorReview: true, status: 'active', ownerEmail: DEMO_ACTORS[0].email, sourceUrl: '' }],
+    obligations: [{ ...base, id: 'demo-obligation', projectId: 'demo-project', eventId: 'demo-event', title: '合作露出提醒（虛構）', requirements: '發布前看看合作標示；活動後整理現場照片。', channel: 'instagram', requiresSponsorReview: true, status: 'active', ownerEmail: DEMO_ACTORS[0].email, sourceUrl: '' }],
     jobs: [], audit: [],
-    settings: { mode: 'demo', approverConfigured: true, designerConfigured: true, sources: [], integrations: { drafting: { status: 'demo', configured: false, message: '使用本機規則草稿；未呼叫 AI。' }, canva: { status: 'demo', configured: false, message: '展示模式不建立外部設計；可體驗交件與校對欄位。' }, sheets: { status: 'demo', configured: false, message: '可試用 CSV / TSV / JSON 匯入；資料只留在此瀏覽器。' } } },
+    settings: { mode: 'demo', approverConfigured: true, designerConfigured: true, sources: [], integrations: { drafting: { status: 'demo', configured: false, message: '用活動資料整理基本草稿；未呼叫外部 AI。' }, canva: { status: 'demo', configured: false, message: '練習貼上 Canva 連結；不會建立外部設計。' }, sheets: { status: 'demo', configured: false, message: '可練習 CSV / TSV / JSON 匯入；資料只留在此瀏覽器。' } } },
   });
 }
 export function loadDemo() {
