@@ -5,12 +5,16 @@ on:
     paths:
       - 'client/**'
       - 'server/**'
+      - 'legacy-tools/**'
+      - 'scripts/**'
       - '.github/workflows/ops-checks.yml'
   push:
     branches: [main, 'feature/itrc-integrated-ops-*']
     paths:
       - 'client/**'
       - 'server/**'
+      - 'legacy-tools/**'
+      - 'scripts/**'
       - '.github/workflows/ops-checks.yml'
 
 permissions:
@@ -41,3 +45,5 @@ jobs:
         run: node --test --experimental-test-isolation=none client/src/ops/*.test.js client/src/utils/courseInfo.test.js
       - name: Verify protected operations proxy boundaries
         run: node --test --experimental-test-isolation=none client/server/ops-proxy.test.mjs
+      - name: Verify finance, legacy cloud boundaries and unified tools
+        run: node --test scripts/test-legacy-finance.cjs scripts/test-legacy-cloud.cjs scripts/test-unified-tools.mjs
