@@ -17,5 +17,7 @@ export function publicCourseInfo(content) {
                 && ((url.hostname === 'docs.google.com' && /^\/forms\/d\/(?:e\/)?[^/]+\/viewform\/?$/.test(url.pathname))
                     || (url.hostname === 'forms.gle' && /^\/[A-Za-z0-9_-]+\/?$/.test(url.pathname)));
         } catch { return false; }
-    }));
+    }).map(([key, value]) => [key,
+        key === 'professor' && /^王昭文\s*教授$/.test(value.trim()) ? '封之遠 副教授' : value
+    ]));
 }

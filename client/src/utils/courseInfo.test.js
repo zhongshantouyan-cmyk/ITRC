@@ -16,3 +16,11 @@ test('registration link must be a Google Forms fill URL', () => {
         assert.deepEqual(publicCourseInfo({ registrationFormUrl: url }), {});
     }
 });
+
+
+test('replaces only the old professor value returned by CMS', () => {
+    assert.deepEqual(publicCourseInfo({ professor: '王昭文 教授', time: '每週五' }),
+        { professor: '封之遠 副教授', time: '每週五' });
+    assert.deepEqual(publicCourseInfo({ professor: '王昭文教授' }), { professor: '封之遠 副教授' });
+    assert.deepEqual(publicCourseInfo({ professor: '其他教授' }), { professor: '其他教授' });
+});
