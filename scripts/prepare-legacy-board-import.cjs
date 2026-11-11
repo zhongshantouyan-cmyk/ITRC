@@ -51,7 +51,8 @@ function recordsFromBackup(bundle) {
     if (typeof record.data !== 'string') fail('Operations data is not JSON text.');
     const data = JSON.parse(record.data);
     if (!data || typeof data !== 'object' || Array.isArray(data)) fail('Invalid operations record.');
-    records.push({ kind: record.kind, ...data });
+    // The table discriminator is authoritative, not an optional JSON property.
+    records.push({ ...data, kind: record.kind });
   }
   return records;
 }
@@ -83,7 +84,10 @@ function convertBackup(bundle) {
   const records = recordsFromBackup(bundle);
   const people = records.filter(record => record.kind === 'people');
   if (!people.length) fail('No people snapshot; owner matching would be unsafe.');
-  const existingKeys = new Set(records.filter(record => record.kind === 'tasks').map(record => record.sourceKey).filter(Boolean));
+  const targetKeys = records.filter(record => record.kind === 'tasks').map(record => record.sourceKey).filter(Boolean);
+  const legacyKeys = targetKeys.filter(key => typeof key === 'string' && key.startsWith(`firebase:${SOURCE_PATH}:card:`));
+  if (new Set(legacyKeys).size !== legacyKeys.length) fail('Existing operations contain duplicated legacy source keys; reconcile before import.');
+  const existingKeys = new Set(targetKeys);
   const sourceDate = taipeiDate(bundle.createdAt);
   const sourceRevision = `firebase:${SOURCE_PATH};v=${board.v};sha256=${entry.sha256};capturedAt=${bundle.createdAt}`;
   const tasks = [], mapping = [], cardIds = new Set();

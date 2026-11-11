@@ -152,6 +152,45 @@ function canvaSource(env) {
   return { sourceId, type: design ? 'create_from_design' : 'create_from_brand_template', design };
 }
 
+function parseSheetSources(env = process.env) {
+  if (!has(env, 'OPS_SHEET_SOURCES_JSON')) return [];
+  try {
+    const sources = JSON.parse(env.OPS_SHEET_SOURCES_JSON);
+    if (!Array.isArray(sources) || !sources.length || sources.length > 20) throw new Error();
+    const ids = new Set();
+    for (const source of sources) {
+      if (!isRecord(source) || typeof source.id !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/.test(source.id) || ids.has(source.id) ||
+          !identifier(source.spreadsheetId) || source.spreadsheetId.length < 10 ||
+          !['events', 'posts', 'tasks'].includes(source.kind) || !isRecord(source.columns) ||
+          typeof source.columns.title !== 'string' || !source.columns.title.trim() ||
+          typeof source.columns.sourceKey !== 'string' || !source.columns.sourceKey.trim() ||
+          (source.name !== undefined && (typeof source.name !== 'string' || source.name.length > 200))) throw new Error();
+      const columns = Object.entries(source.columns);
+      if (!columns.length || columns.length > 52 || columns.some(([field, column]) =>
+        !/^[A-Za-z][A-Za-z0-9_]{0,79}$/.test(field) || ['constructor', 'prototype'].includes(field) ||
+        typeof column !== 'string' || !column.trim() || column.length > 200)) throw new Error();
+      boundedRange(source.range);
+      ids.add(source.id);
+    }
+    return sources;
+  } catch {
+    throw failure('CONFIGURATION_INVALID', 'Google Sheets 具名來源、範圍或欄位設定不正確；必須對應 title 與固定來源識別欄 sourceKey。');
+  }
+}
+
+function serviceAccount(env) {
+  let credentials;
+  try {
+    credentials = JSON.parse(env.GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON);
+    if (!isRecord(credentials) || credentials.type !== 'service_account' || typeof credentials.client_email !== 'string' ||
+        !/^[^@\s]+@[^@\s]+\.gserviceaccount\.com$/.test(credentials.client_email) ||
+        typeof credentials.private_key !== 'string' || credentials.private_key.length > 10000) throw new Error();
+    const key = crypto.createPrivateKey(credentials.private_key);
+    if (key.asymmetricKeyType !== 'rsa') throw new Error();
+  } catch { throw failure('CONFIGURATION_INVALID', 'Google Sheets 服務帳戶設定不正確。'); }
+  return credentials;
+}
+
 function getIntegrationStatus(env = process.env) {
   const aiMissing = ['OPENAI_API_KEY', 'OPENAI_MODEL'].filter(key => !has(env, key));
   const oauth = getOAuthConfiguration(env);
@@ -170,7 +209,17 @@ function getIntegrationStatus(env = process.env) {
   if (!has(env, 'GOOGLE_SHEETS_ACCESS_TOKEN') && !has(env, 'GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON')) {
     sheetsMissing.push('GOOGLE_SHEETS_ACCESS_TOKEN 或 GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON');
   }
-  if (!has(env, 'OPS_SHEET_SOURCE_IDS') && !has(env, 'OPS_SHEET_SOURCES_JSON')) sheetsMissing.push('OPS_SHEET_SOURCES_JSON');
+  // A bare ID allowlist is supported only by the low-level adapter. The workspace
+  // needs a named source with a range and column mapping before it can import.
+  if (!has(env, 'OPS_SHEET_SOURCES_JSON')) sheetsMissing.push('OPS_SHEET_SOURCES_JSON');
+  let sheetsInvalid = false;
+  try {
+    if (has(env, 'OPS_SHEET_SOURCES_JSON')) parseSheetSources(env);
+    if (has(env, 'GOOGLE_SHEETS_ACCESS_TOKEN')) {
+      const token = env.GOOGLE_SHEETS_ACCESS_TOKEN.trim();
+      if (token.length > 8192 || /[\r\n]/.test(token)) throw new Error();
+    } else if (has(env, 'GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON')) serviceAccount(env);
+  } catch { sheetsInvalid = true; }
   const canvaConfigured = !canvaMissing.length && !canvaInvalid;
   return {
     drafting: {
@@ -186,9 +235,9 @@ function getIntegrationStatus(env = process.env) {
       detail: canvaInvalid ? 'Canva 母版或欄位對照格式有誤。' : canvaConfigured ? '已設定母版；須完成帳戶連線並驗證欄位。' : '尚未完成 Canva 連線與母版設定。',
     },
     sheets: {
-      configured: !sheetsMissing.length, verified: false, missing: sheetsMissing, readOnly: true,
-      status: sheetsMissing.length ? 'blocked_configuration' : 'configured_unverified',
-      detail: sheetsMissing.length ? '可先以匯入預覽整理資料；Sheets 自動讀取尚未設定。' : '僅讀取允許清單中的工作表，不回寫來源。',
+      configured: !sheetsMissing.length && !sheetsInvalid, verified: false, missing: sheetsMissing, readOnly: true,
+      status: sheetsInvalid ? 'configuration_invalid' : sheetsMissing.length ? 'blocked_configuration' : 'configured_unverified',
+      detail: sheetsInvalid ? 'Google Sheets 來源、範圍、連線或欄位設定有誤；每個來源需對應標題及固定來源識別欄。' : sheetsMissing.length ? '可先以匯入預覽整理資料；Sheets 自動讀取尚未設定。' : '僅讀取允許清單中的工作表，不回寫來源；尚未驗證實際讀取。',
     },
   };
 }
@@ -409,14 +458,28 @@ function canvaResult(job, { uncertain = false, expectedId } = {}) {
   if (!isRecord(design) || !identifier(design.id)) {
     throw failure(uncertain ? 'UNCERTAIN_RESULT' : 'INVALID_PROVIDER_RESPONSE', 'Canva 完成結果缺少設計資料。', { uncertain });
   }
+  return { ...result, canvaDesignId: design.id };
+}
+
+function canvaDesignResult(design, expectedId) {
+  if (!isRecord(design) || design.id !== expectedId) {
+    throw failure('INVALID_PROVIDER_RESPONSE', 'Canva 讀回的設計識別碼不符，未記錄為完成。');
+  }
   let url;
   try {
-    url = new URL(design.url || design.urls?.edit_url);
-    if (url.protocol !== 'https:' || !['canva.com', 'www.canva.com'].includes(url.hostname) || url.username || url.password || url.port) throw new Error();
+    // Prefer the API's explicit editing link. A generic `url` is accepted only
+    // when it is a permanent edit path for the exact design read back above.
+    const explicit = typeof design.urls?.edit_url === 'string' && design.urls.edit_url;
+    url = new URL(explicit || design.url);
+    const permanentEditPath = new RegExp('^/design/' + expectedId + '(?:/[^/]+)?/edit/?$');
+    const explicitEditPath = permanentEditPath.test(url.pathname) || /^\/d\/[^/]+\/?$/.test(url.pathname) ||
+      /^\/api\/(?:design\/)?[^/]+\/edit\/?$/.test(url.pathname);
+    if (url.protocol !== 'https:' || !['canva.com', 'www.canva.com'].includes(url.hostname) || url.username || url.password || url.port ||
+        !(explicit ? explicitEditPath : permanentEditPath.test(url.pathname))) throw new Error();
   } catch {
-    throw failure(uncertain ? 'UNCERTAIN_RESULT' : 'INVALID_PROVIDER_RESPONSE', 'Canva 回傳的編輯連結無效。', { uncertain });
+    throw failure('INVALID_PROVIDER_RESPONSE', 'Canva 讀回的設計缺少有效編輯連結，未記錄為完成。');
   }
-  return { ...result, canvaDesignId: design.id, canvaEditUrl: url.href };
+  return { canvaDesignId: design.id, canvaEditUrl: url.href };
 }
 
 async function createCanvaDesign(input, { env = process.env, fetchImpl = globalThis.fetch, getCanvaAccessToken } = {}) {
@@ -435,7 +498,10 @@ async function createCanvaDesign(input, { env = process.env, fetchImpl = globalT
   const response = await requestJson('https://api.canva.com/rest/v1/autofills', {
     env, fetchImpl, method: 'POST', headers, body: JSON.stringify(body), uncertainWrite: true,
   });
-  return canvaResult(response.job, { uncertain: true });
+  const result = canvaResult(response.job, { uncertain: true });
+  // Persist the known job ID before a separate read-back request can fail.
+  // Even an immediately successful POST is completed on the polling path.
+  return result.status === 'success' ? { providerJobId: result.providerJobId, status: 'in_progress' } : result;
 }
 
 async function getCanvaJob(providerJobId, { env = process.env, fetchImpl = globalThis.fetch, getCanvaAccessToken } = {}) {
@@ -444,21 +510,24 @@ async function getCanvaJob(providerJobId, { env = process.env, fetchImpl = globa
   const response = await requestJson('https://api.canva.com/rest/v1/autofills/' + providerJobId, {
     env, fetchImpl, headers: { Authorization: 'Bearer ' + token },
   });
-  return canvaResult(response.job, { expectedId: providerJobId });
+  const result = canvaResult(response.job, { expectedId: providerJobId });
+  if (result.status !== 'success') return result;
+  const readback = await requestJson('https://api.canva.com/rest/v1/designs/' + result.canvaDesignId, {
+    env, fetchImpl, headers: { Authorization: 'Bearer ' + token },
+  });
+  return { ...result, ...canvaDesignResult(readback.design, result.canvaDesignId) };
 }
 
 async function sheetToken(env, fetchImpl) {
-  if (has(env, 'GOOGLE_SHEETS_ACCESS_TOKEN')) return env.GOOGLE_SHEETS_ACCESS_TOKEN.trim();
+  if (has(env, 'GOOGLE_SHEETS_ACCESS_TOKEN')) {
+    const token = env.GOOGLE_SHEETS_ACCESS_TOKEN.trim();
+    if (token.length > 8192 || /[\r\n]/.test(token)) throw failure('CONFIGURATION_INVALID', 'Google Sheets 暫用權杖格式不正確。');
+    return token;
+  }
   if (!has(env, 'GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON')) {
     throw configurationError(['GOOGLE_SHEETS_ACCESS_TOKEN 或 GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON']);
   }
-  let credentials;
-  try {
-    credentials = JSON.parse(env.GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON);
-    if (credentials.type !== 'service_account' || typeof credentials.client_email !== 'string' ||
-        !/^[^@\s]+@[^@\s]+\.gserviceaccount\.com$/.test(credentials.client_email) ||
-        typeof credentials.private_key !== 'string' || credentials.private_key.length > 10000) throw new Error();
-  } catch { throw failure('CONFIGURATION_INVALID', 'Google Sheets 服務帳戶設定不正確。'); }
+  const credentials = serviceAccount(env);
   const now = Math.floor(Date.now() / 1000);
   const header = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
   const claim = Buffer.from(JSON.stringify({
@@ -528,4 +597,4 @@ async function readSheetSource({ spreadsheetId, range } = {}, { env = process.en
   };
 }
 
-module.exports = { ProviderError, getIntegrationStatus, generateCopy, createCanvaDesign, getCanvaJob, readSheetSource };
+module.exports = { ProviderError, getIntegrationStatus, generateCopy, createCanvaDesign, getCanvaJob, readSheetSource, parseSheetSources };

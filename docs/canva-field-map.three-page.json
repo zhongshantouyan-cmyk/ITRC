@@ -1,0 +1,8 @@
+{
+  "PAGE_1_HEADING": {"type":"text","path":"post.slides.0.heading","maxLength":8},
+  "PAGE_1_BODY": {"type":"text","path":"post.slides.0.body","maxLength":42},
+  "PAGE_2_HEADING": {"type":"text","path":"post.slides.1.heading","maxLength":8},
+  "PAGE_2_BODY": {"type":"text","path":"post.slides.1.body","maxLength":84},
+  "PAGE_3_HEADING": {"type":"text","path":"post.slides.2.heading","maxLength":8},
+  "PAGE_3_BODY": {"type":"text","path":"post.slides.2.body","maxLength":84}
+}

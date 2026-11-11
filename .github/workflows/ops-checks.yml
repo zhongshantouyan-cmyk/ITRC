@@ -47,3 +47,5 @@ jobs:
         run: node --test --experimental-test-isolation=none client/server/ops-proxy.test.mjs
       - name: Verify finance, legacy cloud boundaries and unified tools
         run: node --test scripts/test-legacy-finance.cjs scripts/test-legacy-cloud.cjs scripts/test-unified-tools.mjs
+      - name: Verify backup, legacy board migration and repeat-import safeguards
+        run: node --test scripts/prepare-legacy-board-import.test.cjs scripts/migrate-legacy-board.test.cjs

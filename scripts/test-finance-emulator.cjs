@@ -10,6 +10,7 @@ const applicant = { uid: 'fictional-applicant', name: '測試申請人', email: 
 const chair = { uid: 'fictional-chair', name: '測試簽核人', email: 'chair@example.invalid' };
 const treasury = { uid: 'fictional-treasury', name: '測試財務', email: 'treasury@example.invalid' };
 const club = { uid: 'fictional-club', name: '測試社團', email: 'club@example.invalid' };
+const otherApplicant = { uid: 'fictional-other-applicant', name: '測試另一位幹部', email: 'other-officer@example.invalid' };
 const outsider = { uid: 'fictional-outsider', name: '測試外部人員', email: 'outsider@example.invalid' };
 const fields = { amount: 300, date: '2026-10-26', cat: '測試', item: '虛構核銷', note: '', payMethod: 'cash', account: '', receipt: '' };
 let count = 0;
@@ -31,7 +32,7 @@ async function request(method, path, value, user, parameters = {}) {
 async function allow(label, ...args) { const r = await request(...args); assert.equal(r.status, 200, `${label}: ${JSON.stringify(r.body)}`); count++; return r.body; }
 async function deny(label, ...args) { const r = await request(...args); assert.ok([401,403].includes(r.status), `${label}: expected denial, got ${r.status}: ${JSON.stringify(r.body)}`); count++; }
 async function main() {
-  const policy = buildFinanceRules({ members: [applicant.email, chair.email, treasury.email, club.email], financeApprovers: [chair.email], ledgerWriters: [treasury.email], superAdmins: [club.email] });
+  const policy = buildFinanceRules({ members: [applicant.email, otherApplicant.email, chair.email, treasury.email, club.email], financeApprovers: [chair.email], ledgerWriters: [treasury.email], superAdmins: [club.email] });
   await allow('rules compile in official emulator', 'PUT', '/.settings/rules', { rules: { '.read': false, '.write': false, finance: policy } }, 'owner');
   const history = {};
   for (let i=0;i<47;i++) history[String(i)] = { id: `fictional-history-${i}`, date: '2026-01-01', type: i%2 ? 'out' : 'in', cat: '虛構歷史', item: '隔離環境明細', amount: 100+i, note: '', by: '測試資料', ref: '' };
@@ -42,6 +43,9 @@ async function main() {
   await deny('unverified email blocked', 'GET', '/finance/ledger', undefined, { ...applicant, emailVerified: false });
   const claim = finance.claim(fields, applicant, 'claim-a', now);
   await allow('own application creation', 'PUT', '/finance/reimbursements/claim-a', claim, applicant);
+  const ownReadback = await allow('applicant reads own persisted application', 'GET', '/finance/reimbursements/claim-a', undefined, applicant);
+  assert.deepEqual(ownReadback, claim);
+  await deny('another allowed officer cannot read private application', 'GET', '/finance/reimbursements/claim-a', undefined, otherApplicant);
   await deny('cannot create application for another uid', 'PUT', '/finance/reimbursements/claim-b', { ...claim, id: 'claim-b', byUid: chair.uid }, applicant);
   await deny('cannot preapprove own application', 'PUT', '/finance/reimbursements/claim-b', { ...claim, id: 'claim-b', status: 'approved' }, applicant);
   await deny('officer cannot read entire private claim list', 'GET', '/finance/reimbursements', undefined, applicant);
@@ -56,12 +60,22 @@ async function main() {
   await deny('treasury cannot approve a request', 'PUT', '/finance/reimbursements/claim-a', reviewed, treasury);
   await deny('reviewer cannot alter an amount while approving', 'PUT', '/finance/reimbursements/claim-a', { ...reviewed, amount: 1 }, chair);
   await allow('independent reviewer approves', 'PUT', '/finance/reimbursements/claim-a', reviewed, chair);
+  const rejectedClaim = finance.claim(fields, applicant, 'claim-rejected', now);
+  await allow('create separate fictional application for rejection', 'PUT', '/finance/reimbursements/claim-rejected', rejectedClaim, applicant);
+  const rejected = finance.review(rejectedClaim, chair, false, '【隔離測試】請補齊憑證', now);
+  await deny('rejection requires recorded reason', 'PUT', '/finance/reimbursements/claim-rejected', { ...rejected, rejectReason: '' }, chair);
+  await allow('reviewer rejects with recorded reason', 'PUT', '/finance/reimbursements/claim-rejected', rejected, chair);
+  const rejectionReadback = await allow('applicant reads rejection evidence', 'GET', '/finance/reimbursements/claim-rejected', undefined, applicant);
+  assert.equal(rejectionReadback.status, 'rejected'); assert.equal(rejectionReadback.rejectReason, rejected.rejectReason);
+  await deny('rejected application cannot be silently reapproved', 'PUT', '/finance/reimbursements/claim-rejected', { ...rejected, status: 'approved', rejectReason: '' }, chair);
   const post = finance.posting(reviewed, [], treasury, now);
   await deny('posting claim alone is forbidden', 'PUT', '/finance/reimbursements/claim-a', post.claim, treasury);
   await deny('posting ledger alone is forbidden', 'PUT', '/finance/ledger/' + post.ledgerKey, post.ledger, treasury);
   await deny('officer cannot post either half', 'PATCH', '/', post.updates, applicant);
   await allow('treasury atomic multipath posting', 'PATCH', '/', post.updates, treasury);
   await deny('posting replay is forbidden', 'PATCH', '/', post.updates, treasury);
+  const postedReadback = await allow('applicant reads persisted approval and posting evidence', 'GET', '/finance/reimbursements/claim-a', undefined, applicant);
+  assert.deepEqual(postedReadback, post.claim);
   const after = await allow('inspect fictional ledger after posting', 'GET', '/finance/ledger', undefined, treasury);
   assert.equal(Object.keys(after).length, 48); for (const [key,value] of Object.entries(history)) assert.deepEqual(after[key], value);
   count++;
