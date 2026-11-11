@@ -50,13 +50,16 @@ test('Preview direct tool URLs contain no live authentication or business script
 
 test('redirects use only known old pages and keep the existing API gateway configuration', () => {
   const old = oldToolsRedirects();
-  assert.equal(old.length, CLUB_TOOLS.length + 2);
+  assert.equal(old.length, CLUB_TOOLS.length * 2 + 2);
   for (const rule of old) {
     assert(rule.destination.startsWith('https://nsysu-itrc.vercel.app/ops'));
     assert.equal(rule.permanent, false);
   }
   assert.equal(old.find(rule => rule.source === '/ITRC財務站.html').destination, 'https://nsysu-itrc.vercel.app/ops?tool=finance');
   assert.equal(old.find(rule => rule.source === '/ITRC管理組-任務看板.html').destination, 'https://nsysu-itrc.vercel.app/ops?view=tasks&source=legacy');
+  assert.equal(old.find(rule => rule.source === '/tools/ITRC管理組-任務看板.html').destination, 'https://nsysu-itrc.vercel.app/ops?view=tasks&source=legacy');
+  const legacy = JSON.parse(readFileSync(new URL('../legacy-tools/vercel.json', import.meta.url), 'utf8'));
+  assert.deepEqual(legacy.redirects, old);
   const main = JSON.parse(readFileSync(new URL('../client/vercel.json', import.meta.url), 'utf8'));
   assert(main.rewrites.some(rule => rule.source === '/api/ops/:path*' && rule.destination === '/api/ops?path=:path*'));
   assert.equal(main.functions['api/ops.js'].maxDuration, 60);
