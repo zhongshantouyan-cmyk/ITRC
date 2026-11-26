@@ -233,6 +233,31 @@ npm --prefix client run build
 
 目前提供活動與宣傳同畫面、一般任務三態及同源各組工具入口。財務申請／簽核／入帳、公關 CRM、講師、幹部權限與證書沿用既有資料及規則；同網站不代表所有主表已自動雙向同步。社員／出席等資料仍依指定主來源管理。舊版教育影片已有成品，但其多層審核畫面不代表本次簡化版操作，交付時應標明版本。
 
+## 10. 舊看板正式搬移與回讀（2026-11-11）
+
+歷史 17 筆離線轉換檔不是當前正式來源。使用新 CLI 從既有 API 取得當前完整備份與人員，再重新轉換、預覽與回讀；只有明確 `--apply` 才會送出業務寫入。`import.preview` 仍可能保存既有 API 的冪等請求 metadata，不能稱為所有儲存層都零寫入。
+
+登入者必須同時具有完整系統備份匯出及工作台匯入權限；僅有社長工作台權限不足以匯出完整備份。授權短期 Firebase ID token 應透過既有安全流程取得，放在私人普通檔案，使用絕對路徑、權限 0600；不要貼聊天、寫入 shell history、repo 或日誌，也不要擷取瀏覽器儲存區作為替代。
+
+```bash
+# 每輪使用全新、git 忽略的私人證據資料夾；不覆蓋上一輪。
+node scripts/migrate-legacy-board.cjs --token-file /absolute/private/firebase-id-token --out-dir .private/legacy-board-live-preview --expect-cards 17
+
+# 確認本輪來源後，正式執行會重新擷取備份與預覽，而非直接沿用舊檔。
+node scripts/migrate-legacy-board.cjs --token-file /absolute/private/firebase-id-token --out-dir .private/legacy-board-live-apply --expect-cards 17 --apply
+
+# 不需憑證與網路，重新核對已保存的完整證據鏈。
+node scripts/verify-legacy-board-migration.cjs .private/legacy-board-live-apply
+```
+
+可另加 `--expect-board-sha256` 鎖定已人工確認的來源雜湊。CLI 使用固定正式 API，拒絕重新導向；任何來源、人員、既有任務、活動或宣傳在 preflight 期間改變均停止。單次 apply 後以新請求鍵重跑，必須得到 0 新增與 17 重複，並完整回讀。
+
+摘要分開記錄 `readbackPresenceVerified`、`newRecordsFieldsVerified`、`existingLegacyRecordsPreserved` 與 `sourceFieldDifferences`。全部已存在時為 `already_present_and_preserved`；不覆寫人為更新，也不宣稱所有欄位仍與原始來源相同。
+
+資料包保存 SQL、舊看板及已定義 RTDB 路徑，並實際隔離還原；平台環境變數、外部檔案及安全規則仍需依原備份手冊保管。回復清單只列本輪新建的 ID 與雜湊，不自動刪除正式記錄。寫入回應不明時不得重新執行 apply，先用保存的 request key、完整只讀快照與紀錄核對結果。
+
+完成正式逐筆回讀後，才提升 `itrc-tools` 的轉址部署；從兩個真正舊網址測試轉址、登入與任務列表，不能只測新版網域上的相同路徑。新版前端 `/release.json` 與後端 `/api/health` 的 `revision` 必須各自與所發布提交吻合，才能記錄正式版本。
+
 人像／活動照片仍需人員選定；缺少外部服務設定時，使用手動文案與 Canva 連結，不將設定存在當成設計已產生。完整系統備份已實際包含 14 SQL 表／11 RTDB 路徑並完成隔離還原；Cloudinary／Drive／Canva 檔案及平台設定、規則、金鑰不包含在這份資料包。詳見 [system-backup-runbook.md](system-backup-runbook.md)。
 
 ## 10. 本輪交付補充：離任、任務協作與正式來源回寫

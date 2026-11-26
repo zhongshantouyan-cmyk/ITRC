@@ -186,7 +186,8 @@ app.post('/api/upload/batch', authMiddleware, (req, res) => {
 
 // Health check
 app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', time: new Date().toISOString() });
+    res.set('Cache-Control', 'no-store');
+    res.json({ status: 'ok', time: new Date().toISOString(), ...require('./release-info').releaseInfo() });
 });
 
 if (require.main === module) {

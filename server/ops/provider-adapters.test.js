@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const {
-  getIntegrationStatus, generateCopy, createCanvaDesign, getCanvaJob, readSheetSource,
+  getIntegrationStatus, generateCopy, createCanvaDesign, getCanvaJob, readSheetSource, parseSheetSources,
 } = require('./providers');
 const {
   getOAuthConfiguration, createAuthorizationRequest, exchangeAuthorizationCode, refreshCanvaToken,
@@ -49,6 +49,34 @@ test('configuration reports capability without leaking credentials or claiming v
   const expired = getIntegrationStatus({ ...canvaEnv, CANVA_ACCESS_TOKEN_EXPIRES_AT: '2000-01-01T00:00:00.000Z' });
   assert.equal(expired.canva.configured, false);
   assert.equal(expired.canva.requiresConnection, true);
+});
+
+test('Sheets configuration requires usable named sources and stable row identity, not only nonempty env values', () => {
+  const source = { id: 'semester', spreadsheetId: 'example_sheet_id_123', range: '活動!A1:D100', kind: 'events',
+    columns: { title: '標題', sourceKey: '來源識別碼', date: '日期' } };
+  const env = { GOOGLE_SHEETS_ACCESS_TOKEN: 'test_google_token', OPS_SHEET_SOURCES_JSON: JSON.stringify([source]) };
+  assert.deepEqual(parseSheetSources(env), [source]);
+  assert.equal(getIntegrationStatus(env).sheets.configured, true);
+  assert.equal(getIntegrationStatus(env).sheets.verified, false);
+  for (const sources of ['{invalid', '[]', JSON.stringify([source, source]),
+    JSON.stringify([{ ...source, range: '活動!A:D' }]),
+    JSON.stringify([{ ...source, kind: 'finance' }]),
+    JSON.stringify([{ ...source, columns: { title: '標題' } }]),
+    JSON.stringify([{ ...source, columns: { title: '', sourceKey: '識別碼' } }]),
+  ]) {
+    const invalid = { ...env, OPS_SHEET_SOURCES_JSON: sources };
+    assert.throws(() => parseSheetSources(invalid), { code: 'CONFIGURATION_INVALID' });
+    assert.equal(getIntegrationStatus(invalid).sheets.configured, false);
+    assert.equal(getIntegrationStatus(invalid).sheets.status, 'configuration_invalid');
+  }
+  const bare = getIntegrationStatus({ GOOGLE_SHEETS_ACCESS_TOKEN: 'test_google_token', OPS_SHEET_SOURCE_IDS: source.spreadsheetId }).sheets;
+  assert.equal(bare.configured, false);
+  assert.deepEqual(bare.missing, ['OPS_SHEET_SOURCES_JSON']);
+  for (const badAuth of [
+    { GOOGLE_SHEETS_ACCESS_TOKEN: 'line\nbreak' },
+    { GOOGLE_SHEETS_ACCESS_TOKEN: '', GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON: '{bad' },
+    { GOOGLE_SHEETS_ACCESS_TOKEN: '', GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON: JSON.stringify({ type: 'service_account', client_email: 'reader@example.iam.gserviceaccount.com', private_key: 'invalid-key' }) },
+  ]) assert.equal(getIntegrationStatus({ ...env, ...badAuth }).sheets.status, 'configuration_invalid');
 });
 
 test('missing either AI key or explicit model uses labelled rules with honest placeholders', async () => {
@@ -288,18 +316,54 @@ test('ambiguous Canva create writes require reconciliation, while failed preflig
     { code: 'PROVIDER_UNAVAILABLE', uncertain: false });
 });
 
-test('Canva job polling validates job identity and secure Canva edit URL', async () => {
+test('Canva job success reads back the same design before returning an explicit edit link', async () => {
   const complete = { job: { id: 'job-123', status: 'success', result: { type: 'create_design', design: {
     id: 'DNewDesign', url: 'https://www.canva.com/design/DNewDesign/edit',
   } } } };
-  assert.deepEqual(await getCanvaJob('job-123', { env: canvaEnv, fetchImpl: async () => json(complete) }), {
-    providerJobId: 'job-123', status: 'success', canvaDesignId: 'DNewDesign', canvaEditUrl: 'https://www.canva.com/design/DNewDesign/edit',
+  const readback = { design: { id: 'DNewDesign', url: 'https://www.canva.com/design/DNewDesign/view',
+    urls: { edit_url: 'https://www.canva.com/d/explicit-edit-link', view_url: 'https://www.canva.com/d/view-link' } } };
+  const requested = [];
+  const read = async url => { requested.push(url); return json(url.endsWith('/autofills/job-123') ? complete : readback); };
+  assert.deepEqual(await getCanvaJob('job-123', { env: canvaEnv, fetchImpl: read }), {
+    providerJobId: 'job-123', status: 'success', canvaDesignId: 'DNewDesign', canvaEditUrl: readback.design.urls.edit_url,
   });
-  for (const badUrl of ['http://www.canva.com/design/D/edit', 'https://canva.com.evil.example/design/D/edit', 'https://user:pass@www.canva.com/design/D/edit']) {
-    const bad = structuredClone(complete); bad.job.result.design.url = badUrl;
-    await assert.rejects(getCanvaJob('job-123', { env: canvaEnv, fetchImpl: async () => json(bad) }), { code: 'INVALID_PROVIDER_RESPONSE' });
+  assert.deepEqual(requested, ['https://api.canva.com/rest/v1/autofills/job-123', 'https://api.canva.com/rest/v1/designs/DNewDesign']);
+  for (const badUrl of ['http://www.canva.com/design/D/edit', 'https://canva.com.evil.example/design/D/edit', 'https://user:pass@www.canva.com/design/D/edit', 'https://www.canva.com/design/D/view', 'https://www.canva.com/', 'https://www.canva.com/design/DWrongDesign/edit', 'https://www.canva.com/foo/edit']) {
+    const bad = structuredClone(readback); bad.design.urls.edit_url = badUrl;
+    await assert.rejects(getCanvaJob('job-123', { env: canvaEnv, fetchImpl: async url => json(url.includes('/autofills/') ? complete : bad) }), { code: 'INVALID_PROVIDER_RESPONSE' });
   }
   await assert.rejects(getCanvaJob('another-id', { env: canvaEnv, fetchImpl: async () => json(complete) }), { code: 'INVALID_PROVIDER_RESPONSE' });
+  await assert.rejects(getCanvaJob('job-123', { env: canvaEnv, fetchImpl: async url => json(url.includes('/autofills/') ? complete : { design: { ...readback.design, id: 'DWrongDesign' } }) }), { code: 'INVALID_PROVIDER_RESPONSE' });
+  const generic = { design: { id: 'DNewDesign', url: 'https://www.canva.com/design/DNewDesign/edit' } };
+  assert.equal((await getCanvaJob('job-123', { env: canvaEnv, fetchImpl: async url => json(url.includes('/autofills/') ? complete : generic) })).canvaEditUrl, generic.design.url);
+  generic.design.url = 'https://www.canva.com/design/DifferentDesign/edit';
+  await assert.rejects(getCanvaJob('job-123', { env: canvaEnv, fetchImpl: async url => json(url.includes('/autofills/') ? complete : generic) }), { code: 'INVALID_PROVIDER_RESPONSE' });
+});
+
+test('immediate Canva creation success persists the job before readback, so a failed read can never create a second design', async () => {
+  const complete = { job: { id: 'job-immediate', status: 'success', result: { type: 'create_design', design: { id: 'DNewDesign' } } } };
+  let creations = 0, reads = 0;
+  const created = await createCanvaDesign(approved, { env: canvaEnv, fetchImpl: async (_, request) => {
+    if (request.method === 'GET') return json(dataset);
+    creations++;
+    return json(complete);
+  } });
+  assert.deepEqual(created, { providerJobId: 'job-immediate', status: 'in_progress' });
+  await assert.rejects(getCanvaJob(created.providerJobId, { env: canvaEnv, fetchImpl: async (url, request) => {
+    assert.equal(request.method, 'GET');
+    if (url.includes('/autofills/')) return json(complete);
+    reads++;
+    throw new Error('readback unavailable');
+  } }), { code: 'PROVIDER_UNAVAILABLE', uncertain: false });
+  const retried = await getCanvaJob(created.providerJobId, { env: canvaEnv, fetchImpl: async (url, request) => {
+    assert.equal(request.method, 'GET');
+    if (url.includes('/autofills/')) return json(complete);
+    reads++;
+    return json({ design: { id: 'DNewDesign', urls: { edit_url: 'https://www.canva.com/design/DNewDesign/edit' } } });
+  } });
+  assert.equal(retried.status, 'success');
+  assert.equal(reads, 2);
+  assert.equal(creations, 1);
 });
 
 test('Sheets accepts only configured IDs and explicitly bounded ranges, always read-only', async () => {

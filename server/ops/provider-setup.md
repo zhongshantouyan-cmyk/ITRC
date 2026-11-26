@@ -25,8 +25,14 @@
 - CANVA_CLIENT_ID
 - CANVA_CLIENT_SECRET
 - CANVA_REDIRECT_URI：必須與 Canva 開發者後台完全相符。正式環境使用 HTTPS。
+- OPS_TOKEN_ENCRYPTION_KEY：32 位元組隨機值的標準 Base64，供伺服器加密保存 OAuth 憑證；只能放在部署平台的秘密設定。
+- OPS_FRONTEND_ORIGIN：OAuth 成功後返回的前端 origin。
 - 以下二選一：CANVA_TEMPLATE_DESIGN_ID 或 CANVA_BRAND_TEMPLATE_ID。
 - CANVA_FIELD_MAP_JSON：精確的母版欄位對照。
+
+目前 ITRC 正式回呼路徑為 `https://itrc-eight.vercel.app/api/ops/connections/canva/callback`，前端 origin 為 `https://nsysu-itrc.vercel.app`。前端的 ChatGPT Canva connector 不會提供這個網站的 OAuth 憑證；網站仍需管理者在自己的 Canva 帳戶完成授權。
+
+依 2026-11-11 查閱的官方 Autofill 文件，此功能可用於 Canva Pro（含 Education、Nonprofits）、Teams 或 Enterprise。帳戶實際權益仍需以網站 OAuth 使用者的 API 結果確認；不能以 ChatGPT connector 可用推定網站已取得權益，也不能自動升級或開始付費。母版必須有 Autofill dataset 欄位；一般可編輯設計回傳空 dataset 時，還需要在授權的母版複本上配置欄位。
 
 暫時測試也可使用 CANVA_ACCESS_TOKEN，並選填 CANVA_ACCESS_TOKEN_EXPIRES_AT（ISO 日期）；正式自動流程應使用可持續更新的 OAuth 連線。
 
@@ -56,6 +62,10 @@ canva-oauth.js 提供 PKCE 授權、授權碼交換及 refresh token 交換。cr
 
 API 建立作業回傳 in_progress、success 或 failed。寫入逾時、5xx 或無效回應會拋出 UNCERTAIN_RESULT，標記 uncertain=true；工作佇列應進入待核對狀態，不可自動新增第二份設計。讀取 dataset 失敗屬於安全的前置檢查失敗。
 
+即使建立請求立即回傳 success，也先保存 providerJobId；下一次輪詢成功後，會再呼叫 `GET /rest/v1/designs/{designId}` 讀回同一設計，確認設計 ID 與有效的編輯連結後才記錄成功。若讀回失敗，重試既有 job 的查詢，不重發建立請求。優先採用 `urls.edit_url`；一般 `url` 僅在明確指向同一設計的 `/edit` 路徑時接受，不能用檢視連結充當編輯連結。API 編輯連結可能有期限且僅供發起 OAuth 的 Canva 使用者使用，跨幹部協作仍需在 Canva 內確認共享權限。
+
+讀回 metadata 並不等於已驗證每個圖層。正式驗收必須以明確標示的測試活動完成「文案 OK → 處理工作 → 產生新設計 → 讀回 → 打開編輯連結」，在 Canva 編輯器確認文字與圖層可獨立選取、修改；未執行此步只能記為程式測試通過。
+
 ## Google Sheets
 
 兩種身分來源二選一：
@@ -72,11 +82,15 @@ API 建立作業回傳 in_progress、success 或 failed。寫入逾時、5xx 或
         "spreadsheetId":"REPLACE_WITH_SHEET_ID",
         "range":"活動!A1:J200",
         "kind":"events",
-        "columns":{"title":"活動名稱","date":"日期","speaker":"講者","venue":"地點"}
+        "columns":{"sourceKey":"固定來源識別碼","title":"活動名稱","date":"日期","speaker":"講者","venue":"地點"}
       }
     ]
 
 服務端只接受設定中完全吻合的 spreadsheetId 與 range。單次最多 500 列、52 欄且合計 10,000 格。不接受整欄或未設上限的範圍。低階測試也可用 OPS_SHEET_SOURCE_IDS 逗號分隔允許的 ID；正式畫面以具名來源設定為準。
+
+設定頁會驗證具名來源不是空陣列、來源 ID 不重複、範圍有界限、類型為 events／posts／tasks，且至少對應 `title` 與 `sourceKey` 欄。`sourceKey` 必須沿用來源現有的永久且唯一識別碼；不能用資料列號、標題或日期臨時當永久 ID。來源沒有可用的固定識別欄時，先停止該來源的自動匯入，不改寫原表。原始識別碼若已有系統來源鍵，必須原樣保留，避免把已匯入資料另建一份。
+
+只有 OPS_SHEET_SOURCE_IDS、壞 JSON、空來源或無效服務帳戶不會顯示為設定完成。檢查設定仍不代表 Google 已授權；要在正式環境成功讀取指定來源、預覽、匯入，再次讀取與匯入得到零新增，才能記為串接驗收完成。
 
 回傳 {spreadsheetId,range,values,sourceUrl,fetchedAt,readOnly:true}；values 第一列為來源欄名。呼叫端需先呈現匯入預覽，再將確認的資料寫入新系統。此模組完全沒有寫回工作表的 API。
 
@@ -86,13 +100,14 @@ API 建立作業回傳 in_progress、success 或 failed。寫入逾時、5xx 或
 
     node ops/provider-adapters.test.js
 
-測試全部使用假的 HTTP 回應；不使用部署金鑰、不建立真實設計、不呼叫付費模型。涵蓋未設定阻擋、規則草稿標記、AI 異常、Canva 版本與欄位檢查、未知寫入結果、Google 來源與範圍限制、服務帳戶簽章、PKCE／state，以及單次 refresh token 更新。
+測試全部使用假的 HTTP 回應；不使用部署金鑰、不建立真實設計、不呼叫付費模型。涵蓋未設定／無效設定阻擋、規則草稿標記、AI 異常、Canva 版本與欄位檢查、未知寫入結果、成功後讀回及同一作業重試、編輯／檢視連結辨識、Google 來源與範圍限制、服務帳戶簽章、PKCE／state，以及單次 refresh token 更新。這些隔離測試不能取代正式外部服務驗收。
 
 ## 主要規格來源
 
 - [OpenAI Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)
 - [Canva Autofill API](https://www.canva.dev/docs/apps/rest-apis/reference/autofills/create-design-autofill-job/)
 - [Canva Autofill job result](https://www.canva.dev/docs/apps/rest-apis/reference/autofills/get-design-autofill-job/)
+- [Canva design readback](https://www.canva.dev/docs/apps/rest-apis/reference/designs/get-design/)
 - [Canva OAuth PKCE](https://www.canva.dev/docs/apps/rest-apis/authentication/)
 - [Canva access/refresh token endpoint](https://www.canva.dev/docs/apps/rest-apis/reference/authentication/generate-access-token/)
 - [Google Sheets values.get](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.values/get)

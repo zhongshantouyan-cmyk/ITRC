@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { opsApi as api } from '../api';
-import { isAdviser, parseImportText } from './model';
+import { isAdviser, parseImportText, TASK_STATES } from './model';
 import { PERSON_STATES, isInactivePerson, ownerLabel, personById } from './people';
 import { ActionButton, Badge, ExternalLink, Panel, humanError } from './ui';
 function downloadTemplate(kind) {
@@ -18,30 +18,48 @@ function ImportPanel({ data, busy, execute }) {
   const [sourceLabel, setSourceLabel] = useState(`貼上試算表（${new Date().toISOString().slice(0, 10)}）`);
   const [sourceId, setSourceId] = useState(data.settings.sources?.[0]?.id || '');
   const [staged, setStaged] = useState(null); const [preview, setPreview] = useState(null); const [error, setError] = useState('');
-  const clearPreview = () => { setStaged(null); setPreview(null); setError(''); };
-  const change = text => { setInput(text); clearPreview(); };
+  const [outcome, setOutcome] = useState(null);
+  const previewRevision = useRef(0);
+  useEffect(() => () => { previewRevision.current += 1; }, []);
+  const clearPreview = () => { previewRevision.current += 1; setStaged(null); setPreview(null); setError(''); };
+  const change = text => { setInput(text); setOutcome(null); clearPreview(); };
   const validate = async () => {
+    clearPreview(); setOutcome(null); const revision = previewRevision.current;
     try {
-      setError(''); const parsed = parseImportText(input, kind);
+      const parsed = parseImportText(input, kind);
       if (defaultEvent && parsed.posts) parsed.posts = parsed.posts.map(post => !post.eventId && !post.eventSourceKey ? { ...post, eventId: defaultEvent } : post);
       for (const name of ['events', 'posts', 'tasks']) if (Array.isArray(parsed[name])) parsed[name] = parsed[name].map(row => !row.sourceUrl && !row.sourceLabel ? { ...row, sourceLabel: sourceLabel.trim() } : row);
-      const result = await execute('import.preview', null, parsed); setStaged(parsed); setPreview(result.record || result);
-    } catch (issue) { setError(humanError(issue)); }
+      const result = await execute('import.preview', null, parsed);
+      if (revision === previewRevision.current) { setStaged(parsed); setPreview(result.record || result); }
+    } catch (issue) { if (revision === previewRevision.current) setError(humanError(issue)); }
   };
-  const apply = async () => { try { setError(''); await execute('import.apply', null, staged); setInput(''); clearPreview(); } catch (issue) { setError(humanError(issue)); } };
-  const readSheet = async () => { try { setError(''); const result = await execute('import.sheet-preview', null, { sourceId }); setStaged(result.staged); setPreview(result.record || result); } catch (issue) { setError(humanError(issue)); } };
-  const previewRows = staged ? [...(staged.events || []), ...(staged.posts || []), ...(staged.tasks || [])] : [];
+  const apply = async () => { try { setError(''); const result = await execute('import.apply', null, staged); setOutcome(result.record || result); setInput(''); clearPreview(); } catch (issue) { setError(humanError(issue)); } };
+  const readSheet = async () => {
+    clearPreview(); setOutcome(null); const revision = previewRevision.current;
+    try { const result = await execute('import.sheet-preview', null, { sourceId }); if (revision === previewRevision.current) { setStaged(result.staged); setPreview(result.record || result); } }
+    catch (issue) { if (revision === previewRevision.current) setError(humanError(issue)); }
+  };
+  const previewRows = preview ? ['events', 'posts', 'tasks'].flatMap(name => (preview[name] || []).map(row => ({ ...row, kind: name }))) : [];
+  const duplicateRows = preview?.duplicates || [];
+  const importCount = previewRows.length;
   return <Panel title="從 Excel／試算表帶入資料" kicker="STAGED IMPORT">
     <p className="ops-muted">一列一則宣傳，整學期可以一次整理。下載範本填寫並另存 CSV，或直接貼上試算表的欄列；先看一下預覽，再匯入。</p>
-    {data.settings.sources?.length > 0 && <div className="ops-sheet-source"><label htmlFor="ops-sheet-source">已連接的來源表</label><select id="ops-sheet-source" value={sourceId} onChange={e => setSourceId(e.target.value)}>{data.settings.sources.map(source => <option key={source.id} value={source.id}>{source.name}</option>)}</select><ActionButton tone="quiet small" busy={busy} reason={!isAdviser(data.actor) ? '由顧問讀取來源表' : ''} onClick={readSheet}>讀取並預覽</ActionButton><ExternalLink href={data.settings.sources.find(source => source.id === sourceId)?.url}>開啟來源</ExternalLink></div>}
-    <div className="ops-import-controls"><label>資料類型<select value={kind} onChange={e => { setKind(e.target.value); clearPreview(); }}><option value="posts">宣傳需求（一列一則）</option><option value="events">活動資料</option><option value="tasks">任務</option></select></label><button className="ops-button quiet small" onClick={() => downloadTemplate(kind)}>下載 CSV 範本</button><label className="ops-file-label">選擇 CSV／TSV／JSON<input type="file" accept=".csv,.tsv,.json,text/csv,text/tab-separated-values,application/json" onChange={async e => { const file = e.target.files?.[0]; if (!file) return; if (file.size > 512000) { setError('請使用 500 KB 以內的檔案，或分批匯入。'); return; } try { change(await file.text()); setSourceLabel(file.name); } catch { setError('檔案無法讀取，請重新選擇。'); } e.target.value = ''; }} /></label></div>
-    <div className="ops-import-default"><label htmlFor="ops-import-source-label">來源檔名／資料標記</label><input id="ops-import-source-label" value={sourceLabel} onChange={e => { setSourceLabel(e.target.value); clearPreview(); }} placeholder="例如：115-1 宣傳需求表.csv" /><small>沒有來源網址時，保留原始檔名以便追溯。重複匯入請保留相同來源鍵。</small></div>
-    {kind === 'posts' && <div className="ops-import-default"><label htmlFor="ops-import-event">活動欄空白時，使用這個活動</label><select id="ops-import-event" value={defaultEvent} onChange={e => { setDefaultEvent(e.target.value); clearPreview(); }}><option value="">每列自行填活動 ID／活動來源鍵</option>{data.events.map(event => <option key={event.id} value={event.id}>{event.title}</option>)}</select><small>多個活動的學期資料，請在各列填「活動 ID」或「活動來源鍵」。同一活動的多則宣傳可用這裡一次指定。</small></div>}
-    <label className="ops-import-label" htmlFor="ops-import-text">貼上含標題列的表格資料</label><textarea id="ops-import-text" className="ops-import-input" rows={6} value={input} onChange={e => change(e.target.value)} placeholder={kind === 'posts' ? '宣傳名稱\t宣傳重點\t希望採取行動\t發布管道\n首波宣傳\t活動重點\t完成報名\tinstagram' : '標題\t講者\t日期\t地點\t宣傳重點\n範例活動\t講者\t2026-11-30\t教室\t活動重點'} />
+    {data.settings.sources?.length > 0 && <div className="ops-sheet-source"><label htmlFor="ops-sheet-source">已設定的來源表</label><select id="ops-sheet-source" value={sourceId} disabled={busy} onChange={e => { setSourceId(e.target.value); setOutcome(null); clearPreview(); }}>{data.settings.sources.map(source => <option key={source.id} value={source.id}>{source.name}</option>)}</select><ActionButton tone="quiet small" busy={busy} reason={!isAdviser(data.actor) ? '由顧問讀取來源表' : !sourceId ? '請選擇來源表' : ''} onClick={readSheet}>讀取並預覽</ActionButton><ExternalLink href={data.settings.sources.find(source => source.id === sourceId)?.url}>開啟來源</ExternalLink></div>}
+    <div className="ops-import-controls"><label>資料類型<select disabled={busy} value={kind} onChange={e => { setKind(e.target.value); clearPreview(); }}><option value="posts">宣傳需求（一列一則）</option><option value="events">活動資料</option><option value="tasks">任務</option></select></label><button className="ops-button quiet small" onClick={() => downloadTemplate(kind)}>下載 CSV 範本</button><label className="ops-file-label">選擇 CSV／TSV／JSON<input type="file" disabled={busy} accept=".csv,.tsv,.json,text/csv,text/tab-separated-values,application/json" onChange={async e => { const file = e.target.files?.[0]; if (!file) return; if (file.size > 512000) { setError('請使用 500 KB 以內的檔案，或分批匯入。'); return; } try { change(await file.text()); setSourceLabel(file.name); } catch { setError('檔案無法讀取，請重新選擇。'); } e.target.value = ''; }} /></label></div>
+    <div className="ops-import-default"><label htmlFor="ops-import-source-label">來源檔名／資料標記</label><input disabled={busy} id="ops-import-source-label" value={sourceLabel} onChange={e => { setSourceLabel(e.target.value); clearPreview(); }} placeholder="例如：115-1 宣傳需求表.csv" /><small>沒有來源網址時，保留原始檔名以便追溯。重複匯入請保留相同來源鍵。</small></div>
+    {kind === 'posts' && <div className="ops-import-default"><label htmlFor="ops-import-event">活動欄空白時，使用這個活動</label><select disabled={busy} id="ops-import-event" value={defaultEvent} onChange={e => { setDefaultEvent(e.target.value); clearPreview(); }}><option value="">每列自行填活動 ID／活動來源鍵</option>{data.events.map(event => <option key={event.id} value={event.id}>{event.title}</option>)}</select><small>多個活動的學期資料，請在各列填「活動 ID」或「活動來源鍵」。同一活動的多則宣傳可用這裡一次指定。</small></div>}
+    <label className="ops-import-label" htmlFor="ops-import-text">貼上含標題列的表格資料</label><textarea disabled={busy} id="ops-import-text" className="ops-import-input" rows={6} value={input} onChange={e => change(e.target.value)} placeholder={kind === 'posts' ? '宣傳名稱\t宣傳重點\t希望採取行動\t發布管道\n首波宣傳\t活動重點\t完成報名\tinstagram' : '標題\t講者\t日期\t地點\t宣傳重點\n範例活動\t講者\t2026-11-30\t教室\t活動重點'} />
     <p className="ops-footnote">支援中英文欄名、逗號或 Tab 分隔；每次最多 200 筆。日期用 YYYY-MM-DD；發布時間建議附 +08:00。管道填 instagram、story 或 announcement。原生 .xlsx 請先另存 CSV。原試算表不會被改寫。</p>
-    <div className="ops-button-row"><ActionButton tone="quiet" busy={busy} reason={!isAdviser(data.actor) ? '由管理顧問檢查並匯入' : !input.trim() ? '先選擇檔案或貼上表格' : ''} onClick={validate}>檢查與預覽</ActionButton>{staged && <ActionButton busy={busy} reason={!isAdviser(data.actor) ? '由管理顧問確認匯入' : ''} onClick={apply}>確認匯入 {previewRows.length} 筆資料</ActionButton>}</div>
+    <div className="ops-button-row"><ActionButton tone="quiet" busy={busy} reason={!isAdviser(data.actor) ? '由管理顧問檢查並匯入' : !input.trim() ? '先選擇檔案或貼上表格' : ''} onClick={validate}>檢查與預覽</ActionButton>{staged && <ActionButton busy={busy} reason={!isAdviser(data.actor) ? '由管理顧問確認匯入' : !importCount ? '所有資料均已匯入，沒有新增項目' : ''} onClick={apply}>確認新增 {importCount} 筆資料</ActionButton>}</div>
     {error && <p className="ops-inline-error" role="alert">{error}</p>}
-    {preview && <div className="ops-import-preview"><div className="ops-item-line"><strong>預覽通過 · {previewRows.length} 筆</strong><span className="ops-badge ops-badge-amber">尚未寫入</span></div><p>活動與宣傳會先建立為草稿，原資料不會改寫。相同來源鍵會由伺服器檢查重複。</p><div className="ops-table-scroll"><table><thead><tr><th>標題</th><th>日期／預計發布</th><th>負責人</th><th>關聯活動</th></tr></thead><tbody>{previewRows.slice(0, 10).map((row, i) => <tr key={i}><td>{row.title}</td><td>{row.date || row.dueDate || row.scheduledAt || '待補'}</td><td>{ownerLabel(row, data.people)}</td><td>{data.events.find(event => event.id === row.eventId)?.title || row.eventSourceKey || row.sourceRevision || '—'}</td></tr>)}</tbody></table></div>{previewRows.length > 10 && <p className="ops-footnote">先顯示前 10 筆；確認後會送出完整 {previewRows.length} 筆。</p>}{Array.isArray(preview.warnings) && preview.warnings.length > 0 && <p className="ops-note">{preview.warnings.map(w => typeof w === 'string' ? w : w.message || JSON.stringify(w)).join('；')}</p>}</div>}
+    {outcome && <p className="ops-note" role="status">匯入結果：新增活動 {outcome.importedEvents || 0} 筆、宣傳 {outcome.importedPosts || 0} 筆、任務 {outcome.importedTasks || 0} 筆；略過重複 {outcome.duplicates?.length || 0} 筆。</p>}
+    {preview && <div className="ops-import-preview">
+      <div className="ops-item-line"><strong>預覽結果 · 新增 {importCount} 筆 · 略過重複 {duplicateRows.length} 筆</strong><span className="ops-badge ops-badge-amber">尚未寫入</span></div>
+      <p>以下列出全部預覽資料。活動與宣傳以草稿建立；任務保留來源狀態。重複來源會略過，原資料不會被覆寫。</p>
+      {importCount > 0 && <div className="ops-table-scroll"><table><caption className="ops-sr-only">即將新增的全部資料</caption><thead><tr><th>標題／備註</th><th>狀態</th><th>日期／預計發布</th><th>負責人</th><th>來源與關聯</th></tr></thead><tbody>{previewRows.map((row, i) => <tr key={`${row.kind}-${row.sourceKey || i}`}><td>{row.title}{row.notes && <details><summary>查看完整備註</summary><p style={{ whiteSpace: 'pre-wrap' }}>{row.notes}</p></details>}</td><td>{row.kind === 'tasks' ? TASK_STATES[row.status || 'todo'] || row.status : '草稿'}</td><td>{row.date || row.dueDate || row.scheduledAt || '未填'}</td><td>{ownerLabel(row, data.people)}</td><td><ExternalLink href={row.sourceUrl}>{row.sourceLabel || '開啟原始來源'}</ExternalLink>{!row.sourceUrl && <small>{row.sourceLabel}</small>}<small>{row.sourceKey}</small>{row.sourceRevision && <small>{row.sourceRevision}</small>}{(row.eventId || row.eventSourceKey) && <small>活動：{data.events.find(event => event.id === row.eventId)?.title || row.eventSourceKey || row.eventId}</small>}</td></tr>)}</tbody></table></div>}
+      {duplicateRows.length > 0 && <details open><summary>略過的重複資料（{duplicateRows.length} 筆）</summary><ul>{duplicateRows.map((row, i) => <li key={`${row.kind}-${row.sourceKey}-${i}`}>{row.title}<small>來源鍵：{row.sourceKey}</small></li>)}</ul></details>}
+      {Array.isArray(preview.warnings) && preview.warnings.length > 0 && <p className="ops-note">{preview.warnings.map(w => typeof w === 'string' ? w : w.message || JSON.stringify(w)).join('；')}</p>}
+    </div>}
   </Panel>;
 }
 
