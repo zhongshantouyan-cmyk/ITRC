@@ -84,7 +84,10 @@ export function legacyToolsPlugin({ repositoryRoot, mode = process.env.VERCEL_EN
 export function oldToolsRedirects(origin = 'https://nsysu-itrc.vercel.app') {
   return [{ source: '/', destination: `${origin}/ops`, permanent: false },
     { source: '/index.html', destination: `${origin}/ops`, permanent: false },
-    ...CLUB_TOOLS.map(tool => ({ source: `/${tool.file}`, destination: `${origin}${tool.workspacePath}`, permanent: false }))];
+    ...CLUB_TOOLS.flatMap(tool => [
+      { source: `/${tool.file}`, destination: `${origin}${tool.workspacePath}`, permanent: false },
+      { source: `/tools/${tool.file}`, destination: `${origin}${tool.workspacePath}`, permanent: false },
+    ])];
 }
 
 export function mainToolsRedirects() {

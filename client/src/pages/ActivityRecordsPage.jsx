@@ -113,12 +113,12 @@ export default function ActivityRecordsPage() {
     // Fetch available semesters
     useEffect(() => {
         api.get('/activities/semesters', { params: { type: 'record' } }).then(res => {
-            const sems = res.data.length > 0 ? res.data : ['114-1'];
+            const sems = Array.isArray(res.data) && res.data.length > 0 ? res.data : ['115-1'];
             setSemesters(sems);
             setActiveSemester(sems[0]);
         }).catch(() => {
-            setSemesters(['114-1']);
-            setActiveSemester('114-1');
+            setSemesters(['115-1']);
+            setActiveSemester('115-1');
         });
     }, []);
 

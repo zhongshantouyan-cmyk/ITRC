@@ -29,12 +29,8 @@ function canonical(value) {
   return value;
 }
 function parseSources(env) {
-  if (!env.OPS_SHEET_SOURCES_JSON) return [];
-  try {
-    const sources = JSON.parse(env.OPS_SHEET_SOURCES_JSON);
-    if (!Array.isArray(sources) || sources.length > 20) return [];
-    return sources.filter(item => item && /^[a-zA-Z0-9_-]{1,80}$/.test(item.id) && /^[a-zA-Z0-9_-]{10,200}$/.test(item.spreadsheetId) && typeof item.range === 'string' && item.range.length < 200 && ['events','posts','tasks'].includes(item.kind) && item.columns && typeof item.columns === 'object');
-  } catch { return []; }
+  try { return require('./providers').parseSheetSources(env); }
+  catch { return []; }
 }
 
 function createOpsService({ db, store = createOpsStore(db), providers, env = process.env, now = () => new Date().toISOString() }) {
@@ -68,11 +64,21 @@ function createOpsService({ db, store = createOpsStore(db), providers, env = pro
     catch (error) { throw new OpsError(error?.configMissing ? 409 : 502, error?.code || 'SOURCE_UNAVAILABLE',safeError(error)); }
     const values = Array.isArray(output) ? output : output.values;
     assert(Array.isArray(values) && values.length > 1 && values.length <= 201,400,'SOURCE_LIMIT','來源表需包含標題列與 1 到 200 筆資料。');
-    const headers = values[0].map(String);
-    for (const column of Object.values(source.columns)) assert(headers.includes(column),400,'SOURCE_COLUMNS','來源表的欄位與設定不一致。');
-    const rows = values.slice(1).filter(row => row.some(value => String(value).trim())).map(row => {
+    const headers = values[0].map(value => String(value).trim());
+    for (const column of Object.values(source.columns)) assert(headers.filter(header => header === column).length === 1,400,'SOURCE_COLUMNS',`來源表必須有且只有一個「${column}」欄位。`);
+    assert(source.columns.sourceKey,400,'SOURCE_KEY_REQUIRED','Google 試算表來源需要對應固定的「來源鍵」欄位；不能用標題或列號作為永久識別。');
+    const range = source.range.match(/^(.*!)(\$?[A-Z]{1,2})\$?([1-9][0-9]*):(\$?[A-Z]{1,2})\$?([1-9][0-9]*)$/i);
+    assert(range,400,'SOURCE_RANGE','來源表需設定包含工作表名稱的完整有限範圍。');
+    const seen = new Set();
+    const rows = values.slice(1).map((row,index) => ({row,rowNumber:Number(range[3]) + index + 1})).filter(({row}) => row.some(value => String(value).trim())).map(({row,rowNumber}) => {
       const mapped = Object.fromEntries(Object.entries(source.columns).map(([field,column]) => [field,String(row[headers.indexOf(column)] ?? '')]));
-      mapped.sourceUrl = `https://docs.google.com/spreadsheets/d/${source.spreadsheetId}/edit`;
+      const sourceKey = mapped.sourceKey.trim();
+      assert(sourceKey,400,'SOURCE_KEY_REQUIRED',`來源表第 ${rowNumber} 列缺少固定來源鍵；請先補齊後再預覽。`);
+      assert(!seen.has(sourceKey),400,'SOURCE_KEY_DUPLICATE',`來源表第 ${rowNumber} 列的固定來源鍵重複，請先核對來源資料。`);
+      seen.add(sourceKey); mapped.sourceKey = sourceKey;
+      const rowRange = `${range[1]}${range[2].replace('$','')}${rowNumber}:${range[4].replace('$','')}${rowNumber}`;
+      mapped.sourceUrl = `https://docs.google.com/spreadsheets/d/${source.spreadsheetId}/edit#range=${encodeURIComponent(rowRange)}`;
+      mapped.sourceLabel = `${source.name || source.id}｜${rowRange}`;
       mapped.sourceDate = now().slice(0,10);
       mapped.sourceRevision = output.fetchedAt || now();
       return mapped;
