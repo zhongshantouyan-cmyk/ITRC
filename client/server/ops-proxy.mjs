@@ -3,6 +3,7 @@ const ROUTES = Object.freeze({
   actions: 'POST',
   'connections/canva': 'GET',
   'connections/canva/start': 'POST',
+  'connections/google-sheets/metadata': 'GET',
 });
 
 export const MAX_REQUEST_BYTES = 256 * 1024;

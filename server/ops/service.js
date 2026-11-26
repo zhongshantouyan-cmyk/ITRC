@@ -35,6 +35,12 @@ function parseSources(env) {
 
 function createOpsService({ db, store = createOpsStore(db), providers, env = process.env, now = () => new Date().toISOString() }) {
   const provider = () => providers || require('./providers');
+  async function sheetsCredentialMetadata(actor) {
+    assert(isAdvisor(actor),403,'ADVISOR_REQUIRED','試算表服務身分只供社長或顧問查看。');
+    assertActorActive(await store.read(),actor);
+    try { return require('./providers').getSheetsCredentialMetadata(env); }
+    catch (error) { throw new OpsError(409,error.code || 'CONFIGURATION_INVALID',safeError(error)); }
+  }
   async function bootstrap(actor) {
     const state = await store.read();
     assertActorActive(state,actor);
@@ -223,7 +229,7 @@ function createOpsService({ db, store = createOpsStore(db), providers, env = pro
     }
     return {processed:results.length,jobs:results};
   }
-  return {bootstrap,action,runJobs,store,ready:store.ready};
+  return {bootstrap,sheetsCredentialMetadata,action,runJobs,store,ready:store.ready};
 }
 
 module.exports = { createOpsService, safeError, parseSources };

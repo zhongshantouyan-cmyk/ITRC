@@ -50,7 +50,27 @@ test('Preview direct tool URLs contain no live authentication or business script
 
 test('redirects use only known old pages and keep the existing API gateway configuration', () => {
   const old = oldToolsRedirects();
-  assert.equal(old.length, CLUB_TOOLS.length * 2 + 2);
+  const mainRedirects = mainToolsRedirects();
+  const knownSources = CLUB_TOOLS.flatMap(tool => [`/${tool.file}`, `/tools/${tool.file}`]
+    .flatMap(path => [path, new URL(path, 'https://legacy.example.invalid').pathname]));
+  assert.equal(old.length, CLUB_TOOLS.length * 4 + 2);
+  assert.equal(mainRedirects.length, CLUB_TOOLS.length * 4 + 1);
+  assert.deepEqual(new Set(old.map(rule => rule.source)), new Set(['/', '/index.html', ...knownSources]));
+  assert.deepEqual(new Set(mainRedirects.map(rule => rule.source)), new Set(['/tools/index.html', ...knownSources]));
+  for (const tool of CLUB_TOOLS) {
+    for (const path of [`/${tool.file}`, `/tools/${tool.file}`]) {
+      const encodedPath = new URL(path, 'https://legacy.example.invalid').pathname;
+      assert.notEqual(encodedPath, path);
+      for (const source of [path, encodedPath]) {
+        assert.deepEqual(old.find(rule => rule.source === source), {
+          source, destination: `https://nsysu-itrc.vercel.app${tool.workspacePath}`, permanent: false,
+        });
+        assert.deepEqual(mainRedirects.find(rule => rule.source === source), {
+          source, destination: tool.workspacePath, permanent: false,
+        });
+      }
+    }
+  }
   for (const rule of old) {
     assert(rule.destination.startsWith('https://nsysu-itrc.vercel.app/ops'));
     assert.equal(rule.permanent, false);
@@ -63,7 +83,7 @@ test('redirects use only known old pages and keep the existing API gateway confi
   const main = JSON.parse(readFileSync(new URL('../client/vercel.json', import.meta.url), 'utf8'));
   assert(main.rewrites.some(rule => rule.source === '/api/ops/:path*' && rule.destination === '/api/ops?path=:path*'));
   assert.equal(main.functions['api/ops.js'].maxDuration, 60);
-  for (const rule of mainToolsRedirects()) assert.deepEqual(main.redirects.find(item => item.source === rule.source), rule);
+  for (const rule of mainRedirects) assert.deepEqual(main.redirects.find(item => item.source === rule.source), rule);
 });
 
 test('main workspace and embedded tools use the same existing Firebase project', () => {

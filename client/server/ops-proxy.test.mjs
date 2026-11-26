@@ -49,8 +49,8 @@ function assertNoSecrets(result, values = [FIREBASE, OIDC]) {
   for (const value of values) assert.equal(output.includes(value), false, `response leaked ${value.slice(0, 8)}`);
 }
 
-test('only four JSON routes proxy to the fixed origin with the original Firebase identity', async () => {
-  for (const [path, method] of [['bootstrap', 'GET'], ['actions', 'POST'], ['connections/canva', 'GET'], ['connections/canva/start', 'POST']]) {
+test('only five JSON routes proxy to the fixed origin with the original Firebase identity', async () => {
+  for (const [path, method] of [['bootstrap', 'GET'], ['actions', 'POST'], ['connections/canva', 'GET'], ['connections/canva/start', 'POST'], ['connections/google-sheets/metadata', 'GET']]) {
     const harness = setup();
     const req = request({ url: `/api/ops/${path}`, method });
     if (path === 'actions') { req.body = COMMAND; req.headers['content-type'] = 'application/json'; }
@@ -79,6 +79,7 @@ test('Vercel rewrite supports rewritten query and original URL forms without for
     { url: '/api/ops?path=bootstrap', query: { path: 'bootstrap' } },
     { url: '/api/ops/bootstrap', query: { path: 'bootstrap' } },
     { url: '/api/ops?path=connections%2Fcanva', query: { path: 'connections/canva' } },
+    { url: '/api/ops?path=connections%2Fgoogle-sheets%2Fmetadata', query: { path: 'connections/google-sheets/metadata' } },
   ]) {
     const harness = setup();
     const result = await harness.invoke(request(values));
@@ -89,7 +90,7 @@ test('Vercel rewrite supports rewritten query and original URL forms without for
 });
 
 test('cron, OAuth callback, disconnect, CMS and arbitrary proxy routes fail before OIDC or fetch', async () => {
-  for (const path of ['jobs/tick', 'connections/canva/callback', 'connections/canva/disconnect', 'health', 'sections', 'bootstrap/extra', 'connections/canva/', 'toString', '__proto__']) {
+  for (const path of ['jobs/tick', 'connections/canva/callback', 'connections/canva/disconnect', 'connections/google-sheets/start', 'connections/google-sheets/metadata/extra', 'health', 'sections', 'bootstrap/extra', 'connections/canva/', 'toString', '__proto__']) {
     const harness = setup();
     assert.equal((await harness.invoke(request({ url: `/api/ops/${path}` }))).status, 404, path);
     assertStopped(harness);
@@ -119,13 +120,33 @@ test('path normalization, caller target, duplicate and conflicting query values 
 });
 
 test('method allowlist rejects OPTIONS, HEAD and writes to GET routes without minting OIDC', async () => {
-  for (const [path, method, allow] of [['bootstrap', 'POST', 'GET'], ['bootstrap', 'OPTIONS', 'GET'], ['bootstrap', 'HEAD', 'GET'], ['actions', 'GET', 'POST'], ['actions', 'DELETE', 'POST'], ['connections/canva/start', 'PUT', 'POST']]) {
+  for (const [path, method, allow] of [['bootstrap', 'POST', 'GET'], ['bootstrap', 'OPTIONS', 'GET'], ['bootstrap', 'HEAD', 'GET'], ['actions', 'GET', 'POST'], ['actions', 'DELETE', 'POST'], ['connections/canva/start', 'PUT', 'POST'], ['connections/google-sheets/metadata', 'POST', 'GET']]) {
     const harness = setup();
     const result = await harness.invoke(request({ url: `/api/ops/${path}`, method }));
     assert.equal(result.status, 405);
     assert.equal(result.headers.allow, allow);
     assertStopped(harness);
   }
+});
+
+test('Sheets metadata preserves non-secret identity, backend admin denial, and credential filtering', async () => {
+  const metadata = { client_email:'reader@example.iam.gserviceaccount.com', project_id:'itrc-test-project', credentialSource:'firebase_service_account', missing:[] };
+  const req = request({url:'/api/ops/connections/google-sheets/metadata'});
+  const accepted = setup({fetchImpl:async () => json(metadata)});
+  const result = await accepted.invoke(req);
+  assert.equal(result.status,200);
+  assert.deepEqual(result.body,metadata);
+  assert.equal(accepted.fetches[0].options.headers.Authorization,AUTHORIZATION);
+  assert.equal(accepted.fetches[0].options.method,'GET');
+  assert.equal(accepted.fetches[0].options.body,undefined);
+  assert.equal(result.headers['cache-control'],'no-store');
+  const denial = {error:'試算表服務身分只供社長或顧問查看。',code:'ADVISOR_REQUIRED'};
+  const denied = await setup({fetchImpl:async () => json(denial,{status:403})}).invoke(req);
+  assert.equal(denied.status,403);
+  assert.deepEqual(denied.body,denial);
+  const unsafe = await setup({fetchImpl:async () => json({...metadata,private_key:'SYNTHETIC_PRIVATE_KEY'})}).invoke(req);
+  assert.equal(unsafe.status,502);
+  assertNoSecrets(unsafe,['SYNTHETIC_PRIVATE_KEY']);
 });
 
 test('missing, malformed and duplicated Firebase Authorization fail before OIDC access', async () => {
