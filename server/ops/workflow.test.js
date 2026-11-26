@@ -12,6 +12,7 @@ const jwt = require('jsonwebtoken');
 const { createOpsService } = require('./service');
 const { createOpsRouter } = require('./index');
 const { actorFromIdentity } = require('./auth');
+const { readSheetSource } = require('./providers');
 
 const env = { OPS_APPROVER_EMAILS:'approver@example.com', OPS_DESIGNER_EMAILS:'designer@example.com' };
 const identity = email => ({uid:email,email,email_verified:true,name:email.split('@')[0]});
@@ -201,6 +202,59 @@ test('records and audit survive a fresh database connection',async t => {
   const state = await reopened.bootstrap(owner); assert.equal(state.projects[0].id,created.id); assert.equal(state.audit.length,1);
 });
 
+test('title-only tasks persist each simple status after a fresh connection without adding approval gates',async t => {
+  const f = await fixture(t);
+  const creationKey = randomUUID();
+  let task = (await f.command('task.create',{title:'【隔離測試】只填標題'},null,owner,creationKey)).record;
+  await f.command('task.create',{title:'【隔離測試】只填標題'},null,owner,creationKey);
+  for (const status of ['todo','doing','done','todo']) {
+    if (task.status !== status) task = (await f.command('task.set-status',{status},task,outsider)).record;
+    const db = createClient({url:`file:${path.join(f.dir,'test.db')}`});
+    try {
+      const loaded = await createOpsService({db,providers,env}).bootstrap(owner);
+      assert.equal(loaded.tasks.length,1);
+      const saved = loaded.tasks[0];
+      assert.equal(saved.id,task.id); assert.equal(saved.status,status); assert.equal(saved.ownerEmail,'');
+      assert.equal(saved.reviewerPersonId,undefined); assert.equal(saved.deliverableUrl,undefined);
+      assert.equal(saved.completedBy,status === 'done' ? outsider.email : undefined);
+    } finally { db.close(); }
+  }
+});
+
+test('one copy confirmation connects event, design job and optional task through persistent readback',async t => {
+  let creations = 0, polls = 0;
+  const f = await fixture(t,{
+    createCanvaDesign:async () => { creations++; return {providerJobId:'isolated-design-job',status:'in_progress'}; },
+    getCanvaJob:async () => { polls++; return {providerJobId:'isolated-design-job',status:'success',canvaDesignId:'ISOLATED',canvaEditUrl:'https://www.canva.com/design/ISOLATED/edit'}; },
+  });
+  const event = (await f.command('event.create',{title:'【隔離測試】活動與宣傳',eventType:'activity'})).record;
+  let post = (await f.command('post.create',{title:'【隔離測試】宣傳',eventId:event.id,caption:'僅用於隔離測試，不對外發送。'})).record;
+  post = (await f.command('post.confirm',{},post)).record;
+  const approvedVersion = post.approvedVersion;
+  const requestKey = randomUUID();
+  const job = (await f.command('post.request-design',{},post,owner,requestKey)).record;
+  await f.command('post.request-design',{},post,owner,requestKey);
+  const task = (await f.command('task.create',{title:'【隔離測試】檢查設計',postId:post.id})).record;
+  assert.equal(task.eventId,event.id);
+  await f.service.runJobs({limit:1,jobId:job.id});
+  await f.service.runJobs({limit:1,jobId:job.id});
+  assert.equal(creations,1); assert.equal(polls,1);
+  const db = createClient({url:`file:${path.join(f.dir,'test.db')}`});
+  try {
+    const loaded = await createOpsService({db,providers,env}).bootstrap(owner);
+    const saved = loaded.posts.find(row => row.id === post.id);
+    assert.equal(saved.eventId,event.id); assert.equal(saved.approvedVersion,approvedVersion);
+    assert.equal(saved.designCopyVersion,approvedVersion); assert.equal(saved.canvaEditUrl,'https://www.canva.com/design/ISOLATED/edit');
+    assert.equal(loaded.jobs.length,1); assert.equal(loaded.jobs[0].status,'succeeded');
+    assert.equal(loaded.tasks[0].postId,saved.id); assert.equal(loaded.tasks[0].eventId,event.id);
+    assert.equal(loaded.audit.filter(row => row.action === 'post.confirm').length,1);
+    assert.equal(loaded.audit.filter(row => row.action === 'post.design-review').length,0);
+    assert.equal(saved.publishedAt,undefined);
+    post = saved;
+  } finally { db.close(); }
+  assert.equal((await f.command('post.complete',{},post)).record.stage,'completed');
+});
+
 test('people, member-recorded completion and source-linked copy history persist across reconnection',async t => {
   const f = await fixture(t);
   const people = [
@@ -276,14 +330,63 @@ test('in-flight Canva results cannot reopen a completed promotion or overwrite i
 test('configured sheet previews are read-only, preserve source evidence and reject arbitrary source IDs',async t => {
   let calls=0;
   const f = await fixture(t,{readSheetSource:async ({spreadsheetId,range}) => {
-    calls++; assert.equal(spreadsheetId,'example_sheet_id_123'); assert.equal(range,'活動!A1:D20');
-    return {values:[['標題','日期','講者','地點'],['示範來源課程','2026-11-01','示範講者','示範場地']],fetchedAt:'2026-10-25T00:00:00Z'};
-  }},{OPS_SHEET_SOURCES_JSON:JSON.stringify([{id:'semester',name:'學期來源',spreadsheetId:'example_sheet_id_123',range:'活動!A1:D20',kind:'events',columns:{title:'標題',date:'日期',speaker:'講者',venue:'地點'}}])});
+    calls++; assert.equal(spreadsheetId,'example_sheet_id_123'); assert.equal(range,'活動!A1:E20');
+    return {values:[['標題','日期','講者','地點','來源鍵'],['示範來源課程','2026-11-01','示範講者','示範場地','existing-source-001']],fetchedAt:'2026-10-25T00:00:00Z'};
+  }},{OPS_SHEET_SOURCES_JSON:JSON.stringify([{id:'semester',name:'學期來源',spreadsheetId:'example_sheet_id_123',range:'活動!A1:E20',kind:'events',columns:{title:'標題',date:'日期',speaker:'講者',venue:'地點',sourceKey:'來源鍵'}}])});
   await assert.rejects(f.command('import.sheet-preview',{sourceId:'arbitrary'},null,admin),{code:'SOURCE_NOT_ALLOWED'});
   const response = await f.command('import.sheet-preview',{sourceId:'semester'},null,admin);
   assert.equal(calls,1); assert.equal(response.record.events[0].sourceRevision,'2026-10-25T00:00:00Z');
-  assert.equal(response.staged.events[0].sourceUrl,'https://docs.google.com/spreadsheets/d/example_sheet_id_123/edit');
+  assert.equal(response.staged.events[0].sourceUrl,'https://docs.google.com/spreadsheets/d/example_sheet_id_123/edit#range=' + encodeURIComponent('活動!A2:E2'));
+  assert.equal(response.staged.events[0].sourceLabel,'學期來源｜活動!A2:E2');
+  assert.equal(response.staged.events[0].sourceKey,'existing-source-001');
   assert.equal((await f.service.bootstrap(owner)).events.length,0);
+});
+
+test('Sheets GET to preview, import and repeat keeps stable source keys even after title changes and row moves',async t => {
+  const source = {id:'task-source',name:'任務來源',spreadsheetId:'example_sheet_id_123',range:'任務!A5:C20',kind:'tasks',columns:{sourceKey:'來源鍵',title:'標題',notes:'備註'}};
+  const sheetEnv = {GOOGLE_SHEETS_ACCESS_TOKEN:'isolated-google-token',OPS_SHEET_SOURCES_JSON:JSON.stringify([source])};
+  let values = [['來源鍵','標題','備註'],['gdrive:existing-task','既有一般任務','保持來源鍵'],[],['sheet-task-001','【隔離測試】新任務','保留備註']];
+  let reads = 0;
+  const f = await fixture(t,{readSheetSource:input => readSheetSource(input,{env:sheetEnv,fetchImpl:async (url,options) => {
+    reads++; assert.equal(options.method || 'GET','GET');
+    assert.ok(url.startsWith('https://sheets.googleapis.com/v4/spreadsheets/example_sheet_id_123/values/'));
+    assert.equal(options.body,undefined);
+    return new Response(JSON.stringify({range:source.range,majorDimension:'ROWS',values}),{status:200});
+  }})},sheetEnv);
+  await f.command('import.apply',{tasks:[{title:'既有一般任務',sourceKey:'gdrive:existing-task',sourceUrl:'https://example.org/old-source'}]},null,admin);
+  const before = structuredClone(values);
+  const preview = await f.command('import.sheet-preview',{sourceId:source.id},null,admin);
+  assert.deepEqual(values,before); assert.equal(reads,1);
+  assert.equal(preview.record.tasks.length,1); assert.equal(preview.record.duplicates.length,1);
+  assert.equal((await f.service.bootstrap(owner)).tasks.length,1);
+  const proposed = preview.record.tasks[0];
+  assert.equal(proposed.sourceKey,'sheet-task-001'); assert.equal(proposed.sourceLabel,'任務來源｜任務!A8:C8');
+  assert.equal(proposed.notes,'保留備註');
+  const applied = await f.command('import.apply',preview.staged,null,admin);
+  assert.equal(applied.record.importedTasks,1); assert.equal(applied.record.duplicates.length,1);
+  const repeat = await f.command('import.apply',preview.staged,null,admin);
+  assert.equal(repeat.record.importedTasks,0); assert.equal(repeat.record.duplicates.length,2);
+  values = [values[0],['sheet-task-001','【隔離測試】來源改名並移列','新版備註'],values[1]];
+  const changed = await f.command('import.sheet-preview',{sourceId:source.id},null,admin);
+  assert.equal(reads,2); assert.equal(changed.record.tasks.length,0); assert.equal(changed.record.duplicates.length,2);
+  await f.command('import.apply',changed.staged,null,admin);
+  const saved = (await f.service.bootstrap(owner)).tasks;
+  assert.equal(saved.length,2);
+  assert.equal(saved.find(row => row.sourceKey === 'sheet-task-001').title,'【隔離測試】新任務');
+  assert.equal(saved.find(row => row.sourceKey === 'gdrive:existing-task').sourceUrl,'https://example.org/old-source');
+  assert.equal(reads,2);
+});
+
+test('Sheets rows require unique fixed source keys and unambiguous column headers',async t => {
+  const source = {id:'task-source',spreadsheetId:'example_sheet_id_123',range:'任務!A1:C20',kind:'tasks',columns:{sourceKey:'來源鍵',title:'標題'}};
+  let values = [['來源鍵','標題'],['','不能用標題代替來源鍵']];
+  const f = await fixture(t,{readSheetSource:async () => ({values,fetchedAt:'2026-11-11T00:00:00Z'})},{OPS_SHEET_SOURCES_JSON:JSON.stringify([source])});
+  await assert.rejects(f.command('import.sheet-preview',{sourceId:source.id},null,admin),{code:'SOURCE_KEY_REQUIRED'});
+  values = [['來源鍵','標題'],['same-id','第一筆'],['same-id','第二筆']];
+  await assert.rejects(f.command('import.sheet-preview',{sourceId:source.id},null,admin),{code:'SOURCE_KEY_DUPLICATE'});
+  values = [['來源鍵','標題','標題'],['one-id','第一欄','第二欄']];
+  await assert.rejects(f.command('import.sheet-preview',{sourceId:source.id},null,admin),{code:'SOURCE_COLUMNS'});
+  assert.equal((await f.service.bootstrap(owner)).tasks.length,0);
 });
 
 test('automatic design execution is opt-in and requires only a current human copy confirmation',async t => {

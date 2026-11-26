@@ -2,6 +2,8 @@ import { useRef } from 'react';
 import { motion, useInView } from 'framer-motion';
 import { publicCourseInfo } from '../utils/courseInfo';
 
+const currentFacultyProfile = 'https://finance.nsysu.edu.tw/front/FACULTY_MEMBERS/member.php?ID=ad7df3427d693df9827a9c47b86d6a15cfb359d7e96f2641ff793f8d6561be69&PID=15';
+
 const SvgIcons = {
     time: (
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" width="24" height="24">
@@ -84,9 +86,11 @@ export default function CourseInfo({ info }) {
                                     {key === 'registrationFormUrl' ? (
                                         <a href={value} target="_blank" rel="noopener noreferrer">填寫入社表單</a>
                                     ) : key === 'professor' ? (
-                                        <a href="https://gam.nsysu.edu.tw/p/404-1349-312656.php?Lang=zh-tw" target="_blank" rel="noopener noreferrer">
-                                            {value}
-                                        </a>
+                                        value.includes('封之遠') ? (
+                                            <a href={currentFacultyProfile} target="_blank" rel="noopener noreferrer">
+                                                {value}
+                                            </a>
+                                        ) : value
                                     ) : key === 'ig' ? (
                                         <a href={`https://www.instagram.com/${value}/`} target="_blank" rel="noopener noreferrer">
                                             @{value}

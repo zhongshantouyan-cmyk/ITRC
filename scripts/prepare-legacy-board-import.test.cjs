@@ -119,3 +119,13 @@ test('rejects damaged backups, duplicated IDs, unmapped progress and impossible 
     assert.throws(() => convertBackup(seal(bundle)), error);
   }
 });
+
+test('refuses ambiguous target duplicates and uses the SQL kind rather than JSON metadata', () => {
+  const duplicate = fixture();
+  for (const id of ['first', 'second']) duplicate.database.tables[0].rows.push(['tasks', id, 1, JSON.stringify({ id, sourceKey: 'firebase:boards/itrc:card:a' })]);
+  assert.throws(() => convertBackup(seal(duplicate)), /duplicated legacy source keys/);
+  const kind = fixture();
+  const row = kind.database.tables[0].rows[0];
+  row[3] = JSON.stringify({ ...JSON.parse(row[3]), kind: 'tasks' });
+  assert.equal(convertBackup(seal(kind)).payload.tasks[0].ownerPersonId, 'ITRC-P0001');
+});

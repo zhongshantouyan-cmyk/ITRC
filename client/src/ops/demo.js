@@ -124,6 +124,7 @@ export function performDemoAction(current, command) {
     for (const person of people) { const index = state.people.findIndex(item => item.personId === person.personId); if (index < 0) state.people.push(person); else state.people[index] = person; }
     record = { id: 'people', version: 1, title: `${people.length} 筆人員對照更新` };
   } else if (action.startsWith('import.')) {
+    need(isAdviser(actor), '請切換管理顧問示範身分後確認匯入。');
     const rows = [...(payload.events || []), ...(payload.posts || []), ...(payload.tasks || [])];
     need(rows.length > 0 && rows.length <= 200, '每次匯入 1–200 筆資料。');
     rows.forEach(row => need(row.title?.trim(), '每筆資料都需要標題。'));
@@ -131,15 +132,23 @@ export function performDemoAction(current, command) {
     for (const task of payload.tasks || []) need(['todo', 'doing', 'done', 'cancelled'].includes(importTaskStatus(task.status)), '任務狀態不正確。');
     rows.forEach(validatePeople);
     for (const post of payload.posts || []) need(state.events.some(event => event.id === post.eventId || post.eventSourceKey && event.sourceKey === post.eventSourceKey) || (payload.events || []).some(event => post.eventSourceKey && event.sourceKey === post.eventSourceKey), '每則宣傳需要有效的活動 ID 或活動來源鍵。');
-    if (action === 'import.preview') return { state: current, result: { ok: true, record: { eventCount: (payload.events || []).length, postCount: (payload.posts || []).length, taskCount: (payload.tasks || []).length, message: '格式可匯入；活動與宣傳將以待確認草稿建立。' } } };
-    need(isAdviser(actor), '請切換管理顧問示範身分後確認匯入。');
-    for (const entity of ['events', 'posts', 'tasks']) for (const row of payload[entity] || []) {
-      const sourceKey = row.sourceKey || `${row.sourceUrl || row.sourceLabel || 'manual'}:${row.title}:${row.date || row.dueDate || ''}:${row.eventId || row.eventSourceKey || ''}:${row.channel || ''}`;
-      if (state[entity].some(item => item.sourceKey === sourceKey)) continue;
+    const preview = { events: [], posts: [], tasks: [], duplicates: [] };
+    for (const entity of ['events', 'posts', 'tasks']) {
+      const seen = new Set(state[entity].map(item => item.sourceKey).filter(Boolean));
+      for (const row of payload[entity] || []) {
+        const sourceKey = row.sourceKey || `${row.sourceUrl || row.sourceLabel || 'manual'}:${row.title}:${row.date || row.dueDate || ''}:${row.eventId || row.eventSourceKey || ''}:${row.channel || ''}`;
+        if (seen.has(sourceKey)) { preview.duplicates.push({ kind: entity, title: row.title, sourceKey }); continue; }
+        seen.add(sourceKey);
+        preview[entity].push({ ...row, sourceKey, ...(entity === 'tasks' ? { status: importTaskStatus(row.status) } : {}) });
+      }
+    }
+    if (action === 'import.preview') return { state: current, result: { ok: true, record: preview } };
+    for (const entity of ['events', 'posts', 'tasks']) for (const row of preview[entity]) {
+      const sourceKey = row.sourceKey;
       const event = entity === 'posts' ? state.events.find(item => item.id === row.eventId || row.eventSourceKey && item.sourceKey === row.eventSourceKey) : null;
       state[entity].push({ ...row, id: uuid(), version: 1, createdAt: now, updatedAt: now, sourceKey, ownerEmail: row.ownerEmail || '', ownerPersonId: row.ownerPersonId || '', createdByEmail: actor.email, ...(entity === 'events' ? { eventType: eventType(row.eventType), status: 'todo', confirmationStatus: 'draft' } : entity === 'posts' ? { eventId: event.id, projectId: event.projectId, stage: 'brief', copyVersion: 1, sourceEventVersion: event.version, caption: row.caption || '', slides: row.slides || [], channel: row.channel || 'instagram' } : { status: importTaskStatus(row.status), reviewerPersonId: row.reviewerPersonId || '', ...(importTaskStatus(row.status) === 'done' ? {completionMode:'imported_status'} : {}), dependsOn: row.dependsOn || [], requiredForCompletion: row.requiredForCompletion ?? false }) });
     }
-    record = { id: 'import', version: 1, title: `${rows.length} 筆匯入資料` };
+    record = { id: 'import', version: 1, title: `${preview.events.length + preview.posts.length + preview.tasks.length} 筆新增資料`, importedEvents: preview.events.length, importedPosts: preview.posts.length, importedTasks: preview.tasks.length, duplicates: preview.duplicates };
   } else if (action.endsWith('.create')) {
     need(payload.title?.trim(), '請填寫標題。');
     validatePeople(payload);

@@ -147,3 +147,24 @@ test('demo board imports preserve doing and done without inventing completion au
   state = performDemoAction(state, { action: 'import.apply', payload: { tasks: tasks.map(task => ({ ...task, status: 'todo' })) } }).state;
   assert.deepEqual(state.tasks.filter(task => task.sourceKey?.startsWith('firebase:boards/itrc:card:')), imported);
 });
+
+test('import review exposes every new row and duplicate, then reports the actual import count', () => {
+  const storage = new Map();
+  globalThis.localStorage = { getItem: key => storage.get(key) || null, setItem: (key, value) => storage.set(key, value) };
+  let state = changeDemoActor(loadDemo(), DEMO_ACTORS[3].email);
+  const existing = structuredClone(state.tasks);
+  const tasks = Array.from({ length: 17 }, (_, index) => ({ title: `隔離測試來源 ${index + 1}`, status: index === 16 ? 'done' : index === 15 ? 'doing' : 'todo', sourceKey: `fixture-board-card-${index}`, sourceLabel: 'isolated-fixture.json' }));
+  const preview = performDemoAction(state, { action: 'import.preview', payload: { tasks: [...tasks, tasks[0]] } });
+  assert.equal(preview.result.record.tasks.length, 17);
+  assert.equal(preview.result.record.duplicates.length, 1);
+  assert.equal(preview.result.record.tasks[16].status, 'done');
+  assert.deepEqual(preview.state.tasks, existing);
+  const applied = performDemoAction(state, { action: 'import.apply', payload: { tasks } });
+  assert.equal(applied.result.record.importedTasks, 17);
+  state = loadDemo();
+  assert.deepEqual(state.tasks.slice(0, existing.length), existing);
+  const repeated = performDemoAction(state, { action: 'import.preview', payload: { tasks: tasks.map(row => ({ ...row, title: row.title + '（改名）' })) } });
+  assert.equal(repeated.result.record.tasks.length, 0);
+  assert.equal(repeated.result.record.duplicates.length, 17);
+  assert.deepEqual(repeated.state.tasks, state.tasks);
+});

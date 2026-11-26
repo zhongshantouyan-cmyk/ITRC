@@ -190,6 +190,9 @@ test('all local scripts parse and local asset references exist', () => {
       if (/^(?:https?:|#|data:|mailto:|javascript:)/i.test(m[1])) continue;
       const rel = m[1].split(/[?#]/)[0];
       if (!rel || rel.includes('${')) continue;
+      // /ops is the known SPA destination, not a file in legacy-tools.
+      // Keep checking every other root-relative URL for missing assets.
+      if (rel === '/ops') continue;
       assert.ok(fs.existsSync(path.join(root, decodeURIComponent(rel))), `${filename}: missing asset ${rel}`);
     }
   }
