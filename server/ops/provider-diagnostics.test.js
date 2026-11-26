@@ -27,6 +27,12 @@ const capture = async promise => {
   try { await promise; } catch (error) { return error; }
   assert.fail('Expected provider failure');
 };
+const planMessagePrefix = 'Access the autofill feature and other powerful design tools by upgrading your Canva plan here: ';
+const canvaDenials = [
+  { message: `Not allowed to access design with id '${privateValue}'`, reason: 'DESIGN_ACCESS_DENIED' },
+  { message: `Not allowed to access brand template with id '${privateValue}'`, reason: 'BRAND_TEMPLATE_ACCESS_DENIED' },
+  { message: planMessagePrefix + 'https://www.canva.com/pro/?test=' + privateValue, reason: 'AUTOFILL_PLAN_REQUIRED' },
+];
 
 test('Canva dataset rejection identifies the read stage without creating a design or disclosing response data', async () => {
   const requests = [];
@@ -58,6 +64,64 @@ test('Canva create, poll and design-readback rejections retain separate fixed st
   for (const error of [createError, pollError, readError]) {
     assert.match(safeError(error), /HTTP 403，permission_denied/);
     assert.ok(!JSON.stringify(error).includes(privateValue));
+  }
+});
+
+test('documented Canva Autofill 403 messages become fixed reasons without retaining IDs, URLs or raw text', async () => {
+  for (const { message, reason } of canvaDenials) {
+    let calls = 0;
+    const error = await capture(createCanvaDesign(approved, { env: canvaEnv, fetchImpl: async () =>
+      ++calls === 1 ? json(dataset) : json({ code: 'permission_denied', message }, 403) }));
+    assert.equal(calls, 2); assert.equal(error.definite, true);
+    assert.deepEqual(error.diagnostic, { provider: 'canva', stage: 'autofill_create', httpStatus: 403, code: 'permission_denied', reason });
+    const serialized = JSON.stringify(error) + safeError(error);
+    assert.ok(serialized.includes(reason));
+    for (const hidden of [privateValue, message, 'https://www.canva.com/pro/']) assert.ok(!serialized.includes(hidden));
+    if (reason === 'AUTOFILL_PLAN_REQUIRED') assert.match(safeError(error), /方案未提供 Autofill 使用資格。系統未進行升級或付款/);
+  }
+});
+
+test('Canva reason classification rejects message near-matches, malicious suffixes and foreign URLs', async () => {
+  const context = { provider: 'canva', stage: 'autofill_create' };
+  const base = { ...context, httpStatus: 403, code: 'permission_denied' };
+  const nearMatches = canvaDenials.flatMap(({ message }) =>
+    [' ' + message, message + ' ' + privateValue, ...['\n', '\r\n', '\u2028', '\u2029'].map(end => message + end)]);
+  for (const id of ['', 'x'.repeat(129), 'has space', "has'quote", 'slash/id', 'back\\slash', '非ASCII', 'nul\0id']) {
+    nearMatches.push(`Not allowed to access design with id '${id}'`);
+  }
+  for (const url of ['http://www.canva.com/pro/', 'https://canva.com.evil.example/pro/', 'https://canva.com@evil.example/pro/',
+    'https://evil.example@canva.com/pro/', 'https://canva.com:443/pro/', 'https://extra.canva.com/pro/',
+    'https://cаnva.com/pro/', 'https://www.canva.com/pro/ has-space', 'https://www.canva.com/pro/\\x',
+    'https://www.canva.com/pro/%ZZ', 'https://www.canva.com/pro/\0']) nearMatches.push(planMessagePrefix + url);
+  for (const message of [null, {}, privateValue, ...nearMatches]) {
+    const diagnostic = await providerResponseDiagnostic(json({ code: 'permission_denied', message,
+      reason: 'AUTOFILL_PLAN_REQUIRED', provider: 'google_sheets', stage: 'read' }, 403), context);
+    assert.deepEqual(diagnostic, base);
+    const error = { code: 'PROVIDER_REJECTED', diagnostic };
+    assert.ok(!safeError(error).includes('方案未提供'));
+    assert.ok(!JSON.stringify(diagnostic).includes(privateValue));
+  }
+  for (const id of ['A', 'x'.repeat(128)]) {
+    const diagnostic = await providerResponseDiagnostic(json({ code: 'permission_denied',
+      message: `Not allowed to access design with id '${id}'` }, 403), context);
+    assert.equal(diagnostic.reason, 'DESIGN_ACCESS_DENIED');
+    assert.ok(!JSON.stringify(diagnostic).includes('"message"'));
+  }
+});
+
+test('Canva reason whitelist is limited to the expected provider, create stage, HTTP 403 and permission_denied code', async () => {
+  const valid = { provider: 'canva', stage: 'autofill_create', httpStatus: 403, code: 'permission_denied' };
+  for (const change of [{ httpStatus: 401 }, { httpStatus: 404 }, { httpStatus: 429 }, { httpStatus: 503 },
+    { code: 'missing_scope' }, { code: 'unknown' }, { stage: 'dataset_read' }, { stage: 'autofill_poll' },
+    { stage: 'design_readback' }, { provider: 'google_sheets', stage: 'read' }]) {
+    const context = { ...valid, ...change };
+    const diagnostic = await providerResponseDiagnostic(json({ code: context.code, message: canvaDenials[2].message }, context.httpStatus),
+      { provider: context.provider, stage: context.stage });
+    assert.equal(diagnostic.reason, undefined);
+    assert.equal(safeProviderDiagnostic({ ...context, reason: 'AUTOFILL_PLAN_REQUIRED' }).reason, undefined);
+  }
+  for (const reason of [privateValue, '__proto__', 'SERVICE_DISABLED', undefined]) {
+    assert.deepEqual(safeProviderDiagnostic({ ...valid, reason, message: privateValue, url: privateValue }), valid);
   }
 });
 
@@ -130,16 +194,22 @@ test('Sheets OAuth token rejection is distinguished from source permission witho
   assert.ok(!JSON.stringify(error).includes(account.client_email));
 });
 
-test('durable jobs store safe diagnostics and ambiguous create failures still require reconciliation', async t => {
-  for (const ambiguous of [false, true]) {
+test('durable jobs retain only safe reasons across reconnection and ambiguous writes still require reconciliation', async t => {
+  for (const scenario of [{ datasetDenied: true }, { ambiguous: true }, ...canvaDenials]) {
+    const { ambiguous, datasetDenied } = scenario;
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'itrc-safe-provider-'));
-    const db = createClient({ url: 'file:' + path.join(dir, 'test.db') });
+    const dbUrl = 'file:' + path.join(dir, 'test.db');
+    let db = createClient({ url: dbUrl });
     t.after(async () => { db.close(); await fs.rm(dir, { recursive: true, force: true }); });
     let calls = 0;
     const service = createOpsService({ db, env: canvaEnv, providers: {
       getIntegrationStatus,
       createCanvaDesign: (input, options) => createCanvaDesign(input, { ...options, fetchImpl: async () => {
-        calls++; return ambiguous ? calls === 1 ? json(dataset) : json({ code: 'internal_error', message: privateValue }, 503) : denied();
+        calls++;
+        if (datasetDenied) return denied();
+        if (calls === 1) return json(dataset);
+        return ambiguous ? json({ code: 'internal_error', message: privateValue }, 503)
+          : json({ code: 'permission_denied', message: scenario.message }, 403);
       } }),
     } });
     await service.ready;
@@ -152,9 +222,16 @@ test('durable jobs store safe diagnostics and ambiguous create failures still re
     await act('post.request-design', {}, post); await service.runJobs({ limit: 1, actor });
     const state = await service.bootstrap(actor); const job = state.jobs[0];
     assert.equal(job.status, ambiguous ? 'needs_reconciliation' : 'failed');
-    assert.equal(calls, ambiguous ? 2 : 1);
-    assert.match(job.lastError, ambiguous ? /建立結果不明/ : /讀取母版欄位.*HTTP 403，permission_denied/);
+    assert.equal(calls, datasetDenied ? 1 : 2);
+    assert.match(job.lastError, ambiguous ? /建立結果不明/ : datasetDenied ? /讀取母版欄位.*HTTP 403，permission_denied/ : new RegExp(scenario.reason));
     assert.ok(!JSON.stringify(state).includes(privateValue));
     if (ambiguous) await assert.rejects(act('job.retry', {}, job), { code: 'RETRY_NOT_ALLOWED' });
+    db.close(); db = createClient({ url: dbUrl });
+    const reopened = createOpsService({ db, env: canvaEnv }); await reopened.ready;
+    const persisted = await reopened.bootstrap(actor);
+    assert.equal(persisted.jobs[0].lastError, job.lastError);
+    assert.equal(persisted.jobs[0].status, job.status);
+    assert.ok(!JSON.stringify(persisted).includes(privateValue));
+    assert.ok(!JSON.stringify(persisted).includes('https://www.canva.com/pro/'));
   }
 });
