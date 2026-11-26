@@ -17,6 +17,29 @@ const CANVA_CODES = new Set([
   'missing_field', 'too_many_requests', 'quota_exceeded', 'design_not_fillable',
   'autofill_data_invalid', 'unsupported_design_type', 'feature_not_available', 'internal_error',
 ]);
+const CANVA_AUTOFILL_REASONS = Object.freeze({
+  DESIGN_ACCESS_DENIED: 'Canva 拒絕存取來源設計，請核對目前連線帳號及設計分享權限。',
+  BRAND_TEMPLATE_ACCESS_DENIED: 'Canva 拒絕存取來源品牌範本，請核對目前連線帳號及範本分享權限。',
+  AUTOFILL_PLAN_REQUIRED: 'Canva 回報目前帳號的方案未提供 Autofill 使用資格。系統未進行升級或付款。',
+});
+// Match only the complete documented 403 templates. IDs and URLs are neither
+// captured nor retained; the final lookahead rejects even a trailing newline.
+// https://www.canva.dev/docs/apps/rest-apis/reference/autofills/create-design-autofill-job/
+const CANVA_AUTOFILL_DENIALS = [
+  [/^Not allowed to access design with id '[A-Za-z0-9_-]{1,128}'(?![\s\S])/, 'DESIGN_ACCESS_DENIED'],
+  [/^Not allowed to access brand template with id '[A-Za-z0-9_-]{1,128}'(?![\s\S])/, 'BRAND_TEMPLATE_ACCESS_DENIED'],
+  [/^Access the autofill feature and other powerful design tools by upgrading your Canva plan here: https:\/\/(?:www\.)?canva\.com\/(?:[A-Za-z0-9._~!$&()*+,;=:@/?#-]|%[0-9A-Fa-f]{2})*(?![\s\S])/, 'AUTOFILL_PLAN_REQUIRED'],
+];
+
+function isCanvaAutofillDenial(value) {
+  return value.provider === 'canva' && value.stage === 'autofill_create' &&
+    value.httpStatus === 403 && value.code === 'permission_denied';
+}
+
+function canvaAutofillReason(diagnostic, message) {
+  if (!isCanvaAutofillDenial(diagnostic) || typeof message !== 'string') return undefined;
+  return CANVA_AUTOFILL_DENIALS.find(([pattern]) => pattern.test(message))?.[1];
+}
 
 const GOOGLE_TOKEN_CODES = new Set(['invalid_grant', 'invalid_client', 'invalid_scope', 'unauthorized_client']);
 const GOOGLE_API_CODES = new Set([
@@ -35,6 +58,7 @@ function safeProviderDiagnostic(value) {
   return {
     provider: value.provider, stage: value.stage, httpStatus: value.httpStatus,
     ...(codes.has(value.code) ? { code: value.code } : {}),
+    ...(isCanvaAutofillDenial(value) && Object.hasOwn(CANVA_AUTOFILL_REASONS, value.reason) ? { reason: value.reason } : {}),
     ...(value.provider === 'google_sheets' && value.stage === 'read' && GOOGLE_REASONS.has(value.reason) ? { reason: value.reason } : {}),
   };
 }
@@ -73,6 +97,8 @@ async function providerResponseDiagnostic(response, context) {
   if (!body) return diagnostic;
   if (diagnostic.provider === 'canva') {
     if (CANVA_CODES.has(body.code)) diagnostic.code = body.code;
+    const reason = canvaAutofillReason(diagnostic, body.message);
+    if (reason) diagnostic.reason = reason;
   } else if (diagnostic.stage === 'token') {
     if (GOOGLE_TOKEN_CODES.has(body.error)) diagnostic.code = body.error;
   } else {
@@ -98,11 +124,11 @@ function formatProviderDiagnostic(error) {
         : '請核對來源表分享權限、服務帳號與 Sheets API 設定。';
     return `Google 試算表${STAGES.google_sheets[diagnostic.stage]}未完成（${details}）。${hint}`;
   }
-  const hint = diagnostic.stage === 'dataset_read'
+  const hint = CANVA_AUTOFILL_REASONS[diagnostic.reason] || (diagnostic.stage === 'dataset_read'
     ? '請核對目前連線帳號的母版存取權與應用程式授權。'
     : diagnostic.stage === 'autofill_create'
       ? '請核對母版存取權、應用程式授權與帳號的 Autofill 使用資格。'
-      : '請核對目前連線與設計存取權。';
+      : '請核對目前連線與設計存取權。');
   return `Canva ${STAGES.canva[diagnostic.stage]}未完成（${details}）。${hint}`;
 }
 
