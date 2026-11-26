@@ -140,12 +140,60 @@ function CanvaConnection({ data, demo }) {
   </Panel>;
 }
 
+function SheetsCredentialCard({ actor, demo }) {
+  const [metadata, setMetadata] = useState(null); const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false); const [copied, setCopied] = useState(false);
+  const [reload, setReload] = useState(0);
+  const enabled = !demo && isAdviser(actor);
+  useEffect(() => {
+    setMetadata(null); setError(''); setCopied(false);
+    if (!enabled) { setLoading(false); return; }
+    let active = true; setLoading(true);
+    api.get('/ops/connections/google-sheets/metadata')
+      .then(response => { if (active) setMetadata(response.data); })
+      .catch(issue => { if (active) setError(humanError(issue)); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [enabled, actor.uid, reload]);
+  if (!isAdviser(actor)) return null;
+  const copyEmail = async () => {
+    if (!metadata?.client_email) return;
+    try { await navigator.clipboard.writeText(metadata.client_email); setCopied(true); setError(''); }
+    catch { setError('無法自動複製，請選取上方信箱後複製。'); }
+  };
+  const sourceLabel = {
+    google_sheets_service_account: '網站專用試算表服務帳號',
+    firebase_service_account: '已明確啟用的既有網站服務帳號',
+    google_sheets_access_token: '暫時存取權杖',
+    none: '尚未設定讀取身分',
+  }[metadata?.credentialSource];
+  return <section className="ops-sheet-identity" aria-label="Google 試算表共用對象">
+    <h4>試算表共用對象</h4>
+    {demo ? <p className="ops-note">展示模式不讀取網站服務身分。</p> : <>
+      <p className="ops-footnote">僅社長與顧問可查看。指定來源表可用「檢視者」權限共用；網站只讀取，不會改寫來源。</p>
+      {loading && <p role="status" className="ops-muted">讀取服務身分…</p>}
+      {metadata?.client_email && <>
+        <label htmlFor="ops-sheets-share-email">服務帳號信箱</label>
+        <input id="ops-sheets-share-email" type="text" readOnly value={metadata.client_email} onFocus={event => event.target.select()} />
+        <div className="ops-button-row"><button type="button" className="ops-button quiet small" onClick={copyEmail}>複製共用對象</button>{copied && <small role="status">已複製信箱</small>}</div>
+        <dl><dt>Google Cloud 專案 ID</dt><dd>{metadata.project_id || '尚未提供有效的專案 ID'}</dd></dl>
+      </>}
+      {sourceLabel && <p className="ops-footnote">讀取身分：{sourceLabel}</p>}
+      {metadata?.credentialSource === 'google_sheets_access_token' && <p className="ops-note">暫時權杖沒有可顯示的服務帳號共用對象。</p>}
+      {metadata?.missing?.length > 0 && <details><summary>身分設定待補</summary><ul>{metadata.missing.map(name => <li key={name}><code>{name}</code></li>)}</ul></details>}
+      <p className="ops-note">顯示共用對象不代表已取得試算表權限或已啟用 Google Sheets API。請核對上方專案，再以「讀取並預覽」驗證實際連線。</p>
+      <button type="button" className="ops-button quiet small" disabled={loading} onClick={() => setReload(value => value + 1)}>重新讀取身分</button>
+    </>}
+    {error && <p className="ops-inline-error" role="alert">{error}</p>}
+  </section>;
+}
+
 function Settings({ data, demo, busy, run, execute }) {
   const integrations = data.settings.integrations || {};
   const descriptions = { drafting: ['文案草稿', '活動資料、宣傳重點與合作要求 → 貼文與輪播文字。'], canva: ['Canva 分層設計', '文案確認後產生可編輯設計，再由行銷微調。'], sheets: ['Google 試算表', '保留原始來源；先預覽資料，再匯入工作流程。'] };
   return <><div className="ops-section-heading"><div><h2>系統連線與資料入口</h2><p className="ops-muted">連線狀態由伺服器回報；缺少設定的工作會停在待處理清單。</p></div></div><div className="ops-integration-grid">{Object.entries(descriptions).map(([key, [title, description]]) => {
     const item = integrations[key] || {}; const configured = item.configured === true || item.status === 'configured';
-    return <article className="ops-integration" key={key}><div className="ops-item-line"><h3>{title}</h3><span className={`ops-badge ${configured ? 'ops-badge-blue' : 'ops-badge-amber'}`}>{data.settings.mode === 'demo' ? '展示模式' : configured ? '設定已提供' : '等待設定'}</span></div><p>{description}</p><p className="ops-note">{item.message || (configured ? '實際執行結果會記錄在工作清單。' : key === 'drafting' ? '可先整理基本草稿，或用你已連接的 AI 協助寫文案。' : '尚未具備完整連線設定。')}</p>{Array.isArray(item.missing) && item.missing.length > 0 && <details><summary>需要完成的設定</summary><ul>{item.missing.map(name => <li key={name}><code>{name}</code></li>)}</ul></details>}</article>;
+    return <article className="ops-integration" key={key}><div className="ops-item-line"><h3>{title}</h3><span className={`ops-badge ${configured ? 'ops-badge-blue' : 'ops-badge-amber'}`}>{data.settings.mode === 'demo' ? '展示模式' : configured ? '設定已提供' : '等待設定'}</span></div><p>{description}</p><p className="ops-note">{item.message || (configured ? '實際執行結果會記錄在工作清單。' : key === 'drafting' ? '可先整理基本草稿，或用你已連接的 AI 協助寫文案。' : '尚未具備完整連線設定。')}</p>{Array.isArray(item.missing) && item.missing.length > 0 && <details><summary>需要完成的設定</summary><ul>{item.missing.map(name => <li key={name}><code>{name}</code></li>)}</ul></details>}{key === 'sheets' && isAdviser(data.actor) && <SheetsCredentialCard actor={data.actor} demo={demo || data.settings.mode === 'demo'} />}</article>;
   })}</div>
     <Panel title="自動工作佇列" kicker="BACKGROUND JOBS" action={<ActionButton tone="quiet small" busy={busy} reason={!isAdviser(data.actor) ? '由顧問處理工作' : ''} onClick={() => run('jobs.run', null, { limit: 3 })}>處理待辦工作</ActionButton>}>
       <p className="ops-note">{data.settings.githubSchedulerConfigured ? '正式環境已設定每 15 分鐘檢查已排入的工作。實際觸發可能延遲；缺少服務設定的項目會停止，排程不代替任何人工核准。' : '可由管理者處理已排入的工作；背景排程狀態依正式環境設定。'}</p>
