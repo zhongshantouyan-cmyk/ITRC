@@ -172,7 +172,7 @@ function captureTaskDelivery(task, actor, now, action, extra = {}) {
   const evidence = Object.fromEntries(['notes','deliveredAt','deliveredBy','acceptedAt','acceptedBy','acceptedReviewerPersonId','reviewIdentityMode','reviewEvidenceUrl','reviewComment','completedAt','completedBy','completionMode'].filter(key => task[key] !== undefined).map(key => [key,structuredClone(task[key])]));
   task.deliveryHistory.push({id:randomUUID(),action,actorEmail:actor.email,createdAt:now,taskVersion:task.version,status:task.status,ownerPersonId:task.ownerPersonId || '',reviewerPersonId:task.reviewerPersonId || '',deliverableUrl:task.deliverableUrl || '',acceptanceCriteria:task.acceptanceCriteria || '',links:structuredClone(task.links || []),...evidence,...extra});
 }
-const HISTORY_FIELDS = ['title','purpose','audience','highlights','cta','channel','caption','slides','projectId','eventId','sourceUrl','sourceLabel','sourceDate','sourceRevision','sourceEventVersion','stage','generationMethod','unitReviewedVersion','unitReviewedBy','approvedVersion','approvedBy','approvedAt','designCopyVersion','canvaDesignId','canvaEditUrl','designApprovedBy','designApprovedAt','sponsorApprovedVersion','sponsorApprovedBy','sponsorEvidenceUrl','publishedUrl','publishedAt','completedAt','completedBy','revisionReason'];
+const HISTORY_FIELDS = ['title','purpose','audience','highlights','cta','channel','caption','slides','projectId','eventId','sourceUrl','sourceLabel','sourceDate','sourceRevision','sourceEventVersion','stage','generationMethod','unitReviewedVersion','unitReviewedBy','approvedVersion','approvedBy','approvedAt','designCopyVersion','designGenerationMethod','canvaDesignId','canvaEditUrl','designApprovedBy','designApprovedAt','sponsorApprovedVersion','sponsorApprovedBy','sponsorEvidenceUrl','publishedUrl','publishedAt','completedAt','completedBy','revisionReason'];
 function capturePostRevision(state, post, actor, now, action) {
   const values = Object.fromEntries(HISTORY_FIELDS.filter(key => post[key] !== undefined).map(key => [key,structuredClone(post[key])]));
   const signature = createHash('sha256').update(JSON.stringify({copyVersion:post.copyVersion,postVersion:post.version,...values})).digest('hex');
@@ -191,7 +191,7 @@ function requireFacts(state, post) {
   return find(state,'events',post.eventId);
 }
 function clearApproval(post) {
-  for (const key of ['unitReviewedVersion','unitReviewedBy','approvedVersion','approvedBy','approvedAt','designCopyVersion','designApprovedBy','designApprovedAt','sponsorApprovedVersion','sponsorApprovedBy','sponsorEvidenceUrl','canvaDesignId','canvaEditUrl','completedAt','completedBy']) delete post[key];
+  for (const key of ['unitReviewedVersion','unitReviewedBy','approvedVersion','approvedBy','approvedAt','designCopyVersion','designGenerationMethod','designApprovedBy','designApprovedAt','sponsorApprovedVersion','sponsorApprovedBy','sponsorEvidenceUrl','canvaDesignId','canvaEditUrl','completedAt','completedBy']) delete post[key];
 }
 function obsoleteJobs(state, post, now) {
   for (const job of state.jobs.filter(item => item.postId === post.id && ACTIVE_JOB_STATES.has(item.status))) {
@@ -219,10 +219,25 @@ function invalidatePost(state, post, actor, now, reason, { incrementCopy = true,
   if (captureAfter) capturePostRevision(state,post,actor,now,'post.invalidated');
   audit(state,actor,'post.invalidated',post,from,now,reason);
 }
-function enqueue(state, post, type, actor, now) {
-  const existing = state.jobs.find(job => job.postId === post.id && job.copyVersion === post.copyVersion && job.type === type && job.status !== 'obsolete');
+function canvaJobBlocksNewCreation(job) {
+  // Completing locally can obsolete a running/unknown request without changing
+  // the approved copy. It is not proof that the external write never happened.
+  // Retain a conservative guard for legacy obsolete rows without origin status.
+  if (job.status === 'obsolete') return Boolean(job.attempts > 0 || job.providerJobId || job.needsReconciliation || job.claimToken);
+  return !['failed','blocked_configuration'].includes(job.status) || Boolean(job.providerJobId || job.needsReconciliation);
+}
+function enqueue(state, post, type, actor, now, generationMode = 'autofill') {
+  const sameCopy = state.jobs.filter(job => job.postId === post.id && job.copyVersion === post.copyVersion && job.type === type);
+  if (type === 'canva') assert(!sameCopy.some(job => job.status === 'obsolete' && canvaJobBlocksNewCreation(job)),409,'CANVA_MODE_CHANGE_BLOCKED','先前設計工作曾送出或結果未明，標記完成不代表外部結果已核對；請先核對 Canva，避免重複建立。');
+  const related = sameCopy.filter(job => job.status !== 'obsolete');
+  if (type === 'canva') assert(['autofill','editable_import'].includes(generationMode),400,'INVALID_CANVA_MODE','Canva 產生模式設定不正確。');
+  const existing = related.find(job => type !== 'canva' || (job.generationMode || 'autofill') === generationMode);
   if (existing) return existing;
-  const job = newRecord({postId:post.id,copyVersion:post.copyVersion,type,status:'queued',attempts:0,lastError:'',requestedBy:actor.email,expectedPostVersion:post.version},now);
+  // A deliberate request may choose a new configured mode for the same approved
+  // copy only after earlier modes definitely stopped before creating a design.
+  // Preserve earlier failures and never convert pending or uncertain work.
+  if (type === 'canva') assert(!related.some(canvaJobBlocksNewCreation),409,'CANVA_MODE_CHANGE_BLOCKED','前一種設計工作仍需核對，請先確認結果，避免重複建立。');
+  const job = newRecord({postId:post.id,copyVersion:post.copyVersion,type,...(type === 'canva' ? {generationMode} : {}),status:'queued',attempts:0,lastError:'',requestedBy:actor.email,expectedPostVersion:post.version},now);
   state.jobs.push(job); return job;
 }
 function normalizeImport(state, payload, actor, now) {
@@ -265,7 +280,7 @@ function normalizeImport(state, payload, actor, now) {
   return preview;
 }
 
-function executeAction(state, command, actor, now) {
+function executeAction(state, command, actor, now, {canvaGenerationMode = 'autofill'} = {}) {
   const {action,id,expectedVersion,payload = {}} = command;
   state.people ||= [];
   assertActorActive(state,actor);
@@ -315,6 +330,8 @@ function executeAction(state, command, actor, now) {
     const post = find(state,'posts',job.postId);
     assert(post.copyVersion === job.copyVersion && (job.type !== 'canva' || post.approvedVersion === post.copyVersion),409,'OBSOLETE_JOB','這項工作已不是目前核准的版本。');
     assert(job.type === 'copy' ? ['brief','draft','needs_revision'].includes(post.stage) : ['approved','design_pending'].includes(post.stage),409,'INVALID_STAGE','內容已進入後續階段，不能重試並覆蓋目前成果。');
+    if (job.type === 'canva') assert(!state.jobs.some(other => other.id !== job.id && other.postId === job.postId && other.copyVersion === job.copyVersion && other.type === 'canva' &&
+      canvaJobBlocksNewCreation(other)),409,'CANVA_MODE_CHANGE_BLOCKED','另一個設計工作仍需核對，請先確認結果，避免重複建立。');
     const from = job.version; job.status = 'queued'; job.lastError = ''; job.expectedPostVersion = post.version; touch(job,now);
     if (job.errorCode === 'PROVIDER_JOB_FAILED') delete job.providerJobId;
     audit(state,actor,action,job,from,now,'重新排入工作佇列'); return {ok:true,record:job};
@@ -508,7 +525,7 @@ function executeAction(state, command, actor, now) {
       // Old clients used approve to enqueue a design. New clients request it explicitly.
       record.stage = operation === 'approve' ? 'design_pending' : 'approved';
       touch(record,now); capturePostRevision(state,record,actor,now,action);
-      if (operation === 'approve') enqueue(state,record,'canva',actor,now);
+      if (operation === 'approve') enqueue(state,record,'canva',actor,now,canvaGenerationMode);
       audit(state,actor,action,record,from,now,`已確認文案第 ${record.copyVersion} 版；未填的活動資料仍待補。`);
       return {ok:true,record};
     }
@@ -522,7 +539,7 @@ function executeAction(state, command, actor, now) {
       requireFacts(state,record); assert(record.approvedVersion === record.copyVersion,409,'APPROVAL_REQUIRED','先確認目前這一版文案，即可產生設計。');
       if (record.stage === 'completed') { delete record.completedAt; delete record.completedBy; }
       record.stage = 'approved'; touch(record,now);
-      const job = enqueue(state,record,'canva',actor,now);
+      const job = enqueue(state,record,'canva',actor,now,canvaGenerationMode);
       capturePostRevision(state,record,actor,now,action); audit(state,actor,action,record,from,now,'依目前已確認的文案建立設計工作。');
       return {ok:true,record:job};
     }
@@ -531,7 +548,7 @@ function executeAction(state, command, actor, now) {
       assert(!payload.canvaDesignId || (typeof payload.canvaDesignId === 'string' && /^[A-Za-z0-9_-]{3,100}$/.test(payload.canvaDesignId)),400,'INVALID_DESIGN_ID','Canva 設計識別碼不正確。');
       capturePostRevision(state,record,actor,now,'post.before-attached-design');
       if (record.canvaEditUrl && record.canvaEditUrl !== payload.canvaEditUrl) record.previousDesigns = [...(record.previousDesigns || []),{copyVersion:record.designCopyVersion,canvaDesignId:record.canvaDesignId || '',canvaEditUrl:record.canvaEditUrl}];
-      record.canvaEditUrl = payload.canvaEditUrl; record.canvaDesignId = payload.canvaDesignId || ''; record.designCopyVersion = record.copyVersion;
+      record.canvaEditUrl = payload.canvaEditUrl; record.canvaDesignId = payload.canvaDesignId || ''; record.designCopyVersion = record.copyVersion; record.designGenerationMethod = 'manual';
       if (record.stage !== 'completed') record.stage = record.approvedVersion === record.copyVersion ? 'approved' : 'draft';
       delete record.designApprovedBy; delete record.sponsorApprovedVersion;
       for (const job of state.jobs.filter(job => job.postId === record.id && job.copyVersion === record.copyVersion && job.type === 'canva' && job.status !== 'obsolete')) { job.status = 'succeeded'; job.result = {canvaEditUrl:record.canvaEditUrl,canvaDesignId:record.canvaDesignId,manual:true}; job.lastError = ''; touch(job,now); }
@@ -549,7 +566,7 @@ function executeAction(state, command, actor, now) {
       if (payload.canvaEditUrl) {
         httpsUrl(payload.canvaEditUrl,'Canva 編輯網址',{canva:true,optional:false});
         assert(!payload.canvaDesignId || (typeof payload.canvaDesignId === 'string' && /^[A-Za-z0-9_-]{3,100}$/.test(payload.canvaDesignId)),400,'INVALID_DESIGN_ID','Canva 設計識別碼不正確。');
-        record.canvaEditUrl = payload.canvaEditUrl; record.canvaDesignId = payload.canvaDesignId || ''; record.designCopyVersion = record.copyVersion;
+        record.canvaEditUrl = payload.canvaEditUrl; record.canvaDesignId = payload.canvaDesignId || ''; record.designCopyVersion = record.copyVersion; record.designGenerationMethod = 'manual';
       }
       if (payload.publishedUrl) httpsUrl(payload.publishedUrl,'發布連結');
       if (payload.publishedAt) assert(typeof payload.publishedAt === 'string' && !Number.isNaN(Date.parse(payload.publishedAt)) && Date.parse(payload.publishedAt) <= Date.parse(now) + 60000,400,'INVALID_DATE','發布時間不可使用未來時間。');

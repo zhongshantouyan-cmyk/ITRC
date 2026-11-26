@@ -8,6 +8,7 @@ const STAGES = Object.freeze({
   canva: Object.freeze({
     dataset_read: '讀取母版欄位', autofill_create: '建立套版設計',
     autofill_poll: '查詢設計工作', design_readback: '讀回完成設計',
+    import_create: '建立可編輯匯入', import_poll: '查詢可編輯匯入',
   }),
   google_sheets: Object.freeze({ token: '取得唯讀授權', read: '讀取來源資料' }),
 });

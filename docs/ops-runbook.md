@@ -24,7 +24,7 @@
 1. 新增活動，選講座／社課或一般活動。日期、地點與講者未填時會提示；一般活動不要求講師，不妨礙先整理工作與文案。活動進度可直接設待辦、進行中、完成，與事實是否完整分開。
 2. 在同一活動畫面新增宣傳需求，填寫或產生文案；也可將提示帶到自己的 AI，再貼回草稿。缺漏事實保留「待確認」，不要猜日期或講者。
 3. 有效登入的現任幹部看過目前文案後按一次確認。可取消確認；改文案或實質活動事實會使舊確認失效。無須逐層單位審、終審或第二人驗收。
-4. 可手動附 Canva 編輯連結。要請伺服器產生分層設計時，須已有當前文案確認與可用 Canva 連線／母版，再按建立設計；確認文案本身不會自動呼叫外部服務。
+4. 可手動附 Canva 編輯連結。要請伺服器產生分層設計時，須已有當前文案確認與可用 Canva 連線，再按建立設計；Autofill 模式另需可用母版。確認文案本身不會自動呼叫外部服務。
 5. 做完即可標記完成；實際發布後可記錄網址與時間，網址不是完成的必填欄位。系統不會代為發布社群貼文。涉及合作約定仍由負責人核對；財務核銷另走財務規則。
 
 「管理與設定 → 操作紀錄與資料匯出」中的「匯出宣傳資料」會下載 UTF-8 CSV，一列一則宣傳，完整文案保留在同一格，並包含各頁短文、版本、核准、Canva 連結、發布證據及來源。Excel 可直接開啟；需要 `.xlsx` 時再另存。匯出不會改動正式資料。
@@ -105,7 +105,7 @@
 
 使用者已批准並完成 `nsysu-itrc` Preview → `itrc` Preview 的 Trusted Sources 規則；Standard Protection／Require Log In 仍開啟。Firebase 穩定 Preview 網域、Google 登入、後端讀取及角色能力已實際驗證。前端分支專用 `VITE_API_URL` 的暫時覆寫也已移除，既有 CMS 回到原設定；工作台使用獨立 `VITE_OPS_API_URL=/api` 與固定 `OPS_BACKEND_ORIGIN`。早期的 Network Error／上游 401 已被後續成功連通證據取代，不是目前尚待批准的事項。此 Preview 授權不涵蓋 Production，詳見 [ops-validation.md](ops-validation.md)。
 
-## 5. Canva：連線與分層母版
+## 5. Canva：連線與可編輯設計
 
 ### 帳戶連線
 
@@ -126,7 +126,19 @@ node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("b
 
 程式請求的基本 scopes 為 `design:content:read`、`design:content:write`、`design:meta:read`；使用品牌範本時另加入 `brandtemplate:meta:read`、`brandtemplate:content:read`。帳戶及來源資產需具備對應 API 權限，實際以 Canva 授權結果為準。參考 [Canva Authentication](https://www.canva.dev/docs/apps/rest-apis/authentication/)。
 
-### 母版與欄位
+### 產生模式
+
+後端 `CANVA_GENERATION_MODE` 可設為 `autofill` 或 `editable_import`；未設定時保持既有 `autofill`，錯誤值會停止建立，不會自動切換模式。設定頁、工作紀錄與產生按鈕會標示目前模式。
+
+`editable_import` 由後端將**已確認**的三頁 `post.slides` 產生為 PPTX，再以 Canva Design Import API 上傳。檔案為 4:5 直式比例，六個文字欄位與簡單形狀均為原生元素；不使用合併成單張圖片的輸出，也不修改既有母版。每頁標題最多 8 字，內文依序最多 42、84、84 字；保留原文、空白與換行，過長或換行多到無法容納時停止，不截斷已確認文案。完整 caption 仍保存在宣傳資料及 CSV，圖卡只使用已確認的三頁短文。
+
+此模式使用既有 `design:content:write` 及 `design:meta:read` 權限，不需要 Autofill 母版或 `CANVA_FIELD_MAP_JSON`。它是**可編輯匯入**，不能記成 Autofill 套版成功；帳戶是否可用、是否有使用限制，必須以實際匯入結果驗收，不因設定完成就宣稱免費產生成功。程式不自動升級方案或付款。API 規格見 [建立匯入工作](https://www.canva.dev/docs/apps/rest-apis/reference/design-imports/create-design-import-job/) 與 [讀取匯入結果](https://www.canva.dev/docs/apps/rest-apis/reference/design-imports/get-design-import-job/)。
+
+每個設計工作建立時即保存模式；既有沒有模式欄位的工作仍視為 Autofill。改設定不會轉換已排程的工作，也不會在 Autofill 失敗時自動改用匯入。如果同版 Autofill 已明確遭拒、沒有外部工作 ID 或未知結果，改設 `editable_import` 後，可在原宣傳按「用已確認文案建立可編輯匯入」；保留原核准版本與失敗工作，不必再確認文案。重複要求同模式會回傳同一工作。
+
+匯入回應的外部 ID 以 `import:` 前綴保存，再查詢同一工作並讀回同一設計 ID；結果必須恰好一個設計，明確頁數必須為三頁，且有有效編輯網址，才記錄完成。查詢或讀回失敗時保留 ID，允許的重試只查詢，不重新上傳。建立結果不明、`duplicate_import`、或同版曾送出但已在本地標記完成的工作，仍需先核對外部結果，不能透過完成／重新開啟或切模式繞過防重複。最後仍須開啟成品，確認實際三頁、原文內容及文字／圖層可編輯。
+
+### Autofill 母版與欄位
 
 `CANVA_TEMPLATE_DESIGN_ID` 或 `CANVA_BRAND_TEMPLATE_ID` **擇一**設定。母版需有可編輯文字、圖片等圖層，並替要自動填入的元素設定資料欄位；只有一般文字圖層、但沒有 Autofill 欄位的設計無法自動套版。
 
