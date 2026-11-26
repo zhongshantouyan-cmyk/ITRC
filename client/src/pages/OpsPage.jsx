@@ -24,6 +24,13 @@ const postState = post => postDone(post) ? '已完成' : postConfirmed(post) ? '
 const stateNames = { todo: '待辦', doing: '進行中', done: '完成' };
 const stateOptions = Object.entries(stateNames).map(([value, label]) => ({ value, label }));
 const today = () => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Taipei' }).format(new Date());
+const downloadPosts = data => {
+  const url = URL.createObjectURL(new Blob([exportPostsCsv(data)], { type: 'text/csv;charset=utf-8;' }));
+  const link = document.createElement('a');
+  link.href = url; link.download = `ITRC_宣傳資料_${today()}.csv`;
+  document.body.appendChild(link);
+  try { link.click(); } finally { link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
+};
 const fullName = (record, people) => ownerLabel(record, people).replace('待指派', '還沒分配');
 const localDateTime = value => {
   if (!value) return '';
@@ -206,7 +213,7 @@ export default function OpsPage({ demo = false }) {
         {view === 'tools' && <><div className="club-page-heading"><div><h2>各組工具</h2><p>都在同一個網站，開了就能接著做。</p></div></div><ToolDirectory onOpen={go} demo={demo} /></>}
         {CLUB_TOOLS.some(tool => tool.id === view) && <ToolFrame toolId={view} demo={demo} onOpen={go} />}
         {view === 'people' && <><div className="club-page-heading"><div><h2>幹部名單</h2><p>找人、看分工，聯絡資料沿用原主表。</p></div>{management && <button className="ops-button quiet" onClick={() => go('permissions')}>管理登入權限</button>}</div><PeoplePanel data={data} busy={busy} execute={execute} demo={demo} /></>}
-        {view === 'settings' && management && <><WorkspaceSettings data={data} demo={demo} busy={busy} run={run} execute={execute} /><details className="club-management-details"><summary>原始資料更新與紀錄</summary><SourceChanges data={data} busy={busy} execute={execute} openAction={config => setDialog({ type: 'action', config })} /></details><details className="club-management-details"><summary>操作紀錄與資料匯出</summary><button className="ops-button quiet small" onClick={() => exportPostsCsv(data)}>匯出宣傳資料</button><div className="club-audit-list">{recentAuditEntries(data.audit).map((item, i) => <p key={item.id || i}><time>{dateText(item.createdAt || item.at)}</time> {ACTION_LABELS[item.action] || item.action} {auditActorLabel(item)}</p>)}</div></details></>}
+        {view === 'settings' && management && <><WorkspaceSettings data={data} demo={demo} busy={busy} run={run} execute={execute} /><details className="club-management-details"><summary>原始資料更新與紀錄</summary><SourceChanges data={data} busy={busy} execute={execute} openAction={config => setDialog({ type: 'action', config })} /></details><details className="club-management-details"><summary>操作紀錄與資料匯出</summary><button className="ops-button quiet small" onClick={() => downloadPosts(data)}>匯出宣傳資料</button><div className="club-audit-list">{recentAuditEntries(data.audit).map((item, i) => <p key={item.id || i}><time>{dateText(item.createdAt || item.at)}</time> {ACTION_LABELS[item.action] || item.action} {auditActorLabel(item)}</p>)}</div></details></>}
         {view === 'settings' && !management && <Empty title="管理者設定" detail="日常任務與活動可以直接從左邊開始。" />}
       </>}<footer className="ops-workspace-footer"><span>ITRC 社團工作台</span><span>{demo ? '虛構練習資料' : '有事加進來，做完打勾。'}</span></footer></main>
     </div></div>

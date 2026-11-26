@@ -9,6 +9,7 @@
 // These adapters never publish content, write to Sheets, or update an existing Canva design.
 const crypto = require('node:crypto');
 const { getOAuthConfiguration } = require('./canva-oauth');
+const { providerResponseDiagnostic, safeProviderDiagnostic } = require('./provider-diagnostics');
 
 class ProviderError extends Error {
   constructor(code, message, options = {}) {
@@ -20,6 +21,8 @@ class ProviderError extends Error {
     this.configMissing = code === 'CONFIGURATION_MISSING';
     if (options.status) this.status = options.status;
     if (options.missing) this.missing = options.missing;
+    const diagnostic = safeProviderDiagnostic(options.diagnostic);
+    if (diagnostic) this.diagnostic = diagnostic;
   }
 }
 
@@ -79,7 +82,7 @@ function publicContext({ event = {}, post = {}, obligations = [] } = {}) {
   return context;
 }
 
-async function requestJson(url, { env, fetchImpl, method = 'GET', headers = {}, body, uncertainWrite = false }) {
+async function requestJson(url, { env, fetchImpl, method = 'GET', headers = {}, body, uncertainWrite = false, diagnosticContext }) {
   if (typeof fetchImpl !== 'function') throw failure('CONFIGURATION_INVALID', '伺服器未提供可用的 HTTP 連線功能。');
   let response;
   try {
@@ -93,9 +96,10 @@ async function requestJson(url, { env, fetchImpl, method = 'GET', headers = {}, 
   }
   if (!response.ok) {
     const ambiguous = uncertainWrite && (response.status >= 500 || response.status === 408);
+    const diagnostic = diagnosticContext ? await providerResponseDiagnostic(response, diagnosticContext) : null;
     throw failure(ambiguous ? 'UNCERTAIN_RESULT' : 'PROVIDER_REJECTED',
       ambiguous ? '外部寫入回應不明，請先核對服務端紀錄，勿直接重送。' : '外部服務拒絕此請求（HTTP ' + response.status + '）。',
-      { uncertain: ambiguous, status: response.status });
+      { uncertain: ambiguous, status: response.status, diagnostic });
   }
   try {
     const text = await response.text();
@@ -524,12 +528,12 @@ async function createCanvaDesign(input, { env = process.env, fetchImpl = globalT
   const token = await canvaToken(env, getCanvaAccessToken);
   const headers = { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' };
   const datasetResponse = await requestJson('https://api.canva.com/rest/v1/' +
-    (source.design ? 'designs/' : 'brand-templates/') + source.sourceId + '/dataset', { env, fetchImpl, headers });
+    (source.design ? 'designs/' : 'brand-templates/') + source.sourceId + '/dataset', { env, fetchImpl, headers, diagnosticContext: { provider: 'canva', stage: 'dataset_read' } });
   const data = mappedData(map, datasetResponse.dataset, context);
   const body = { type: source.type, data, title: ((context.post.title || context.event.title || 'ITRC') + ' · 文案 v' + input.post.copyVersion).slice(0, 255) };
   body[source.design ? 'design_id' : 'brand_template_id'] = source.sourceId;
   const response = await requestJson('https://api.canva.com/rest/v1/autofills', {
-    env, fetchImpl, method: 'POST', headers, body: JSON.stringify(body), uncertainWrite: true,
+    env, fetchImpl, method: 'POST', headers, body: JSON.stringify(body), uncertainWrite: true, diagnosticContext: { provider: 'canva', stage: 'autofill_create' },
   });
   const result = canvaResult(response.job, { uncertain: true });
   // Persist the known job ID before a separate read-back request can fail.
@@ -541,12 +545,12 @@ async function getCanvaJob(providerJobId, { env = process.env, fetchImpl = globa
   if (!identifier(providerJobId)) throw failure('VALIDATION_ERROR', 'Canva 作業 ID 格式不正確。');
   const token = await canvaToken(env, getCanvaAccessToken);
   const response = await requestJson('https://api.canva.com/rest/v1/autofills/' + providerJobId, {
-    env, fetchImpl, headers: { Authorization: 'Bearer ' + token },
+    env, fetchImpl, headers: { Authorization: 'Bearer ' + token }, diagnosticContext: { provider: 'canva', stage: 'autofill_poll' },
   });
   const result = canvaResult(response.job, { expectedId: providerJobId });
   if (result.status !== 'success') return result;
   const readback = await requestJson('https://api.canva.com/rest/v1/designs/' + result.canvaDesignId, {
-    env, fetchImpl, headers: { Authorization: 'Bearer ' + token },
+    env, fetchImpl, headers: { Authorization: 'Bearer ' + token }, diagnosticContext: { provider: 'canva', stage: 'design_readback' },
   });
   return { ...result, ...canvaDesignResult(readback.design, result.canvaDesignId) };
 }
@@ -571,6 +575,7 @@ async function sheetToken(env, fetchImpl) {
     env, fetchImpl, method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }).toString(),
+    diagnosticContext: { provider: 'google_sheets', stage: 'token' },
   });
   if (typeof response.access_token !== 'string' || !response.access_token || response.access_token.length > 8192) {
     throw failure('INVALID_PROVIDER_RESPONSE', 'Google 授權服務未回傳有效權杖。');
@@ -611,7 +616,7 @@ async function readSheetSource({ spreadsheetId, range } = {}, { env = process.en
   const token = await sheetToken(env, fetchImpl);
   const response = await requestJson('https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(spreadsheetId) +
     '/values/' + encodeURIComponent(range) + '?majorDimension=ROWS&valueRenderOption=FORMATTED_VALUE', {
-    env, fetchImpl, headers: { Authorization: 'Bearer ' + token },
+    env, fetchImpl, headers: { Authorization: 'Bearer ' + token }, diagnosticContext: { provider: 'google_sheets', stage: 'read' },
   });
   const values = response.values || [];
   if (!Array.isArray(values) || values.length > bounds.rows ||
