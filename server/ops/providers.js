@@ -4,6 +4,9 @@
 // https://developers.openai.com/api/docs/guides/structured-outputs
 // https://www.canva.dev/docs/apps/rest-apis/reference/autofills/create-design-autofill-job/
 // https://www.canva.dev/docs/apps/rest-apis/reference/autofills/get-design-autofill-job/
+// Optional editable imports verified 2026-11-26:
+// https://www.canva.dev/docs/apps/rest-apis/reference/design-imports/create-design-import-job/
+// https://www.canva.dev/docs/apps/rest-apis/reference/design-imports/get-design-import-job/
 // https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.values/get
 // https://developers.google.com/identity/protocols/oauth2/service-account
 // These adapters never publish content, write to Sheets, or update an existing Canva design.
@@ -156,6 +159,15 @@ function canvaSource(env) {
   return { sourceId, type: design ? 'create_from_design' : 'create_from_brand_template', design };
 }
 
+function getCanvaGenerationMode(env = process.env) {
+  const raw = env.CANVA_GENERATION_MODE;
+  if (raw === undefined || raw === '') return 'autofill';
+  if (typeof raw !== 'string' || !['autofill', 'editable_import'].includes(raw.trim())) {
+    throw failure('CONFIGURATION_INVALID', 'Canva 產生模式必須是 autofill 或 editable_import。');
+  }
+  return raw.trim();
+}
+
 function parseSheetSources(env = process.env) {
   if (!has(env, 'OPS_SHEET_SOURCES_JSON')) return [];
   try {
@@ -237,12 +249,15 @@ function getIntegrationStatus(env = process.env) {
     env.CANVA_ACCESS_TOKEN.trim().length <= 8192 && !/[\r\n]/.test(env.CANVA_ACCESS_TOKEN.trim()) &&
     (!env.CANVA_ACCESS_TOKEN_EXPIRES_AT || Date.parse(env.CANVA_ACCESS_TOKEN_EXPIRES_AT) > Date.now() + 30000);
   const canvaMissing = [];
+  let canvaMode = null, canvaInvalid = false;
+  try { canvaMode = getCanvaGenerationMode(env); } catch { canvaInvalid = true; }
   if (!staticTokenConfigured && !oauth.configured) canvaMissing.push('CANVA_ACCESS_TOKEN 或 Canva OAuth 設定');
-  if (!has(env, 'CANVA_TEMPLATE_DESIGN_ID') && !has(env, 'CANVA_BRAND_TEMPLATE_ID')) canvaMissing.push('CANVA_TEMPLATE_DESIGN_ID 或 CANVA_BRAND_TEMPLATE_ID');
-  if (!has(env, 'CANVA_FIELD_MAP_JSON')) canvaMissing.push('CANVA_FIELD_MAP_JSON');
-  let canvaInvalid = false;
-  if (!canvaMissing.length) {
-    try { canvaSource(env); parseFieldMap(env); } catch { canvaInvalid = true; }
+  if (canvaMode === 'autofill') {
+    if (!has(env, 'CANVA_TEMPLATE_DESIGN_ID') && !has(env, 'CANVA_BRAND_TEMPLATE_ID')) canvaMissing.push('CANVA_TEMPLATE_DESIGN_ID 或 CANVA_BRAND_TEMPLATE_ID');
+    if (!has(env, 'CANVA_FIELD_MAP_JSON')) canvaMissing.push('CANVA_FIELD_MAP_JSON');
+    if (!canvaMissing.length) {
+      try { canvaSource(env); parseFieldMap(env); } catch { canvaInvalid = true; }
+    }
   }
   const sheetsCredential = sheetCredentialSource(env);
   const sheetsMissing = sheetCredentialMissing(env, sheetsCredential);
@@ -269,7 +284,12 @@ function getIntegrationStatus(env = process.env) {
       configured: canvaConfigured, verified: false, missing: canvaMissing,
       status: canvaInvalid ? 'configuration_invalid' : canvaConfigured ? 'configured_unverified' : 'blocked_configuration',
       oauthConfigured: oauth.configured, requiresConnection: !staticTokenConfigured,
-      detail: canvaInvalid ? 'Canva 母版或欄位對照格式有誤。' : canvaConfigured ? '已設定母版；須完成帳戶連線並驗證欄位。' : '尚未完成 Canva 連線與母版設定。',
+      generationMode: canvaMode,
+      message: canvaMode === 'editable_import' ? '目前使用「可編輯匯入」建立三頁分層設計；須以實際匯入、讀回及編輯確認結果。'
+        : canvaMode === 'autofill' ? '目前使用「Autofill 套版」；實際執行結果會記錄在工作清單。' : 'Canva 產生模式設定有誤。',
+      detail: canvaInvalid ? 'Canva 模式、母版或欄位對照格式有誤。' : canvaMode === 'editable_import'
+        ? '可編輯匯入使用已確認的三頁文字，不需要 Autofill 母版欄位；尚未驗證外部服務結果。'
+        : canvaConfigured ? '已設定母版；須完成帳戶連線並驗證欄位。' : '尚未完成 Canva 連線與母版設定。',
     },
     sheets: {
       configured: !sheetsMissing.length && !sheetsInvalid, verified: false, missing: sheetsMissing, readOnly: true,
@@ -280,6 +300,9 @@ function getIntegrationStatus(env = process.env) {
 }
 
 function slideLayoutLimits(env) {
+  if (typeof env.CANVA_GENERATION_MODE === 'string' && env.CANVA_GENERATION_MODE.trim() === 'editable_import') {
+    return require('./editable-pptx').EDITABLE_IMPORT_LIMITS.map(item => ({ ...item }));
+  }
   if (!has(env, 'CANVA_FIELD_MAP_JSON')) return null;
   let map;
   try { map = parseFieldMap(env); } catch { return null; }
@@ -519,9 +542,16 @@ function canvaDesignResult(design, expectedId) {
   return { canvaDesignId: design.id, canvaEditUrl: url.href };
 }
 
-async function createCanvaDesign(input, { env = process.env, fetchImpl = globalThis.fetch, getCanvaAccessToken } = {}) {
+async function createCanvaDesign(input, { env = process.env, fetchImpl = globalThis.fetch, getCanvaAccessToken, generationMode } = {}) {
   approvedPost(input?.post);
   const context = publicContext(input);
+  const mode = getCanvaGenerationMode({ CANVA_GENERATION_MODE: generationMode === undefined ? env.CANVA_GENERATION_MODE : generationMode });
+  if (mode === 'editable_import') {
+    // Preserve the approved strings exactly; publicContext still validates their
+    // shape and bounded size, but this route must not trim the approved slide text.
+    context.post.slides = (input.post.slides || []).map(({ heading, body }) => ({ heading, body }));
+    return createCanvaImport(context, { env, fetchImpl, getCanvaAccessToken });
+  }
   const source = canvaSource(env);
   if (!has(env, 'CANVA_FIELD_MAP_JSON')) throw configurationError(['CANVA_FIELD_MAP_JSON']);
   const map = parseFieldMap(env);
@@ -542,6 +572,11 @@ async function createCanvaDesign(input, { env = process.env, fetchImpl = globalT
 }
 
 async function getCanvaJob(providerJobId, { env = process.env, fetchImpl = globalThis.fetch, getCanvaAccessToken } = {}) {
+  // A persisted import job stays an import even after the configured default changes.
+  // Plain pre-existing IDs always remain Autofill jobs, never an automatic fallback.
+  if (typeof providerJobId === 'string' && providerJobId.startsWith('import:')) {
+    return getCanvaImportJob(providerJobId.slice(7), { env, fetchImpl, getCanvaAccessToken });
+  }
   if (!identifier(providerJobId)) throw failure('VALIDATION_ERROR', 'Canva 作業 ID 格式不正確。');
   const token = await canvaToken(env, getCanvaAccessToken);
   const response = await requestJson('https://api.canva.com/rest/v1/autofills/' + providerJobId, {
@@ -553,6 +588,72 @@ async function getCanvaJob(providerJobId, { env = process.env, fetchImpl = globa
     env, fetchImpl, headers: { Authorization: 'Bearer ' + token }, diagnosticContext: { provider: 'canva', stage: 'design_readback' },
   });
   return { ...result, ...canvaDesignResult(readback.design, result.canvaDesignId) };
+}
+
+function importJobResult(job, { uncertain = false, expectedId } = {}) {
+  if (!isRecord(job) || !identifier(job.id) || (expectedId && job.id !== expectedId) ||
+      !['in_progress', 'success', 'failed'].includes(job.status)) {
+    throw failure(uncertain ? 'UNCERTAIN_RESULT' : 'INVALID_PROVIDER_RESPONSE', 'Canva 未回傳有效的匯入工作。', { uncertain });
+  }
+  // A duplicate report can refer to an already-created design. Never turn it
+  // into a fresh upload retry or discard the existing external job identity.
+  return { providerJobId: 'import:' + job.id,
+    status: job.status === 'failed' && job.error?.code === 'duplicate_import' ? 'needs_reconciliation' : job.status,
+    generationMethod: 'editable_import' };
+}
+
+async function createCanvaImport(context, { env, fetchImpl, getCanvaAccessToken }) {
+  const suffix = ' · 文案 v' + context.post.copyVersion;
+  const base = context.post.title || context.event.title || 'ITRC';
+  const title = Array.from(base).slice(0, 50 - Array.from(suffix).length).join('') + suffix;
+  let bytes, mimeType;
+  try {
+    const renderer = require('./editable-pptx');
+    mimeType = renderer.MIME_TYPE;
+    bytes = await renderer.createEditablePromoPptx({ title, slides: context.post.slides });
+  }
+  catch (error) {
+    throw failure(error instanceof TypeError ? 'EDITABLE_COPY_INVALID' : 'CONFIGURATION_INVALID', '無法建立可編輯宣傳檔案，請檢查三頁文字。');
+  }
+  if (!Buffer.isBuffer(bytes) || !bytes.length || bytes.length > 2_000_000) {
+    throw failure('CONFIGURATION_INVALID', '可編輯宣傳檔案格式或大小不正確。');
+  }
+  const token = await canvaToken(env, getCanvaAccessToken);
+  const response = await requestJson('https://api.canva.com/rest/v1/imports', {
+    env, fetchImpl, method: 'POST', uncertainWrite: true, body: bytes,
+    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/octet-stream',
+      'Import-Metadata': JSON.stringify({ title_base64: Buffer.from(title, 'utf8').toString('base64'), mime_type: mimeType }) },
+    diagnosticContext: { provider: 'canva', stage: 'import_create' },
+  });
+  const result = importJobResult(response.job, { uncertain: true });
+  // Persist the ID before polling or reading a design. An immediate success
+  // follows the same durable path, so a later read error cannot duplicate it.
+  return result.status === 'success' ? { ...result, status: 'in_progress' } : result;
+}
+
+async function getCanvaImportJob(rawJobId, { env, fetchImpl, getCanvaAccessToken }) {
+  if (!identifier(rawJobId)) throw failure('VALIDATION_ERROR', 'Canva 匯入作業 ID 格式不正確。');
+  const token = await canvaToken(env, getCanvaAccessToken);
+  const headers = { Authorization: 'Bearer ' + token };
+  const response = await requestJson('https://api.canva.com/rest/v1/imports/' + rawJobId, {
+    env, fetchImpl, headers, diagnosticContext: { provider: 'canva', stage: 'import_poll' },
+  });
+  const result = importJobResult(response.job, { expectedId: rawJobId });
+  if (result.status !== 'success') return result;
+  const designs = response.job.result?.designs;
+  if (!Array.isArray(designs) || designs.length !== 1 || !isRecord(designs[0]) || !identifier(designs[0].id)) {
+    throw failure('INVALID_PROVIDER_RESPONSE', 'Canva 匯入結果不是單一完整設計，請先核對。');
+  }
+  if (designs[0].page_count !== undefined && designs[0].page_count !== 3) {
+    throw failure('INVALID_PROVIDER_RESPONSE', 'Canva 匯入結果頁數不是三頁，請先核對。');
+  }
+  const readback = await requestJson('https://api.canva.com/rest/v1/designs/' + designs[0].id, {
+    env, fetchImpl, headers, diagnosticContext: { provider: 'canva', stage: 'design_readback' },
+  });
+  if (readback.design?.page_count !== undefined && readback.design.page_count !== 3) throw failure('INVALID_PROVIDER_RESPONSE', 'Canva 讀回的設計頁數不是三頁。');
+  const pageCount = readback.design?.page_count ?? designs[0].page_count;
+  return { ...result, ...canvaDesignResult(readback.design, designs[0].id), sourcePageCount: 3,
+    ...(pageCount === 3 ? { pageCount } : {}) };
 }
 
 async function sheetToken(env, fetchImpl) {
@@ -631,4 +732,4 @@ async function readSheetSource({ spreadsheetId, range } = {}, { env = process.en
   };
 }
 
-module.exports = { ProviderError, getIntegrationStatus, getSheetsCredentialMetadata, generateCopy, createCanvaDesign, getCanvaJob, readSheetSource, parseSheetSources };
+module.exports = { ProviderError, getIntegrationStatus, getSheetsCredentialMetadata, getCanvaGenerationMode, generateCopy, createCanvaDesign, getCanvaJob, readSheetSource, parseSheetSources };

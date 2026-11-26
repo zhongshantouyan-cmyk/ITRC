@@ -19,6 +19,7 @@ const safeError = error => {
     RECONNECT_REQUIRED:'服務授權已失效，請由管理者重新連線。',
     PROVIDER_BUSY:'服務連線正在更新，請稍後重試。',
     VALIDATION_ERROR:'輸入內容或模板欄位未通過檢查，請先修正資料。',
+    EDITABLE_COPY_INVALID:'可編輯匯入需要三頁文字；每頁標題最多 8 字，內文依頁最多 42／84／84 字。請檢查內容後再試。',
     PROVIDER_REJECTED:'外部服務拒絕這次請求，請檢查權限與設定後重試。',
     PROVIDER_UNAVAILABLE:'外部服務暫時無法使用。',
     INVALID_PROVIDER_RESPONSE:'外部服務回傳了無法驗證的結果。',
@@ -117,7 +118,11 @@ function createOpsService({ db, store = createOpsStore(db), providers, env = pro
       for (const jobId of run.record.jobIds) jobs.push(...(await runJobs({limit:1,jobId,actor})).jobs);
       return {ok:true,record:{processed:jobs.length,jobs}};
     }
-    const result = await store.mutate({actorEmail:actor.email,idempotencyKey:command.idempotencyKey,fingerprint,now:now(),authorize:state => assertActorActive(state,actor)},state => executeAction(state,command,actor,now()));
+    const result = await store.mutate({actorEmail:actor.email,idempotencyKey:command.idempotencyKey,fingerprint,now:now(),authorize:state => assertActorActive(state,actor)},state => {
+      const options = ['post.approve','post.request-design'].includes(command.action)
+        ? {canvaGenerationMode:require('./providers').getCanvaGenerationMode(env)} : {};
+      return executeAction(state,command,actor,now(),options);
+    });
     if (command.action === 'post.generate' && result.record?.id) {
       await runJobs({limit:1,jobId:result.record.id,actor});
       const current = await store.read();
@@ -126,7 +131,8 @@ function createOpsService({ db, store = createOpsStore(db), providers, env = pro
     if (String(env.OPS_AUTO_RUN_JOBS).toLowerCase() === 'true' && ['post.approve','post.request-design','job.retry'].includes(command.action)) {
       const current = await store.read();
       const job = command.action === 'post.approve'
-        ? current.jobs.find(job => job.postId === result.record.id && job.copyVersion === result.record.copyVersion && job.type === 'canva')
+        ? current.jobs.find(job => job.postId === result.record.id && job.copyVersion === result.record.copyVersion && job.type === 'canva' &&
+          (job.generationMode || 'autofill') === require('./providers').getCanvaGenerationMode(env))
         : current.jobs.find(job => job.id === result.record.id);
       if (job) await runJobs({limit:1,jobId:job.id,actor});
     }
@@ -168,7 +174,7 @@ function createOpsService({ db, store = createOpsStore(db), providers, env = pro
           providerJobId:result.providerJobId || job.providerJobId || '',
           status:result.status || '', canvaEditUrl:result.canvaEditUrl || '', canvaDesignId:result.canvaDesignId || '',
         };
-        if (job.type === 'canva' && error && !claim.polling && (error.uncertain || !error.definite)) {
+        if (job.type === 'canva' && (result?.status === 'needs_reconciliation' || (error && !claim.polling && (error.uncertain || !error.definite)))) {
           job.needsReconciliation = true; job.lastError = safeError({code:'UNCERTAIN_RESULT'});
         }
         const prior = job.version; touch(job,stamp); audit(state,actor,'job.late-result',job,prior,stamp,'保留外部工作識別，不覆蓋後續人工修改。');
@@ -176,15 +182,19 @@ function createOpsService({ db, store = createOpsStore(db), providers, env = pro
       }
       const post = find(state,'posts',job.postId); const from = job.version;
       delete job.leaseUntil; delete job.claimToken;
+      if (result?.providerJobId) job.providerJobId = result.providerJobId;
       if (['completed','published'].includes(post.stage) || post.copyVersion !== job.copyVersion || (job.type === 'copy' && (post.version !== job.expectedPostVersion || !['brief','draft','needs_revision'].includes(post.stage))) || (job.type === 'canva' && post.approvedVersion !== post.copyVersion)) {
         job.status = 'obsolete'; job.lastError = '工作執行期間內容已修改，保留結果供核對，不套用舊版。';
         if (result?.providerJobId) job.providerJobId = result.providerJobId;
         if (result?.canvaEditUrl) job.result = {canvaEditUrl:result.canvaEditUrl,canvaDesignId:result.canvaDesignId || ''};
       } else if (error) {
         const configured = error.configMissing || ['CONFIGURATION_MISSING','CONFIGURATION_INVALID'].includes(error.code);
-        job.status = configured ? 'blocked_configuration' : (job.type === 'canva' && !claim.polling && (error.uncertain || !error.definite) ? 'needs_reconciliation' : 'failed');
+        job.status = configured ? 'blocked_configuration' : (job.type === 'canva' && (error.uncertain || (!claim.polling && !error.definite)) ? 'needs_reconciliation' : 'failed');
         job.lastError = safeError(job.status === 'needs_reconciliation' ? {code:'UNCERTAIN_RESULT'} : error);
         job.errorCode = job.status === 'needs_reconciliation' ? 'UNCERTAIN_RESULT' : (error.code || 'PROVIDER_FAILURE');
+      } else if (job.type === 'canva' && result.status === 'needs_reconciliation') {
+        job.status = 'needs_reconciliation'; job.errorCode = 'UNCERTAIN_RESULT';
+        job.lastError = safeError({code:'UNCERTAIN_RESULT'});
       } else if (job.type === 'copy') {
         // Validate provider output before touching a user record.
         const output = cleanFields('posts',{caption:result.caption,slides:result.slides});
@@ -198,10 +208,12 @@ function createOpsService({ db, store = createOpsStore(db), providers, env = pro
       } else if (['success','succeeded'].includes(result.status) && result.canvaEditUrl) {
         httpsUrl(result.canvaEditUrl,'Canva 編輯網址',{canva:true,optional:false});
         post.canvaEditUrl = result.canvaEditUrl; post.canvaDesignId = result.canvaDesignId || ''; post.designCopyVersion = job.copyVersion; post.stage = 'approved'; touch(post,stamp);
+        post.designGenerationMethod = job.generationMode || 'autofill';
         capturePostRevision(state,post,actor,stamp,'post.generated-design');
-        job.status = 'succeeded'; job.result = {canvaEditUrl:post.canvaEditUrl,canvaDesignId:post.canvaDesignId}; job.lastError = '';
+        job.status = 'succeeded'; job.result = {canvaEditUrl:post.canvaEditUrl,canvaDesignId:post.canvaDesignId,generationMethod:post.designGenerationMethod}; job.lastError = '';
       } else if (['failed','failure'].includes(result.status)) {
-        job.status = 'failed'; job.errorCode = 'PROVIDER_JOB_FAILED'; job.lastError = 'Canva 已回報設計產生失敗，請檢查模板後重試。';
+        job.status = 'failed'; job.errorCode = 'PROVIDER_JOB_FAILED'; job.lastError = job.generationMode === 'editable_import'
+          ? 'Canva 已回報可編輯匯入失敗，請檢查文案與檔案後重試。' : 'Canva 已回報設計產生失敗，請檢查模板後重試。';
       } else {
         assert(result.providerJobId || job.providerJobId,502,'INVALID_PROVIDER_RESPONSE','Canva 未提供工作識別碼。');
         job.status = 'running'; job.providerJobId = result.providerJobId || job.providerJobId; job.lastError = '';
@@ -223,7 +235,7 @@ function createOpsService({ db, store = createOpsStore(db), providers, env = pro
           ? await provider().generateCopy({post:claim.post,event:claim.event,obligations:claim.obligations},{env})
           : claim.polling
             ? await provider().getCanvaJob(claim.job.providerJobId,{env})
-            : await provider().createCanvaDesign({post:claim.post,event:claim.event,obligations:claim.obligations},{env});
+            : await provider().createCanvaDesign({post:claim.post,event:claim.event,obligations:claim.obligations},{env,generationMode:claim.job.generationMode || 'autofill'});
         results.push(await finishJob(claim,result,null,actor));
       } catch (error) {
         // Never leak response bodies, access tokens or credential values to stored job errors.

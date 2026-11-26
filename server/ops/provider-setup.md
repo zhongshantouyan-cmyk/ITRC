@@ -27,8 +27,9 @@
 - CANVA_REDIRECT_URI：必須與 Canva 開發者後台完全相符。正式環境使用 HTTPS。
 - OPS_TOKEN_ENCRYPTION_KEY：32 位元組隨機值的標準 Base64，供伺服器加密保存 OAuth 憑證；只能放在部署平台的秘密設定。
 - OPS_FRONTEND_ORIGIN：OAuth 成功後返回的前端 origin。
-- 以下二選一：CANVA_TEMPLATE_DESIGN_ID 或 CANVA_BRAND_TEMPLATE_ID。
-- CANVA_FIELD_MAP_JSON：精確的母版欄位對照。
+- CANVA_GENERATION_MODE：選填 `autofill`（預設）或 `editable_import`；不會在失敗時自動切換。
+- Autofill 模式以下二選一：CANVA_TEMPLATE_DESIGN_ID 或 CANVA_BRAND_TEMPLATE_ID。
+- CANVA_FIELD_MAP_JSON：Autofill 模式的精確母版欄位對照。
 
 目前 ITRC 正式回呼路徑為 `https://itrc-eight.vercel.app/api/ops/connections/canva/callback`，前端 origin 為 `https://nsysu-itrc.vercel.app`。前端的 ChatGPT Canva connector 不會提供這個網站的 OAuth 憑證；網站仍需管理者在自己的 Canva 帳戶完成授權。
 
@@ -42,7 +43,15 @@ canva-oauth.js 提供 PKCE 授權、授權碼交換及 refresh token 交換。cr
 
 最低權限為 design:content:read、design:content:write、design:meta:read。使用品牌範本時另外要求 brandtemplate:meta:read、brandtemplate:content:read。此版不含圖片上傳功能，圖片欄位使用已上傳的 Canva asset ID。
 
-### 欄位對照範例
+### 可編輯匯入模式
+
+`editable_import` 將已確認的三頁 `post.slides` 產生為含原生文字及形狀的 4:5 PPTX，以二進位 `POST /rest/v1/imports` 上傳；不使用母版或欄位對照，不需新增 OAuth scopes，也不修改原設計。標題每頁最多 8 字，內文依頁最多 42／84／84 字，過長或無法容納的換行在上傳前拒絕。已確認文字不截斷、不正規化；草稿產生則採用這組版面限制。完整 caption 仍另外保存。
+
+工作保存固定 generationMode；匯入的 providerJobId 帶 `import:` 前綴。後續 `GET /imports/{id}` 必須只回傳一個設計，再 `GET /designs/{id}` 驗證同一 ID、有效 edit URL 與明確頁數為三頁。外部 ID 已保存時重試只讀取；未知建立結果及 `duplicate_import` 一律先核對。舊工作不自動轉換；已明確拒絕且沒有外部 ID 的 Autofill 工作，可在切換設定後由同一已確認版本明確要求新的匯入，原失敗紀錄保留。
+
+匯入成功不能稱為 Autofill 成功，設定完成不能稱為此帳戶已驗證免費使用；仍需實際 API 與成品編輯驗收。程式不升級方案或付款。完整操作與防重複邊界見 [ops-runbook.md](../../docs/ops-runbook.md#5-canva連線與可編輯設計)，官方規格為 [Design Import](https://www.canva.dev/docs/apps/rest-apis/reference/design-imports/create-design-import-job/)。
+
+### Autofill 欄位對照範例
 
 以下是示意值，不能直接當正式母版設定：
 
@@ -58,7 +67,7 @@ canva-oauth.js 提供 PKCE 授權、授權碼交換及 refresh token 交換。cr
 
 每次建立前會讀取當前 dataset，要求欄位名稱集合與類型全部吻合；漏掉、改名、增加欄位或文字過長都在外部寫入前停止。如此可避免 Canva 默默略過不存在的欄位，或留著母版的舊日期與舊講者資訊。
 
-永遠使用 create_from_design 或 create_from_brand_template；沒有 update_design 路徑，因此不覆蓋行銷負責人手動調整過的成品。每次請求也會確認 approvedVersion 等於 copyVersion。
+Autofill 模式只使用 create_from_design 或 create_from_brand_template；沒有 update_design 路徑，因此不覆蓋行銷負責人手動調整過的成品。兩種模式每次請求都會確認 approvedVersion 等於 copyVersion。
 
 API 建立作業回傳 in_progress、success 或 failed。寫入逾時、5xx 或無效回應會拋出 UNCERTAIN_RESULT，標記 uncertain=true；工作佇列應進入待核對狀態，不可自動新增第二份設計。讀取 dataset 失敗屬於安全的前置檢查失敗。
 
