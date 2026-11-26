@@ -68,10 +68,15 @@ API 建立作業回傳 in_progress、success 或 failed。寫入逾時、5xx 或
 
 ## Google Sheets
 
-兩種身分來源二選一：
+身分來源依下列順序選用；前一項存在但無效時直接失敗，不自動切換身分：
 
-- GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON：僅供後端使用的服務帳戶 JSON。將指定來源工作表分享給該服務帳戶，使用 spreadsheets.readonly 範圍。程式不設定使用者 impersonation，也不要求全網域委派。
 - GOOGLE_SHEETS_ACCESS_TOKEN：供短期測試的 OAuth access token。
+- GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON：僅供後端使用的服務帳戶 JSON。將指定來源工作表分享給該服務帳戶，使用 spreadsheets.readonly 範圍。程式不設定使用者 impersonation，也不要求全網域委派。
+- GOOGLE_SHEETS_USE_FIREBASE_SERVICE_ACCOUNT=true：只有上述兩項均未設定，且值完全等於 `true` 時，才沿用 runtime 已有的 FIREBASE_SERVICE_ACCOUNT JSON。預設停用；不複製金鑰、不建立新帳號、不改變 Firebase 設定，也不自動分享試算表。仍只向固定 Google token endpoint 取得 spreadsheets.readonly token。
+
+`GET /api/ops/connections/google-sheets/metadata` 為現任社長／顧問專用端點。只回傳 `client_email`、`project_id`、`credentialSource` 與 `missing`；不回傳私鑰、token、client ID 或原始 JSON。信箱須符合服務帳號格式，專案 ID 須符合標準 Google Cloud project ID 格式；缺少或無效的專案 ID 回傳 null 與缺項，不反射原值。暫用 access token 不含可顯示的服務帳號身分，兩個欄位均為 null。資料不加入一般 bootstrap 或公開 health。
+
+管理設定頁的「試算表共用對象」卡片透過此端點顯示可複製的信箱與專案 ID；同源 gateway 只新增這個 GET 路徑，仍由後端決定角色權限。顯示身分只代表設定可解析，不能據此宣稱 Viewer 權限、Sheets API 啟用或實際讀取已通過。使用者核對分享對象後，僅將指定的獨立來源表授予 Viewer；不因啟用選項而自動改原表分享設定。
 
 來源以伺服器設定 OPS_SHEET_SOURCES_JSON 控制，例如：
 

@@ -268,6 +268,13 @@
 .ops-integration-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:15px; }
 .ops-integration { padding:20px; background:#fff; border:1px solid var(--ops-line); border-radius:10px; }
 .ops-integration h3 { font-size:14px; }
+.ops-sheet-identity { border-top:1px solid var(--ops-line); margin-top:16px; padding-top:16px; }
+.ops-sheet-identity h4 { font-size:13px; margin:0 0 10px; }
+.ops-sheet-identity label,.ops-sheet-identity dt { display:block; font-size:11px; color:#63706b; margin:12px 0 5px; }
+.ops-sheet-identity input { width:100%; box-sizing:border-box; padding:9px; font-size:11px; border:1px solid var(--ops-line); border-radius:6px; background:#f8faf8; }
+.ops-sheet-identity .ops-button-row { margin-top:8px; align-items:center; }
+.ops-sheet-identity dd { margin:0; font-size:12px; overflow-wrap:anywhere; }
+.ops-sheet-identity details { font-size:11px; margin:10px 0; overflow-wrap:anywhere; }
 .ops-integration>p { font-size:11px; color:#8a9891; margin-top:13px; line-height:1.9; }
 .ops-integration .ops-note { font-size:11px; padding:11px; }
 .ops-integration details { font-size:10px; color:#91a08d; }

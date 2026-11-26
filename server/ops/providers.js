@@ -178,17 +178,52 @@ function parseSheetSources(env = process.env) {
   }
 }
 
-function serviceAccount(env) {
+const SHEETS_CREDENTIAL_OPTIONS = 'GOOGLE_SHEETS_ACCESS_TOKEN 或 GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON（或明確啟用 GOOGLE_SHEETS_USE_FIREBASE_SERVICE_ACCOUNT）';
+function sheetCredentialSource(env) {
+  // Dedicated settings always win, including invalid settings. Never silently
+  // switch identities after an error or inspect the Firebase secret by default.
+  if (has(env, 'GOOGLE_SHEETS_ACCESS_TOKEN')) return { key:'GOOGLE_SHEETS_ACCESS_TOKEN', name:'google_sheets_access_token' };
+  if (has(env, 'GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON')) return { key:'GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON', name:'google_sheets_service_account' };
+  if (env.GOOGLE_SHEETS_USE_FIREBASE_SERVICE_ACCOUNT === 'true') return { key:'FIREBASE_SERVICE_ACCOUNT', name:'firebase_service_account' };
+  return { key:null, name:'none' };
+}
+function sheetCredentialMissing(env, source) {
+  return source.key ? (has(env, source.key) ? [] : [source.key]) : [SHEETS_CREDENTIAL_OPTIONS];
+}
+function sheetAccessToken(env) {
+  const token = env.GOOGLE_SHEETS_ACCESS_TOKEN.trim();
+  if (token.length > 8192 || /[\r\n]/.test(token)) throw failure('CONFIGURATION_INVALID', 'Google Sheets 暫用權杖格式不正確。');
+  return token;
+}
+function serviceAccount(env, key = 'GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON') {
   let credentials;
   try {
-    credentials = JSON.parse(env.GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON);
+    credentials = JSON.parse(env[key]);
     if (!isRecord(credentials) || credentials.type !== 'service_account' || typeof credentials.client_email !== 'string' ||
-        !/^[^@\s]+@[^@\s]+\.gserviceaccount\.com$/.test(credentials.client_email) ||
+        credentials.client_email.length > 254 || !/^[a-z0-9][a-z0-9._+-]{0,127}@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+gserviceaccount\.com$/i.test(credentials.client_email) ||
         typeof credentials.private_key !== 'string' || credentials.private_key.length > 10000) throw new Error();
-    const key = crypto.createPrivateKey(credentials.private_key);
-    if (key.asymmetricKeyType !== 'rsa') throw new Error();
+    const privateKey = crypto.createPrivateKey(credentials.private_key);
+    if (privateKey.asymmetricKeyType !== 'rsa') throw new Error();
   } catch { throw failure('CONFIGURATION_INVALID', 'Google Sheets 服務帳戶設定不正確。'); }
   return credentials;
+}
+
+// This projection is only for the authenticated chair/advisor endpoint. Do not
+// add credential identity to bootstrap, health checks, logs, or provider errors.
+function getSheetsCredentialMetadata(env = process.env) {
+  const source = sheetCredentialSource(env);
+  const missing = sheetCredentialMissing(env, source);
+  let client_email = null, project_id = null;
+  if (!missing.length) {
+    if (source.key === 'GOOGLE_SHEETS_ACCESS_TOKEN') sheetAccessToken(env);
+    else {
+      const credentials = serviceAccount(env, source.key);
+      client_email = credentials.client_email;
+      if (typeof credentials.project_id === 'string' && /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(credentials.project_id)) project_id = credentials.project_id;
+      else missing.push(`${source.key}.project_id`);
+    }
+  }
+  return { client_email, project_id, credentialSource:source.name, missing };
 }
 
 function getIntegrationStatus(env = process.env) {
@@ -205,20 +240,18 @@ function getIntegrationStatus(env = process.env) {
   if (!canvaMissing.length) {
     try { canvaSource(env); parseFieldMap(env); } catch { canvaInvalid = true; }
   }
-  const sheetsMissing = [];
-  if (!has(env, 'GOOGLE_SHEETS_ACCESS_TOKEN') && !has(env, 'GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON')) {
-    sheetsMissing.push('GOOGLE_SHEETS_ACCESS_TOKEN 或 GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON');
-  }
+  const sheetsCredential = sheetCredentialSource(env);
+  const sheetsMissing = sheetCredentialMissing(env, sheetsCredential);
   // A bare ID allowlist is supported only by the low-level adapter. The workspace
   // needs a named source with a range and column mapping before it can import.
   if (!has(env, 'OPS_SHEET_SOURCES_JSON')) sheetsMissing.push('OPS_SHEET_SOURCES_JSON');
   let sheetsInvalid = false;
   try {
     if (has(env, 'OPS_SHEET_SOURCES_JSON')) parseSheetSources(env);
-    if (has(env, 'GOOGLE_SHEETS_ACCESS_TOKEN')) {
-      const token = env.GOOGLE_SHEETS_ACCESS_TOKEN.trim();
-      if (token.length > 8192 || /[\r\n]/.test(token)) throw new Error();
-    } else if (has(env, 'GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON')) serviceAccount(env);
+    if (!sheetCredentialMissing(env, sheetsCredential).length) {
+      if (sheetsCredential.key === 'GOOGLE_SHEETS_ACCESS_TOKEN') sheetAccessToken(env);
+      else serviceAccount(env, sheetsCredential.key);
+    }
   } catch { sheetsInvalid = true; }
   const canvaConfigured = !canvaMissing.length && !canvaInvalid;
   return {
@@ -519,15 +552,11 @@ async function getCanvaJob(providerJobId, { env = process.env, fetchImpl = globa
 }
 
 async function sheetToken(env, fetchImpl) {
-  if (has(env, 'GOOGLE_SHEETS_ACCESS_TOKEN')) {
-    const token = env.GOOGLE_SHEETS_ACCESS_TOKEN.trim();
-    if (token.length > 8192 || /[\r\n]/.test(token)) throw failure('CONFIGURATION_INVALID', 'Google Sheets 暫用權杖格式不正確。');
-    return token;
-  }
-  if (!has(env, 'GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON')) {
-    throw configurationError(['GOOGLE_SHEETS_ACCESS_TOKEN 或 GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON']);
-  }
-  const credentials = serviceAccount(env);
+  const source = sheetCredentialSource(env);
+  const missing = sheetCredentialMissing(env, source);
+  if (missing.length) throw configurationError(missing);
+  if (source.key === 'GOOGLE_SHEETS_ACCESS_TOKEN') return sheetAccessToken(env);
+  const credentials = serviceAccount(env, source.key);
   const now = Math.floor(Date.now() / 1000);
   const header = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
   const claim = Buffer.from(JSON.stringify({
@@ -597,4 +626,4 @@ async function readSheetSource({ spreadsheetId, range } = {}, { env = process.en
   };
 }
 
-module.exports = { ProviderError, getIntegrationStatus, generateCopy, createCanvaDesign, getCanvaJob, readSheetSource, parseSheetSources };
+module.exports = { ProviderError, getIntegrationStatus, getSheetsCredentialMetadata, generateCopy, createCanvaDesign, getCanvaJob, readSheetSource, parseSheetSources };
