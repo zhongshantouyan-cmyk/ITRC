@@ -5,10 +5,13 @@ const { createOpsStore } = require('./store');
 const { OpsError, assert } = require('./errors');
 const { emails } = require('./auth');
 const { assertActorActive } = require('./people');
+const { formatProviderDiagnostic } = require('./provider-diagnostics');
 const { executeAction, isAdvisor, find, touch, audit, relevantObligations, clearApproval, obsoleteJobs, eventMissingFacts, httpsUrl, cleanFields, capturePostRevision } = require('./domain');
 
 const SYSTEM = {email:'system@itrc.local',name:'工作台排程',role:'advisor',canApprove:false,canDesign:false};
 const safeError = error => {
+  const diagnosticMessage = formatProviderDiagnostic(error);
+  if (diagnosticMessage) return diagnosticMessage;
   const messages = {
     CONFIGURATION_MISSING:'尚未完成服務連線設定。請到「系統連線」查看缺少的設定。',
     CONFIGURATION_INVALID:'服務連線設定格式不正確，請檢查伺服器設定。',
