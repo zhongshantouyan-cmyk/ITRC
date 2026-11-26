@@ -13,6 +13,9 @@ function createOpsRouter({db = require('../db'),firebase,providers,env = process
   router.get('/bootstrap',async (req,res,next) => {
     try { res.json(await service.bootstrap(req.opsActor)); } catch (error) { next(error); }
   });
+  router.get('/connections/google-sheets/metadata',async (req,res,next) => {
+    try { res.json(await service.sheetsCredentialMetadata(req.opsActor)); } catch (error) { next(error); }
+  });
   router.post('/actions',express.json({limit:'256kb'}),async (req,res,next) => {
     try { res.json(await service.action(req.opsActor,req.body)); } catch (error) { next(error); }
   });

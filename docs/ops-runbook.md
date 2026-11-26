@@ -99,7 +99,7 @@
 
 ### 受保護 Preview 的同網域 gateway
 
-既有 gateway 已部署，且已完成 Preview 的授權與實際讀取驗收：瀏覽器透過同網域 `/api/ops/*` 呼叫前端伺服器函式，再由函式呼叫固定後端。gateway 僅允許 `GET bootstrap`、`POST actions`、`GET connections/canva`、`POST connections/canva/start`；不代理 callback 或 cron，不跟隨上游重新導向，也不轉送 Cookie。
+既有 gateway 已部署，且已完成 Preview 的授權與實際讀取驗收：瀏覽器透過同網域 `/api/ops/*` 呼叫前端伺服器函式，再由函式呼叫固定後端。gateway 僅允許 `GET bootstrap`、`POST actions`、`GET connections/canva`、`POST connections/canva/start`、`GET connections/google-sheets/metadata`；最後一項仍由後端驗證現任社長／顧問角色。不代理 callback 或 cron，不跟隨上游重新導向，也不轉送 Cookie。
 
 函式使用 `@vercel/oidc@4.0.3` 的 `getVercelOidcToken()`，每次取得短期 OIDC 並放入 `x-vercel-trusted-oidc-idp-token`。前端專案的 Secure Backend Access with OIDC Federation 須開啟；後端 Trusted Sources 須允許相符的呼叫專案及環境。OIDC 處理部署保護，原本的 Firebase Bearer 仍交後端驗證身分與角色。參考 [Vercel Trusted Sources](https://vercel.com/docs/deployment-protection/methods-to-bypass-deployment-protection/trusted-sources)。
 
@@ -155,7 +155,13 @@ node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("b
 
 ### Google Sheets 唯讀來源
 
-設定 `GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON`，並把指定試算表以「檢視者」分享給該服務帳戶；讀取範圍是 `spreadsheets.readonly`。也支援暫用的 `GOOGLE_SHEETS_ACCESS_TOKEN`。來源仍需另列入 `OPS_SHEET_SOURCES_JSON`：
+設定 `GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON`，並把指定試算表以「檢視者」分享給該服務帳戶；讀取範圍是 `spreadsheets.readonly`。也支援暫用的 `GOOGLE_SHEETS_ACCESS_TOKEN`。
+
+若網站已有 `FIREBASE_SERVICE_ACCOUNT`，可明確設定 `GOOGLE_SHEETS_USE_FIREBASE_SERVICE_ACCOUNT=true` 沿用 runtime 中的既有服務帳號，不需複製或重新建立金鑰。只有專用 Sheets token 與服務帳號設定均缺少時才採用；專用設定存在但無效時直接報錯，不自動換身分。預設不讀取 Firebase 憑證，也不新增任何試算表權限。
+
+登入的現任社長／顧問可在「管理與設定 → Google 試算表」查看並複製共用對象，以及核對 Google Cloud 專案 ID。卡片呼叫獨立的 `GET /api/ops/connections/google-sheets/metadata`，只回傳經格式驗證的 `client_email`、`project_id`、`credentialSource` 與憑證缺項；一般幹部、財務及已卸任帳號不能讀取。此資訊不放入全員 bootstrap 或公開 health。取得身分不代表檔案已分享、Sheets API 已啟用或讀取成功；仍需確認指定來源檔案、Viewer 授權及實際讀取結果。
+
+來源仍需另列入 `OPS_SHEET_SOURCES_JSON`：
 
 ```json
 [{

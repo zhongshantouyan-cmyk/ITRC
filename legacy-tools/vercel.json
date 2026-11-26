@@ -16,7 +16,17 @@
       "permanent": false
     },
     {
+      "source": "/ITRC%E8%B2%A1%E5%8B%99%E7%AB%99.html",
+      "destination": "https://nsysu-itrc.vercel.app/ops?tool=finance",
+      "permanent": false
+    },
+    {
       "source": "/tools/ITRC財務站.html",
+      "destination": "https://nsysu-itrc.vercel.app/ops?tool=finance",
+      "permanent": false
+    },
+    {
+      "source": "/tools/ITRC%E8%B2%A1%E5%8B%99%E7%AB%99.html",
       "destination": "https://nsysu-itrc.vercel.app/ops?tool=finance",
       "permanent": false
     },
@@ -26,7 +36,17 @@
       "permanent": false
     },
     {
+      "source": "/ITRC%E6%B4%BB%E5%8B%95%E7%B5%84-%E8%AC%9B%E5%B8%AB%E6%B1%A0%E6%8E%92%E7%A8%8B.html",
+      "destination": "https://nsysu-itrc.vercel.app/ops?tool=speakers",
+      "permanent": false
+    },
+    {
       "source": "/tools/ITRC活動組-講師池排程.html",
+      "destination": "https://nsysu-itrc.vercel.app/ops?tool=speakers",
+      "permanent": false
+    },
+    {
+      "source": "/tools/ITRC%E6%B4%BB%E5%8B%95%E7%B5%84-%E8%AC%9B%E5%B8%AB%E6%B1%A0%E6%8E%92%E7%A8%8B.html",
       "destination": "https://nsysu-itrc.vercel.app/ops?tool=speakers",
       "permanent": false
     },
@@ -36,7 +56,17 @@
       "permanent": false
     },
     {
+      "source": "/ITRC%E5%85%AC%E9%97%9C%E6%8B%89%E8%B4%8A%E5%8A%A9%E5%B0%8F%E5%B9%AB%E6%89%8B.html",
+      "destination": "https://nsysu-itrc.vercel.app/ops?tool=sponsors",
+      "permanent": false
+    },
+    {
       "source": "/tools/ITRC公關拉贊助小幫手.html",
+      "destination": "https://nsysu-itrc.vercel.app/ops?tool=sponsors",
+      "permanent": false
+    },
+    {
+      "source": "/tools/ITRC%E5%85%AC%E9%97%9C%E6%8B%89%E8%B4%8A%E5%8A%A9%E5%B0%8F%E5%B9%AB%E6%89%8B.html",
       "destination": "https://nsysu-itrc.vercel.app/ops?tool=sponsors",
       "permanent": false
     },
@@ -46,7 +76,17 @@
       "permanent": false
     },
     {
+      "source": "/ITRC%E5%9C%96%E6%96%87%E5%B0%8F%E5%B9%AB%E6%89%8B.html",
+      "destination": "https://nsysu-itrc.vercel.app/ops?tool=marketing",
+      "permanent": false
+    },
+    {
       "source": "/tools/ITRC圖文小幫手.html",
+      "destination": "https://nsysu-itrc.vercel.app/ops?tool=marketing",
+      "permanent": false
+    },
+    {
+      "source": "/tools/ITRC%E5%9C%96%E6%96%87%E5%B0%8F%E5%B9%AB%E6%89%8B.html",
       "destination": "https://nsysu-itrc.vercel.app/ops?tool=marketing",
       "permanent": false
     },
@@ -56,7 +96,17 @@
       "permanent": false
     },
     {
+      "source": "/ITRC%E8%AD%89%E6%9B%B8%E7%94%A2%E7%94%9F%E5%99%A8.html",
+      "destination": "https://nsysu-itrc.vercel.app/ops?tool=certificates",
+      "permanent": false
+    },
+    {
       "source": "/tools/ITRC證書產生器.html",
+      "destination": "https://nsysu-itrc.vercel.app/ops?tool=certificates",
+      "permanent": false
+    },
+    {
+      "source": "/tools/ITRC%E8%AD%89%E6%9B%B8%E7%94%A2%E7%94%9F%E5%99%A8.html",
       "destination": "https://nsysu-itrc.vercel.app/ops?tool=certificates",
       "permanent": false
     },
@@ -66,7 +116,17 @@
       "permanent": false
     },
     {
+      "source": "/ITRC%E7%AE%A1%E7%90%86%E7%B5%84-%E5%B9%B9%E9%83%A8%E8%88%87%E6%AC%8A%E9%99%90.html",
+      "destination": "https://nsysu-itrc.vercel.app/ops?tool=permissions",
+      "permanent": false
+    },
+    {
       "source": "/tools/ITRC管理組-幹部與權限.html",
+      "destination": "https://nsysu-itrc.vercel.app/ops?tool=permissions",
+      "permanent": false
+    },
+    {
+      "source": "/tools/ITRC%E7%AE%A1%E7%90%86%E7%B5%84-%E5%B9%B9%E9%83%A8%E8%88%87%E6%AC%8A%E9%99%90.html",
       "destination": "https://nsysu-itrc.vercel.app/ops?tool=permissions",
       "permanent": false
     },
@@ -76,7 +136,17 @@
       "permanent": false
     },
     {
+      "source": "/ITRC%E8%B3%87%E8%A8%8A%E7%B5%84%E7%B6%AD%E8%AD%B7%E6%89%8B%E5%86%8A.html",
+      "destination": "https://nsysu-itrc.vercel.app/ops?tool=maintenance",
+      "permanent": false
+    },
+    {
       "source": "/tools/ITRC資訊組維護手冊.html",
+      "destination": "https://nsysu-itrc.vercel.app/ops?tool=maintenance",
+      "permanent": false
+    },
+    {
+      "source": "/tools/ITRC%E8%B3%87%E8%A8%8A%E7%B5%84%E7%B6%AD%E8%AD%B7%E6%89%8B%E5%86%8A.html",
       "destination": "https://nsysu-itrc.vercel.app/ops?tool=maintenance",
       "permanent": false
     },
@@ -86,7 +156,17 @@
       "permanent": false
     },
     {
+      "source": "/%E4%BD%BF%E7%94%A8%E8%AA%AA%E6%98%8E.html",
+      "destination": "https://nsysu-itrc.vercel.app/ops?tool=help",
+      "permanent": false
+    },
+    {
       "source": "/tools/使用說明.html",
+      "destination": "https://nsysu-itrc.vercel.app/ops?tool=help",
+      "permanent": false
+    },
+    {
+      "source": "/tools/%E4%BD%BF%E7%94%A8%E8%AA%AA%E6%98%8E.html",
       "destination": "https://nsysu-itrc.vercel.app/ops?tool=help",
       "permanent": false
     },
@@ -96,7 +176,17 @@
       "permanent": false
     },
     {
+      "source": "/ITRC%E7%AE%A1%E7%90%86%E7%B5%84-%E4%BB%BB%E5%8B%99%E7%9C%8B%E6%9D%BF.html",
+      "destination": "https://nsysu-itrc.vercel.app/ops?view=tasks&source=legacy",
+      "permanent": false
+    },
+    {
       "source": "/tools/ITRC管理組-任務看板.html",
+      "destination": "https://nsysu-itrc.vercel.app/ops?view=tasks&source=legacy",
+      "permanent": false
+    },
+    {
+      "source": "/tools/ITRC%E7%AE%A1%E7%90%86%E7%B5%84-%E4%BB%BB%E5%8B%99%E7%9C%8B%E6%9D%BF.html",
       "destination": "https://nsysu-itrc.vercel.app/ops?view=tasks&source=legacy",
       "permanent": false
     }

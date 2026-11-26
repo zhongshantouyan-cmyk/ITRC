@@ -81,19 +81,27 @@ export function legacyToolsPlugin({ repositoryRoot, mode = process.env.VERCEL_EN
   };
 }
 
+function withEncodedRedirectSources(rules) {
+  return rules.flatMap(rule => {
+    const encodedSource = encodeURI(rule.source);
+    // Browsers percent-encode these known Chinese paths; retain both forms.
+    return encodedSource === rule.source ? [rule] : [rule, { ...rule, source: encodedSource }];
+  });
+}
+
 export function oldToolsRedirects(origin = 'https://nsysu-itrc.vercel.app') {
-  return [{ source: '/', destination: `${origin}/ops`, permanent: false },
+  return withEncodedRedirectSources([{ source: '/', destination: `${origin}/ops`, permanent: false },
     { source: '/index.html', destination: `${origin}/ops`, permanent: false },
     ...CLUB_TOOLS.flatMap(tool => [
       { source: `/${tool.file}`, destination: `${origin}${tool.workspacePath}`, permanent: false },
       { source: `/tools/${tool.file}`, destination: `${origin}${tool.workspacePath}`, permanent: false },
-    ])];
+    ])]);
 }
 
 export function mainToolsRedirects() {
-  return [{ source: '/tools/index.html', destination: '/ops', permanent: false },
+  return withEncodedRedirectSources([{ source: '/tools/index.html', destination: '/ops', permanent: false },
     ...CLUB_TOOLS.flatMap(tool => [
       { source: `/${tool.file}`, destination: tool.workspacePath, permanent: false },
       { source: `/tools/${tool.file}`, destination: tool.workspacePath, permanent: false },
-    ])];
+    ])]);
 }
